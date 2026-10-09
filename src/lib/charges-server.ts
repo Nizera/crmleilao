@@ -1,0 +1,320 @@
+import "server-only";
+
+import {
+  isChargeActive,
+  isChargeOpen,
+  type Charge,
+  type ChargeLotRef,
+  type ChargeStatus,
+} from "@/lib/charges";
+import { createPixPayment } from "@/lib/mercadopago";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+/**
+ * Núcleo das cobranças Pix (F3) — server-only.
+ * Tudo aqui usa service role: o webhook não tem sessão e as actions validam
+ * os guards (admin/customer) antes de chamar.
+ */
+
+export const CHARGE_COLUMNS = [
+  "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
+  "description, qr_code, qr_code_base64, ticket_url, expires_at, paid_at, notes,",
+  "created_by, created_at, updated_at,",
+  "customer:customers(id, name, phone_e164),",
+  "lots:lots(id, code, title, arremate_value, status)",
+].join(" ");
+
+export type TransitionResult = { ok: boolean; reason?: string };
+
+/** Lotes `pending_payment` do cliente que ainda não estão numa cobrança aberta. */
+export async function listEligibleLots(customerId: string): Promise<ChargeLotRef[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("lots")
+    .select("id, code, title, arremate_value, status, charge:charges(status, expires_at)")
+    .eq("customer_id", customerId)
+    .eq("status", "pending_payment")
+    .order("auction_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
+
+  type Row = ChargeLotRef & {
+    charge: { status: ChargeStatus; expires_at: string | null } | null;
+  };
+
+  const rows = (data ?? []) as unknown as Row[];
+
+  return rows
+    .filter((row) => !row.charge || !isChargeActive(row.charge))
+    .map((row) => ({
+      id: row.id,
+      code: row.code,
+      title: row.title,
+      arremate_value: row.arremate_value,
+      status: row.status,
+    }));
+}
+
+/**
+ * Contexto para criar cobrança: cobrança aberta do cliente (se houver) e
+ * lotes ainda elegíveis.
+ */
+export async function getChargeContext(customerId: string): Promise<{
+  activeCharge: Charge | null;
+  eligibleLots: ChargeLotRef[];
+}> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("charges")
+    .select(CHARGE_COLUMNS)
+    .eq("customer_id", customerId)
+    .in("status", ["pending", "in_process"])
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (error) throw new Error(`Falha ao carregar cobranças: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Charge[];
+  const activeCharge = rows.find((charge) => isChargeActive(charge)) ?? null;
+  const eligibleLots = await listEligibleLots(customerId);
+
+  return { activeCharge, eligibleLots };
+}
+
+export async function getChargeById(id: string): Promise<Charge | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("charges")
+    .select(CHARGE_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar cobrança: ${error.message}`);
+  return (data as unknown as Charge) ?? null;
+}
+
+export async function getChargeByExternalReference(
+  reference: string,
+): Promise<Charge | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("charges")
+    .select(CHARGE_COLUMNS)
+    .eq("external_reference", reference)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar cobrança: ${error.message}`);
+  return (data as unknown as Charge) ?? null;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Cria a cobrança Pix no Mercado Pago, grava em `charges` e vincula os lotes.
+ * Ordem: MP primeiro (se falhar, nada fica no banco); depois insert; depois
+ * vínculo. Um PIX órfão no MP expira sozinho em 3 dias.
+ */
+export async function createCharge(input: {
+  customerId: string;
+  lotIds: string[];
+  createdBy: string | null;
+}): Promise<Charge> {
+  const admin = createAdminClient();
+
+  const { data: customer, error: customerError } = await admin
+    .from("customers")
+    .select("id, name, phone_e164, email, cpf_cnpj")
+    .eq("id", input.customerId)
+    .maybeSingle();
+
+  if (customerError) {
+    throw new Error(`Falha ao carregar cliente: ${customerError.message}`);
+  }
+  if (!customer) throw new Error("Cliente não encontrado.");
+
+  const eligible = await listEligibleLots(input.customerId);
+  const picked = eligible.filter((lot) => input.lotIds.includes(lot.id));
+  if (picked.length === 0) {
+    throw new Error("Nenhum dos lotes selecionados está aguardando pagamento.");
+  }
+
+  const amount = round2(
+    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
+  );
+  if (amount <= 0) {
+    throw new Error("O valor total da cobrança precisa ser maior que zero.");
+  }
+
+  const email = customer.email?.trim() || null;
+  if (!email) {
+    throw new Error(
+      "Este cliente ainda não tem e-mail. Preencha o e-mail na ficha do cliente (ou em Meus dados do painel) e gere o Pix de novo.",
+    );
+  }
+
+  const externalReference = `chg_${crypto.randomUUID()}`;
+  const description = `Leilão Legends — ${
+    picked.length === 1 ? "lote" : "lotes"
+  } ${picked.map((lot) => lot.code).join(", ")}`;
+
+  const [firstName, ...rest] = (customer.name?.trim() || "Cliente").split(/\s+/);
+  const digits = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
+
+  const payment = await createPixPayment({
+    amount,
+    description,
+    externalReference,
+    payerEmail: email,
+    payerFirstName: firstName,
+    payerLastName: rest.join(" ") || undefined,
+    identification:
+      digits.length === 11
+        ? { type: "CPF", number: digits }
+        : digits.length === 14
+          ? { type: "CNPJ", number: digits }
+          : undefined,
+  });
+
+  const { data: inserted, error: insertError } = await admin
+    .from("charges")
+    .insert({
+      customer_id: input.customerId,
+      amount,
+      status: "pending",
+      mp_payment_id: payment.paymentId || null,
+      external_reference: externalReference,
+      description,
+      qr_code: payment.qrCode,
+      qr_code_base64: payment.qrCodeBase64,
+      ticket_url: payment.ticketUrl,
+      expires_at: payment.dateOfExpiration,
+      created_by: input.createdBy,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) {
+    throw new Error(`Falha ao registrar cobrança: ${insertError.message}`);
+  }
+
+  const { error: linkError } = await admin
+    .from("lots")
+    .update({ charge_id: inserted.id })
+    .in("id", picked.map((lot) => lot.id));
+
+  if (linkError) {
+    throw new Error(`Falha ao vincular os lotes à cobrança: ${linkError.message}`);
+  }
+
+  const charge = await getChargeById(inserted.id);
+  if (!charge) throw new Error("Cobrança criada, mas não foi possível recarregá-la.");
+
+  // Caso raro: o MP devolveu approved na criação (não acontece no Pix).
+  if (payment.status === "approved") {
+    await applyTransition(charge, "approved", { paidAt: new Date().toISOString() });
+    return (await getChargeById(charge.id)) ?? charge;
+  }
+
+  return charge;
+}
+
+/**
+ * Transição de status idempotente:
+ *  - só sai de pending/in_process (webhook repetido não reprocessa);
+ *  - `approved` confere o valor quando o webhook informa (proteção extra
+ *    contra referência trocada).
+ */
+async function applyTransition(
+  charge: Charge,
+  target: ChargeStatus,
+  opts: {
+    mpPaymentId?: string | null;
+    amount?: number | null;
+    paidAt?: string | null;
+  } = {},
+): Promise<TransitionResult> {
+  const admin = createAdminClient();
+
+  if (!isChargeOpen(charge.status)) {
+    return { ok: false, reason: `already_${charge.status}` };
+  }
+
+  if (
+    target === "approved" &&
+    opts.amount != null &&
+    Math.abs(Number(charge.amount) - opts.amount) > 0.01
+  ) {
+    console.warn(
+      `[charges] valor divergente em ${charge.code}: local=${charge.amount} mp=${opts.amount}`,
+    );
+    return { ok: false, reason: "amount_mismatch" };
+  }
+
+  const paidAt = opts.paidAt ?? (target === "approved" ? new Date().toISOString() : null);
+  const patch: Record<string, unknown> = { status: target };
+  if (target === "approved") {
+    patch.paid_at = paidAt;
+    if (opts.mpPaymentId) patch.mp_payment_id = opts.mpPaymentId;
+  }
+
+  const { data: updated, error } = await admin
+    .from("charges")
+    .update(patch)
+    .eq("id", charge.id)
+    .in("status", ["pending", "in_process"])
+    .select("id, paid_at");
+
+  if (error) throw new Error(`Falha ao atualizar cobrança: ${error.message}`);
+  if (!updated || updated.length === 0) {
+    return { ok: false, reason: `already_${target}` };
+  }
+
+  if (target === "approved") {
+    const { error: lotsError } = await admin
+      .from("lots")
+      .update({ status: "paid", paid_at: paidAt })
+      .eq("charge_id", charge.id)
+      .eq("status", "pending_payment");
+
+    if (lotsError) {
+      throw new Error(`Falha ao marcar os lotes como pagos: ${lotsError.message}`);
+    }
+  }
+
+  return { ok: true };
+}
+
+/** Webhook: localiza por external_reference e aplica o status vindo do MP. */
+export async function settleChargeByReference(input: {
+  externalReference: string;
+  target: Extract<ChargeStatus, "approved" | "expired" | "cancelled" | "rejected">;
+  mpPaymentId?: string | null;
+  amount?: number | null;
+  paidAt?: string | null;
+}): Promise<TransitionResult> {
+  const charge = await getChargeByExternalReference(input.externalReference);
+  if (!charge) return { ok: false, reason: "not_found" };
+
+  return applyTransition(charge, input.target, {
+    mpPaymentId: input.mpPaymentId,
+    amount: input.amount,
+    paidAt: input.paidAt,
+  });
+}
+
+/** Marcação manual de pago (sem webhook configurado). */
+export async function markChargePaid(chargeId: string): Promise<TransitionResult> {
+  const charge = await getChargeById(chargeId);
+  if (!charge) return { ok: false, reason: "not_found" };
+  return applyTransition(charge, "approved", { paidAt: new Date().toISOString() });
+}
+
+/** Cancelamento manual: devolve os lotes para elegíveis (status fica cancelled). */
+export async function cancelCharge(chargeId: string): Promise<TransitionResult> {
+  const charge = await getChargeById(chargeId);
+  if (!charge) return { ok: false, reason: "not_found" };
+  return applyTransition(charge, "cancelled");
+}
