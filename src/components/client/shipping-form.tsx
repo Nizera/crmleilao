@@ -55,6 +55,31 @@ function formatCep(raw: string): string {
     : digits;
 }
 
+function formatDocument(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 14);
+  if (digits.length <= 11) {
+    const parts = [
+      digits.slice(0, 3),
+      digits.slice(3, 6),
+      digits.slice(6, 9),
+      digits.slice(9, 11),
+    ].filter(Boolean);
+    return [parts[0], parts[1] && `.${parts[1]}`, parts[2] && `.${parts[2]}`, parts[3] && `-${parts[3]}`]
+      .filter(Boolean)
+      .join("");
+  }
+  const parts = [
+    digits.slice(0, 2),
+    digits.slice(2, 5),
+    digits.slice(5, 8),
+    digits.slice(8, 12),
+    digits.slice(12, 14),
+  ].filter(Boolean);
+  return [parts[0], parts[1] && `.${parts[1]}`, parts[2] && `.${parts[2]}`, parts[3] && `/${parts[3]}`, parts[4] && `-${parts[4]}`]
+    .filter(Boolean)
+    .join("");
+}
+
 export function ShippingForm({ initial }: { initial: ShippingProfile }) {
   const [pending, startTransition] = useTransition();
   const [cepStatus, setCepStatus] = useState<CepStatus>("idle");
@@ -65,6 +90,7 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
     defaultValues: {
       name: initial.name ?? "",
       email: initial.email ?? "",
+      cpf_cnpj: formatDocument(initial.cpf_cnpj ?? ""),
       address_cep: formatCep(initial.address_cep ?? ""),
       address_street: initial.address_street ?? "",
       address_number: initial.address_number ?? "",
@@ -77,6 +103,7 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
 
   const cep = useWatch({ control: form.control, name: "address_cep" });
   const uf = useWatch({ control: form.control, name: "address_state" });
+  const cpf = useWatch({ control: form.control, name: "cpf_cnpj" });
 
   const lookupCep = async () => {
     const digits = (cep ?? "").replace(/\D/g, "");
@@ -178,6 +205,27 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
               Usado para gerar o Pix das suas compras.
             </FieldDescription>
             <FieldError>{errors.email?.message}</FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.cpf_cnpj}>
+            <FieldLabel htmlFor="cpf_cnpj">CPF ou CNPJ</FieldLabel>
+            <Input
+              id="cpf_cnpj"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000.000.000-00"
+              value={cpf ?? ""}
+              onChange={(event) =>
+                form.setValue("cpf_cnpj", formatDocument(event.target.value), {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                })
+              }
+            />
+            <FieldDescription>
+              Usado no Pix e na etiqueta dos seus envios.
+            </FieldDescription>
+            <FieldError>{errors.cpf_cnpj?.message}</FieldError>
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-3">

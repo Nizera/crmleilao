@@ -17,7 +17,7 @@ export default function ClientLoginPage() {
         <ClientLoginForm className="w-full" />
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <MessageCircle className="size-3.5" />
-          Acesso pelo seu número de WhatsApp
+          Acesso com seu WhatsApp e senha de convite
         </p>
       </div>
     </div>

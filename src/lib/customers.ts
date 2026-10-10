@@ -62,6 +62,14 @@ export const shippingFormSchema = z.object({
       (value) => /^\S+@\S+\.\S+$/.test(value),
       "E-mail inválido",
     ),
+  cpf_cnpj: z
+    .string()
+    .trim()
+    .max(20, "CPF/CNPJ muito longo")
+    .refine((value) => {
+      const digits = value.replace(/\D/g, "");
+      return digits.length === 11 || digits.length === 14;
+    }, "CPF inválido: informe 11 dígitos"),
   address_cep: z
     .string()
     .trim()
@@ -104,6 +112,7 @@ export type ShippingFormValues = z.input<typeof shippingFormSchema>;
 export type ShippingProfile = {
   name: string | null;
   email: string | null;
+  cpf_cnpj: string | null;
   address_cep: string | null;
   address_street: string | null;
   address_number: string | null;
@@ -121,6 +130,7 @@ export function isShippingComplete(
   const required = [
     profile.name,
     profile.email,
+    profile.cpf_cnpj,
     profile.address_cep,
     profile.address_street,
     profile.address_number,

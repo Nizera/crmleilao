@@ -2,9 +2,10 @@
 
 import { useState, useActionState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, MessageCircle, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, MessageCircle, ShieldCheck } from "lucide-react";
 
 import {
+  customerSignIn,
   requestCustomerOtp,
   verifyCustomerOtp,
   type AuthFormState,
@@ -32,6 +33,7 @@ export function ClientLoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
+  const [mode, setMode] = useState<"password" | "otp">("password");
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
 
@@ -46,17 +48,102 @@ export function ClientLoginForm({
     return result;
   };
 
+  const [pwState, pwAction, pwPending] = useActionState(
+    customerSignIn,
+    undefined,
+  );
   const [otpState, otpAction, otpPending] = useActionState(sendOtp, undefined);
   const [codeState, codeAction, codePending] = useActionState(
     verifyCustomerOtp,
-    undefined
+    undefined,
   );
+
+  const switchMode = (next: "password" | "otp") => {
+    setMode(next);
+    setStep("phone");
+  };
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="p-6 md:p-8">
-          {step === "phone" ? (
+          {mode === "password" ? (
+            <form action={pwAction} className="grid gap-6">
+              <FieldGroup>
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                    <LogIn className="size-5" />
+                  </span>
+                  <h1 className="text-2xl font-bold">Seu painel</h1>
+                  <p className="text-balance text-muted-foreground">
+                    Entre com o WhatsApp do leilão e a senha que você criou no
+                    convite.
+                  </p>
+                </div>
+
+                <Field>
+                  <FieldLabel htmlFor="phone">WhatsApp</FieldLabel>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel-national"
+                    placeholder="(11) 99999-8888"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="password">Senha</FieldLabel>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Sua senha"
+                    required
+                  />
+                </Field>
+
+                {pwState?.error ? (
+                  <FieldError>{pwState.error}</FieldError>
+                ) : null}
+
+                <Field>
+                  <Button type="submit" disabled={pwPending}>
+                    {pwPending ? (
+                      <>
+                        <Loader2 className="animate-spin" />
+                        Entrando…
+                      </>
+                    ) : (
+                      <>
+                        <LogIn />
+                        Entrar no painel
+                      </>
+                    )}
+                  </Button>
+                </Field>
+
+                <FieldDescription className="text-center">
+                  Primeiro acesso?{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => switchMode("otp")}
+                  >
+                    Receber código no WhatsApp
+                  </button>
+                </FieldDescription>
+                <FieldDescription className="text-center">
+                  Esqueceu a senha? Peça um novo link de convite ao admin.
+                </FieldDescription>
+              </FieldGroup>
+            </form>
+          ) : step === "phone" ? (
             <form action={otpAction} className="grid gap-6">
               <FieldGroup>
                 <div className="flex flex-col items-center gap-2 text-center">
@@ -71,9 +158,9 @@ export function ClientLoginForm({
                 </div>
 
                 <Field>
-                  <FieldLabel htmlFor="phone">WhatsApp</FieldLabel>
+                  <FieldLabel htmlFor="otp-phone">WhatsApp</FieldLabel>
                   <Input
-                    id="phone"
+                    id="otp-phone"
                     name="phone"
                     type="tel"
                     inputMode="tel"
@@ -107,6 +194,17 @@ export function ClientLoginForm({
                     )}
                   </Button>
                 </Field>
+
+                <FieldDescription className="text-center">
+                  Já tem senha?{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => switchMode("password")}
+                  >
+                    Entrar com senha
+                  </button>
+                </FieldDescription>
               </FieldGroup>
             </form>
           ) : (

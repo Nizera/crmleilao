@@ -21,6 +21,7 @@ export async function saveShippingData(
     const parsed = shippingFormSchema.safeParse({
       name: formData.get("name") ?? "",
       email: formData.get("email") ?? "",
+      cpf_cnpj: formData.get("cpf_cnpj") ?? "",
       address_cep: formData.get("address_cep") ?? "",
       address_street: formData.get("address_street") ?? "",
       address_number: formData.get("address_number") ?? "",
@@ -37,6 +38,7 @@ export async function saveShippingData(
     const patch = {
       name: parsed.data.name,
       email: parsed.data.email.toLowerCase(),
+      cpf_cnpj: parsed.data.cpf_cnpj.replace(/\D/g, ""),
       address_cep: parsed.data.address_cep.replace(/\D/g, ""),
       address_street: parsed.data.address_street,
       address_number: parsed.data.address_number,

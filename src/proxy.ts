@@ -15,6 +15,9 @@ export async function proxy(request: NextRequest) {
   const isAdminArea = pathname.startsWith("/admin");
   const isClientArea = pathname.startsWith("/painel");
 
+  // Telas públicas da área do cliente (login e aceite de convite).
+  const publicClientPaths = new Set(["/painel/login", "/painel/convite"]);
+
   // Sem sessão: manda para a tela de login da área certa.
   if (isAdminArea && !authenticated) {
     const url = request.nextUrl.clone();
@@ -23,7 +26,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isClientArea && pathname !== "/painel/login" && !authenticated) {
+  if (isClientArea && !publicClientPaths.has(pathname) && !authenticated) {
     const url = request.nextUrl.clone();
     url.pathname = "/painel/login";
     url.search = "";
@@ -31,7 +34,10 @@ export async function proxy(request: NextRequest) {
   }
 
   // Com sessão: não volta para as telas de login.
-  if ((pathname === "/login" || pathname === "/painel/login") && authenticated) {
+  if (
+    (pathname === "/login" || publicClientPaths.has(pathname)) &&
+    authenticated
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = pathname === "/login" ? "/admin" : "/painel";
     url.search = "";

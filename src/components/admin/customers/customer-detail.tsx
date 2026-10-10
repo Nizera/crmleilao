@@ -3,10 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MessageCircle, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, KeyRound, MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { deleteCustomer } from "@/app/actions/customers";
+import { createCustomerInvite } from "@/app/actions/invites";
 import { CustomerFormSheet } from "@/components/admin/customers/customer-form";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { CustomerDetail } from "@/lib/dal";
+import type { CustomerDetail, InviteStatus } from "@/lib/dal";
 import { formatPhoneBR } from "@/lib/customers";
 import {
   formatBRL,
@@ -37,13 +38,15 @@ import {
 type Props = {
   customer: CustomerDetail;
   lots: Lot[];
+  invite: InviteStatus;
 };
 
-export function CustomerDetailView({ customer, lots }: Props) {
+export function CustomerDetailView({ customer, lots, invite }: Props) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [armed, setArmed] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [invitePending, startInviteTransition] = useTransition();
 
   const stats = useMemo(() => {
     const active = lots.filter((lot) => lot.status !== "cancelled");
@@ -73,6 +76,39 @@ export function CustomerDetailView({ customer, lots }: Props) {
       }
       toast.success("Cliente excluído.");
       router.push("/admin/clientes");
+      router.refresh();
+    });
+  };
+
+  const generateInvite = () => {
+    startInviteTransition(async () => {
+      const result = await createCustomerInvite(customer.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(result.data.url);
+      } catch {
+        // Sem cópia automática: o link também vai no WhatsApp.
+      }
+      const firstName = customer.name?.trim().split(" ")[0] ?? "aqui";
+      toast.success("Convite gerado e link copiado!", {
+        description: "Vale 7 dias e pode ser usado uma única vez.",
+        action: {
+          label: "Abrir WhatsApp",
+          onClick: () => {
+            window.open(
+              waMessageLink(
+                customer.phone_e164,
+                `Oi, ${firstName}! Seu acesso ao painel do Caras das Legends: ${result.data.url}`,
+              ),
+              "_blank",
+              "noopener",
+            );
+          },
+        },
+      });
       router.refresh();
     });
   };
@@ -109,6 +145,14 @@ export function CustomerDetailView({ customer, lots }: Props) {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={generateInvite}
+            disabled={invitePending}
+          >
+            <KeyRound />
+            {invitePending ? "Gerando…" : "Gerar convite"}
+          </Button>
           <Button asChild variant="outline">
             <a href={chatLink} target="_blank" rel="noopener noreferrer">
               <MessageCircle />
@@ -151,6 +195,7 @@ export function CustomerDetailView({ customer, lots }: Props) {
             <Row label="WhatsApp" value={formatPhoneBR(customer.phone_e164)} />
             <Row label="E-mail" value={customer.email ?? "—"} />
             <Row label="CPF/CNPJ" value={customer.cpf_cnpj ?? "—"} />
+            <Row label="Convite" value={inviteLabel(invite)} />
             <Row
               label="Cadastrado em"
               value={new Date(customer.created_at).toLocaleDateString("pt-BR")}
@@ -255,6 +300,21 @@ function StatCard({
       </CardContent>
     </Card>
   );
+}
+
+function inviteLabel(invite: InviteStatus): string {
+  switch (invite.status) {
+    case "active":
+      return invite.expires_at
+        ? `Ativo até ${new Date(invite.expires_at).toLocaleDateString("pt-BR")}`
+        : "Ativo";
+    case "used":
+      return "Já usado";
+    case "expired":
+      return "Expirado";
+    default:
+      return "—";
+  }
 }
 
 function Row({ label, value }: { label: string; value: string }) {
