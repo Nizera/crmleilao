@@ -13,6 +13,12 @@ import { STICKER_COLORS } from "@/lib/stock";
 import type { LotItemRow, Player, StockItem, StockMovement } from "@/lib/stock";
 import { isChargeActive, type Charge, type ChargeStatus } from "@/lib/charges";
 import { CHARGE_COLUMNS } from "@/lib/charges-server";
+import { hashInviteToken } from "@/lib/invites";
+import type { Shipment, ShipmentStatus } from "@/lib/shipments";
+import {
+  attachLots,
+  SHIPMENT_COLUMNS,
+} from "@/lib/shipments-server";
 
 export type { AdminRole };
 
@@ -405,6 +411,15 @@ export const getAppSettings = cache(
 
     if (error || !data) return { settings: DEFAULT_SETTINGS, ready: false };
 
+    // Colunas de origem vêm da migração 0006: ainda não aplicada, viram "".
+    const { data: origin } = await supabase
+      .from("app_settings")
+      .select(
+        "origin_name, origin_address, origin_number, origin_district, origin_city, origin_state, origin_cep",
+      )
+      .eq("id", true)
+      .maybeSingle();
+
     return {
       settings: {
         bid_increment: Number(data.bid_increment) || DEFAULT_SETTINGS.bid_increment,
@@ -412,6 +427,13 @@ export const getAppSettings = cache(
         wa_notice_template: data.wa_notice_template,
         wa_payment_template: data.wa_payment_template,
         wa_shipping_template: data.wa_shipping_template,
+        origin_name: origin?.origin_name ?? "",
+        origin_address: origin?.origin_address ?? "",
+        origin_number: origin?.origin_number ?? "",
+        origin_district: origin?.origin_district ?? "",
+        origin_city: origin?.origin_city ?? "",
+        origin_state: origin?.origin_state ?? "",
+        origin_cep: origin?.origin_cep ?? "",
       },
       ready: true,
     };
@@ -465,13 +487,79 @@ export const getCustomerShipping = cache(
     const { data, error } = await supabase
       .from("customers")
       .select(
-        "name, email, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state",
+        "name, email, cpf_cnpj, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state",
       )
       .eq("id", customerId)
       .maybeSingle();
 
     if (error) return null;
     return (data as ShippingProfile) ?? null;
+  },
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Convite de acesso ao painel do cliente (link + senha)                      */
+/* -------------------------------------------------------------------------- */
+
+export type InviteStatus = {
+  status: "active" | "used" | "expired" | "none";
+  expires_at: string | null;
+};
+
+/** Convite mais recente do cliente (status para a ficha do admin). */
+export const getCustomerInvite = cache(
+  async (customerId: string): Promise<InviteStatus> => {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("customer_invites")
+      .select("expires_at, used_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return { status: "none", expires_at: null };
+    if (data.used_at) return { status: "used", expires_at: data.expires_at };
+    if (new Date(data.expires_at) < new Date()) {
+      return { status: "expired", expires_at: data.expires_at };
+    }
+    return { status: "active", expires_at: data.expires_at };
+  },
+);
+
+export type InvitePreview =
+  | { state: "ok"; name: string | null; phone_e164: string }
+  | { state: "invalid" | "used" | "expired" };
+
+/**
+ * Lê o convite pelo token cru (hash na consulta) para a tela pública
+ * /painel/convite. Não expõe dados além do primeiro nome e do número.
+ */
+export const getInvitePreview = cache(
+  async (token: string): Promise<InvitePreview> => {
+    if (!token || token.length > 128) return { state: "invalid" };
+
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("customer_invites")
+      .select("expires_at, used_at, customer:customers(name, phone_e164)")
+      .eq("token_hash", hashInviteToken(token))
+      .maybeSingle();
+
+    if (error || !data) return { state: "invalid" };
+
+    const customer = Array.isArray(data.customer)
+      ? data.customer[0]
+      : data.customer;
+    if (!customer) return { state: "invalid" };
+    if (data.used_at) return { state: "used" };
+    if (new Date(data.expires_at) < new Date()) return { state: "expired" };
+
+    return {
+      state: "ok",
+      name: customer.name,
+      phone_e164: customer.phone_e164,
+    };
   },
 );
 
@@ -618,6 +706,101 @@ export const getPaymentKpis = cache(
       pendingAmount: open.reduce((sum, charge) => sum + Number(charge.amount), 0),
       chargesReady,
     };
+  },
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Envios (F4)                                                                */
+/* -------------------------------------------------------------------------- */
+
+export type ShipmentPage = {
+  rows: Shipment[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export async function listShipments(params: {
+  q?: string;
+  status?: ShipmentStatus | "all";
+  page?: number;
+  pageSize?: number;
+}): Promise<ShipmentPage> {
+  const supabase = await createClient();
+  const page = Math.max(1, params.page ?? 1);
+  const pageSize = Math.min(50, Math.max(5, params.pageSize ?? 10));
+  const from = (page - 1) * pageSize;
+
+  let query = supabase
+    .from("shipments")
+    .select(SHIPMENT_COLUMNS, { count: "exact" })
+    .order("batch_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(from, from + pageSize - 1);
+
+  if (params.status && params.status !== "all") {
+    query = query.eq("status", params.status);
+  }
+
+  const raw = params.q?.trim().replace(/[(),]/g, " ").trim() ?? "";
+  if (raw.length >= 2) {
+    const digits = raw.replace(/\D/g, "").slice(0, 20);
+    const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
+
+    const filters = [
+      `code.ilike.%${raw}%`,
+      `sf_order_id.ilike.%${raw}%`,
+      `tracking_code.ilike.%${raw}%`,
+    ];
+
+    const customerFilters: string[] = [];
+    if (digits.length >= 4) customerFilters.push(`phone_e164.ilike.%${digits}%`);
+    if (name.length >= 2) customerFilters.push(`name.ilike.%${name}%`);
+
+    if (customerFilters.length > 0) {
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("id")
+        .or(customerFilters.join(","))
+        .limit(50);
+
+      const ids = (customers ?? []).map((row) => row.id);
+      if (ids.length > 0) filters.push(`customer_id.in.(${ids.join(",")})`);
+    }
+
+    query = query.or(filters.join(","));
+  }
+
+  const { data, count, error } = await query;
+  if (error) throw new Error(`Falha ao listar envios: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Shipment[];
+  const withLots = await attachLots(rows);
+
+  return { rows: withLots, total: count ?? 0, page, pageSize };
+}
+
+/**
+ * Envios de um cliente (painel). RLS já garante que é o próprio; a migração
+ * 0006 ausente vira lista vazia para o painel não quebrar.
+ */
+export const listCustomerShipments = cache(
+  async (customerId: string): Promise<Shipment[]> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("shipments")
+      .select(SHIPMENT_COLUMNS)
+      .eq("customer_id", customerId)
+      .order("batch_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      if (error.code === "42P01" || /shipments/i.test(error.message)) return [];
+      throw new Error(`Falha ao listar envios: ${error.message}`);
+    }
+
+    return attachLots((data ?? []) as unknown as Shipment[]);
   },
 );
 
