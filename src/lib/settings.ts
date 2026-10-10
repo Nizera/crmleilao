@@ -10,6 +10,14 @@ export type AppSettings = {
   wa_notice_template: string;
   wa_payment_template: string;
   wa_shipping_template: string;
+  /** Endereço de origem dos envios SuperFrete (F4). */
+  origin_name: string;
+  origin_address: string;
+  origin_number: string;
+  origin_district: string;
+  origin_city: string;
+  origin_state: string;
+  origin_cep: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -31,6 +39,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "Olá {name}! O lote {code} foi enviado.",
     "Rastreio: {tracking}",
   ].join("\n"),
+  origin_name: "",
+  origin_address: "",
+  origin_number: "",
+  origin_district: "",
+  origin_city: "",
+  origin_state: "",
+  origin_cep: "",
 };
 
 /** Índice do dia da semana em `Date.getUTCDay()`: 0 = domingo … 6 = sábado. */
@@ -132,6 +147,31 @@ export const settingsFormSchema = z.object({
     .trim()
     .min(1, "O modelo de envio não pode ficar vazio")
     .max(3000, "Modelo muito longo"),
+  origin_name: z.string().trim().max(50, "Máximo de 50 caracteres"),
+  origin_address: z.string().trim().max(50, "Máximo de 50 caracteres"),
+  origin_number: z.string().trim().max(10, "Máximo de 10 caracteres"),
+  origin_district: z.string().trim().max(60, "Máximo de 60 caracteres"),
+  origin_city: z.string().trim().max(50, "Máximo de 50 caracteres"),
+  origin_state: z
+    .string()
+    .trim()
+    .regex(/^$|^[A-Z]{2}$/, "Use 2 letras maiúsculas (SP)"),
+  origin_cep: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{8}$/, "CEP com 8 dígitos, só números"),
 });
 
 export type SettingsFormValues = z.input<typeof settingsFormSchema>;
+
+/** Origem completa o bastante para emitir etiqueta SuperFrete (F4). */
+export function isOriginComplete(settings: AppSettings): boolean {
+  return Boolean(
+    settings.origin_name &&
+      settings.origin_address &&
+      settings.origin_district &&
+      settings.origin_city &&
+      settings.origin_state &&
+      settings.origin_cep,
+  );
+}
