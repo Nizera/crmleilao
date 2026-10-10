@@ -1,4 +1,5 @@
 import { getAppSettings, listTeam, requireAdmin } from "@/lib/dal";
+import { mpWebhookUrl } from "@/lib/mercadopago";
 import {
   ConfigView,
   type IntegrationInfo,
@@ -34,9 +35,11 @@ export default async function ConfiguracaoPage() {
   const integrations: IntegrationInfo[] = [
     integrationStatus("Mercado Pago (Pix)", "Fase 3", mpKey, () => {
       const test = mpKey?.trim().startsWith("TEST-");
-      const webhook = process.env.MP_WEBHOOK_TOKEN?.trim();
+      const webhook = mpWebhookUrl();
       return `${test ? "token de teste" : "token de produção"}${
-        webhook ? " + webhook ok" : " — sem MP_WEBHOOK_TOKEN (confirmação manual)"
+        webhook
+          ? ` — cadastre a URL em Suas integrações → Webhooks (evento Order): ${webhook}`
+          : " — sem MP_WEBHOOK_TOKEN (confirmação manual)"
       }`;
     }),
     integrationStatus("SuperFrete (fretes)", "Fase 4", superfreteToken, () =>

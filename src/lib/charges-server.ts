@@ -7,7 +7,7 @@ import {
   type ChargeLotRef,
   type ChargeStatus,
 } from "@/lib/charges";
-import { createPixPayment } from "@/lib/mercadopago";
+import { createPixOrder } from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -163,7 +163,7 @@ export async function createCharge(input: {
   const [firstName, ...rest] = (customer.name?.trim() || "Cliente").split(/\s+/);
   const digits = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
 
-  const payment = await createPixPayment({
+  const order = await createPixOrder({
     amount,
     description,
     externalReference,
@@ -184,13 +184,13 @@ export async function createCharge(input: {
       customer_id: input.customerId,
       amount,
       status: "pending",
-      mp_payment_id: payment.paymentId || null,
+      mp_payment_id: order.orderId || null,
       external_reference: externalReference,
       description,
-      qr_code: payment.qrCode,
-      qr_code_base64: payment.qrCodeBase64,
-      ticket_url: payment.ticketUrl,
-      expires_at: payment.dateOfExpiration,
+      qr_code: order.qrCode,
+      qr_code_base64: order.qrCodeBase64,
+      ticket_url: order.ticketUrl,
+      expires_at: order.dateOfExpiration,
       created_by: input.createdBy,
     })
     .select("id")
@@ -212,8 +212,8 @@ export async function createCharge(input: {
   const charge = await getChargeById(inserted.id);
   if (!charge) throw new Error("Cobrança criada, mas não foi possível recarregá-la.");
 
-  // Caso raro: o MP devolveu approved na criação (não acontece no Pix).
-  if (payment.status === "approved") {
+  // Caso raro: a order já saiu processada na criação (não acontece no Pix).
+  if (order.status === "processed") {
     await applyTransition(charge, "approved", { paidAt: new Date().toISOString() });
     return (await getChargeById(charge.id)) ?? charge;
   }

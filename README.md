@@ -49,6 +49,9 @@ As migrações criam as tabelas, o RLS e os gatilhos:
   configurável
 - `0005_charges.sql` — `charges` (cobrança Pix = N lotes de 1 cliente),
   `lots.charge_id` e RLS (equipe escreve, cliente lê as próprias)
+- `0006_shipments.sql` — `shipments`/`shipment_lots` (etiqueta, rastreio e
+  histórico), endereço de origem e secret do webhook em `app_settings`, efeitos
+  nos lotes e RLS (admin escreve, cliente lê os próprios)
 
 ```bash
 npx supabase link --project-ref <seu-project-ref>
@@ -56,7 +59,7 @@ npx supabase db push
 ```
 
 Sem CLI logado? Cole o conteúdo da migração no **Supabase → SQL Editor → New
-query → Run** (na ordem `0001`, `0002`, `0003`, `0004`, `0005`).
+query → Run** (na ordem `0001`, `0002`, `0003`, `0004`, `0005`, `0006`).
 
 Depois, libere o primeiro administrador (RLS impede que qualquer usuário se torne admin):
 
@@ -115,9 +118,10 @@ O envio é restrito a telefones já existentes em `customers`
 - **Uma cobrança = 1 Pix para N lotes do mesmo cliente.** Soma automática dos
   `arremate_value`; enquanto a cobrança está aberta (pending/in_process), os
   lotes vinculados ficam reservados para ela e não entram em outra cobrança.
-- **Mercado Pago Payments API** (`POST /v1/payments` com `payment_method_id:
-  pix`): taxa de **0,99%** por transação, recebimento D0. Requer
-  `MP_ACCESS_TOKEN`; o Pix expira em **3 dias** (`date_of_expiration`).
+- **Mercado Pago Orders API** (`POST /v1/orders` com
+  `transactions.payments[].payment_method.id: pix` — a Payments API legada foi
+  descontinuada): taxa de **0,99%** por transação, recebimento D0. Requer
+  `MP_ACCESS_TOKEN`; o Pix expira em **3 dias** (`expiration_time: P3D`).
   `payer.email` é obrigatório — por isso o cadastro do primeiro login pede
   e-mail (a ficha do cliente completa quem já tem conta).
 - **Tela `/admin/cobrancas`** — busca/status/paginação, "Nova cobrança"
@@ -125,15 +129,54 @@ O envio é restrito a telefones já existentes em `customers`
   e "Enviar no WhatsApp" (usa o template de pagamento e grava no `message_log`).
   Ações: **Marcar como pago** (manual) e **Cancelar** (libera os lotes).
 - **Webhook** `POST|GET /api/webhooks/mercadopago/<MP_WEBHOOK_TOKEN>`: valida o
-  token do path em tempo constante, **rebusca o pagamento na API do MP** (a
-  notificação só traz o id) e então aplica o status pelo `external_reference`
-  conferindo o valor — idempotente; ao aprovar, os lotes viram `paid`. Sem
-  `MP_WEBHOOK_TOKEN`, a confirmação fica manual (aviso na própria tela).
+  token do path em tempo constante, **rebusca a order na API do MP** (a
+  notificação só traz o id `ORD…`) e então aplica o status pelo
+  `external_reference` conferindo o valor — idempotente; ao aprovar
+  (`processed`), os lotes viram `paid`. Sem `MP_WEBHOOK_TOKEN`, a confirmação
+  fica manual (aviso na própria tela).
+- **Cadastro do webhook no painel**: a Orders API não aceita `notification_url`
+  no body — copie a URL (Configuração mostra) e cadastre em **Suas integrações
+  → seu app → Webhooks → Configurar notificações → modo de produção → evento
+  Order (Mercado Pago)**. Sem isso, os pagamentos só entram por "Marcar como
+  pago".
 - **Painel do cliente** — card "Pagamentos" lista as cobranças, botão "Pagar"
   (abre a página do MP) e **"Gerar Pix dos meus lotes pendentes"**
   (auto-atendimento em 1 clique).
 - Migração `0005_charges.sql`; KPIs do dashboard (faturamento do mês e
   cobranças em aberto) saem daqui.
+
+## Envios e rastreio — SuperFrete (F4)
+
+- **Um envio = N lotes pagos de 1 cliente**, agrupados para o lote de terça
+  (`batch_date`, default `next_shipping_date`). Só entra lote `paid` que ainda
+  não está em envio não-cancelado.
+- **Cotação multi-transportadora** (`POST /api/v0/calculator`): PAC, SEDEX,
+  Mini Envios, Jadlog, Loggi e J&T, com seguro = soma dos `arremate_value`.
+  A mesma caixa (altura × largura × comprimento × peso) vai do cálculo para a
+  etiqueta — padrão pela quantidade de lotes, ajustável na hora.
+- **Emissão** (cart → insert → checkout): cria a etiqueta em `pending`, grava o
+  snapshot do destinatário e, havendo saldo, paga na hora; sem saldo o envio
+  fica "Etiqueta pendente" com aviso e o botão **Pagar etiqueta**.
+- **Status monotônico** `pending → released → posted → delivered`
+  (+ `cancelled`, só antes da postagem): atualizado pelo webhook ou por
+  **Sincronizar** (`GET /api/v0/order/info/{id}`). Efeitos nos lotes: postagem →
+  `shipped`, entrega → `delivered`, cancelamento → volta a `paid`.
+- **Tela `/admin/envios`** — busca por código, rastreio ou cliente, filtro de
+  status, **Novo envio** (busca cliente → pendências da ficha → lotes → caixa →
+  cotação → emitir) e detalhe com endereço-snapshot, rastreio, PDF da etiqueta,
+  pagar/sincronizar/cancelar e **Avisar cliente** no WhatsApp (template de
+  envio + registro no `message_log`).
+- **Webhook** `POST /api/webhooks/superfrete` — valida `X-ME-Signature`
+  (HMAC-SHA256 do corpo com o `secret_token` gravado em `app_settings`), aplica
+  os eventos de forma idempotente e revalida as telas. É ativado pelo botão
+  **Ativar webhook** (dono) na própria tela de Envios — sem cadastro manual na
+  SuperFrete.
+- **Painel do cliente** — card "Seus envios" com status, previsão de terça,
+  código de rastreio e link de rastreamento.
+- Migração `0006_shipments.sql`; o endereço de origem é preenchido em
+  Configuração → "Endereço de origem (envios)". Exige `SUPERFRETE_TOKEN`
+  (`SUPERFRETE_SANDBOX=true` para testar sem sair do sandbox) e saldo na
+  carteira da SuperFrete para o checkout da etiqueta.
 
 ## Configuração e primeiro login (F5)
 
@@ -174,9 +217,10 @@ O envio é restrito a telefones já existentes em `customers`
 | `/admin/clientes` e `/admin/clientes/[id]` | admin | **F2** — busca, CRUD e ficha com histórico |
 | `/admin/configuracao` | admin (dono edita) | **F5** — parâmetros, modelos, equipe, exportação |
 | `/admin/cobrancas` | admin | **F3** — cobranças Pix, QR e confirmação |
-| `/admin/envios` | admin | em construção (F4) |
+| `/admin/envios` | admin | **F4** — cotação, etiqueta, rastreio e ações |
 | `/api/webhooks/mercadopago/[token]` | token no path | **F3** — confirmação automática |
-| `/painel` | cliente autenticado | próprios lotes + card de pagamentos |
+| `/api/webhooks/superfrete` | HMAC do corpo | **F4** — postagem/entrega automáticas |
+| `/painel` | cliente autenticado | próprios lotes, pagamentos e envios |
 | `/painel/cadastro` | cliente autenticado | **F5** — endereço no primeiro login e "Meus dados" |
 | `/painel/lotes/[code]` | cliente dono do lote | **F1–F2** — arremate + figurinhas |
 | `/sem-acesso` | sessão sem vínculo | destino dos guards (sem loop de redirect) |

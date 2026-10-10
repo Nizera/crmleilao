@@ -3,9 +3,15 @@ import "server-only";
 import { siteUrl } from "@/lib/lots";
 
 /**
- * Cliente HTTP do Mercado Pago — API de pagamentos (Pix).
- * Sem SDK: só `fetch` para `https://api.mercadopago.com/v1/payments`.
+ * Cliente HTTP do Mercado Pago — Orders API (Pix).
+ * Sem SDK: só `fetch` para `https://api.mercadopago.com/v1/orders`.
  * Credenciais viram de `MP_ACCESS_TOKEN` (painel > Suas integrações).
+ *
+ * A Orders API substituiu a Payments API (legacy, em descontinuação):
+ *  - criação: POST /v1/orders (valor dentro de transactions.payments[]);
+ *  - consulta: GET /v1/orders/{id} (id alfanumérico com prefixo ORD);
+ *  - notificação: tópico `order`, cadastrada NO PAINEL — o body da requisição
+ *    não aceita mais `notification_url`.
  */
 
 const MP_API = "https://api.mercadopago.com";
@@ -31,7 +37,11 @@ export function mpWebhookConfigured(): boolean {
   return Boolean(process.env.MP_WEBHOOK_TOKEN?.trim());
 }
 
-/** Segredo do path do webhook. Sem ele, a confirmação fica manual. */
+/**
+ * URL do webhook para cadastrar em Suas integrações → Webhooks (evento
+ * Order) do painel do Mercado Pago. Com a Orders API essa URL não é mais
+ * enviada na requisição — o cadastro é manual, uma única vez.
+ */
 export function mpWebhookUrl(): string | null {
   const pathSecret = process.env.MP_WEBHOOK_TOKEN?.trim();
   if (!pathSecret) return null;
@@ -39,8 +49,9 @@ export function mpWebhookUrl(): string | null {
 }
 
 /**
+ * Vencimento local do Pix (mesmo intervalo enviado em `expiration_time: P3D`).
+ * Usado como fallback quando a resposta de criação não traz a data.
  * ISO 8601 com offset de Brasília (America/Sao_Paulo é -03:00 sem DST).
- * O MP aceita `2026-10-11T12:00:00.000-03:00` em `date_of_expiration`.
  */
 function expiryIso(days: number): string {
   return new Date(Date.now() + days * 86_400_000)
@@ -78,8 +89,8 @@ async function mpFetch(
   return json;
 }
 
-export type MpPixPayment = {
-  paymentId: string;
+export type MpPixOrder = {
+  orderId: string;
   status: string;
   /** Pix copia e cola (BR Code). */
   qrCode: string | null;
@@ -91,22 +102,54 @@ export type MpPixPayment = {
   dateOfExpiration: string | null;
 };
 
-type MpPixResponse = {
-  id?: number | string;
+type MpOrderPayment = {
+  id?: string;
   status?: string;
+  status_detail?: string;
+  amount?: string;
   date_of_expiration?: string | null;
-  transaction_amount?: number;
-  point_of_interaction?: {
-    transaction_data?: {
-      qr_code?: string;
-      qr_code_base64?: string;
-      ticket_url?: string;
-    };
+  payment_method?: {
+    id?: string;
+    type?: string;
+    qr_code?: string;
+    qr_code_base64?: string;
+    ticket_url?: string;
   };
 };
 
-/** Cria um Pix no Mercado Pago e devolve o QR + copia e cola. */
-export async function createPixPayment(input: {
+type MpOrderResponse = {
+  id?: string;
+  status?: string;
+  status_detail?: string;
+  total_amount?: string;
+  external_reference?: string | null;
+  date_of_expiration?: string | null;
+  transactions?: { payments?: MpOrderPayment[] };
+};
+
+function firstPayment(json: MpOrderResponse | null): MpOrderPayment | null {
+  return json?.transactions?.payments?.[0] ?? null;
+}
+
+function qrFrom(json: MpOrderResponse | null): {
+  qrCode: string | null;
+  qrCodeBase64: string | null;
+  ticketUrl: string | null;
+} {
+  const pm = firstPayment(json)?.payment_method;
+  return {
+    qrCode: pm?.qr_code ?? null,
+    qrCodeBase64: pm?.qr_code_base64 ?? null,
+    ticketUrl: pm?.ticket_url ?? null,
+  };
+}
+
+/**
+ * Cria uma order Pix no Mercado Pago e devolve o QR + copia e cola.
+ * A criação pode ser assíncrona (order "processing" sem QR): nesse caso
+ * reconsulta GET /v1/orders/{id} algumas vezes até o QR aparecer.
+ */
+export async function createPixOrder(input: {
   amount: number;
   description: string;
   externalReference: string;
@@ -114,19 +157,28 @@ export async function createPixPayment(input: {
   payerFirstName?: string;
   payerLastName?: string;
   identification?: { type: "CPF" | "CNPJ"; number: string };
-}): Promise<MpPixPayment> {
-  const webhookUrl = mpWebhookUrl();
+}): Promise<MpPixOrder> {
+  const amount = input.amount.toFixed(2);
+  const localExpiry = expiryIso(PIX_EXPIRES_DAYS);
 
-  const json = (await mpFetch("/v1/payments", {
+  const json = (await mpFetch("/v1/orders", {
     method: "POST",
     idempotencyKey: input.externalReference,
     body: {
-      transaction_amount: input.amount,
+      type: "online",
+      total_amount: amount,
       description: input.description.slice(0, 250),
       external_reference: input.externalReference,
-      payment_method_id: "pix",
-      date_of_expiration: expiryIso(PIX_EXPIRES_DAYS),
-      ...(webhookUrl ? { notification_url: webhookUrl } : {}),
+      processing_mode: "automatic",
+      transactions: {
+        payments: [
+          {
+            amount,
+            payment_method: { id: "pix", type: "bank_transfer" },
+            expiration_time: `P${PIX_EXPIRES_DAYS}D`,
+          },
+        ],
+      },
       payer: {
         email: input.payerEmail,
         ...(input.payerFirstName ? { first_name: input.payerFirstName } : {}),
@@ -141,50 +193,68 @@ export async function createPixPayment(input: {
           : {}),
       },
     },
-  })) as MpPixResponse;
+  })) as MpOrderResponse;
 
-  const data = json.point_of_interaction?.transaction_data;
+  let order = json;
+  let qr = qrFrom(order);
+
+  if (!order.id) {
+    throw new Error("Mercado Pago: order criada sem id.");
+  }
+  const orderId: string = order.id;
+
+  // Criação assíncrona: a order volta "processing" e o QR chega em seguida.
+  for (let attempt = 0; !(qr.qrCode || qr.ticketUrl) && attempt < 4; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const refreshed = await getOrder(orderId);
+    if (refreshed) {
+      order = refreshed.raw;
+      qr = qrFrom(order);
+    }
+  }
+
+  if (!qr.qrCode && !qr.ticketUrl) {
+    throw new Error(
+      "Mercado Pago: a order foi criada, mas o QR do Pix não ficou disponível. Tente gerar a cobrança novamente.",
+    );
+  }
+
+  const payment = firstPayment(order);
 
   return {
-    paymentId: String(json.id ?? ""),
-    status: json.status ?? "pending",
-    qrCode: data?.qr_code ?? null,
-    qrCodeBase64: data?.qr_code_base64 ?? null,
-    ticketUrl: data?.ticket_url ?? null,
-    amount: Number(json.transaction_amount ?? input.amount),
-    dateOfExpiration: json.date_of_expiration ?? null,
+    orderId,
+    status: order.status ?? payment?.status ?? "action_required",
+    ...qr,
+    amount: Number(order.total_amount ?? payment?.amount ?? input.amount),
+    dateOfExpiration:
+      payment?.date_of_expiration ?? order.date_of_expiration ?? localExpiry,
   };
 }
 
-export type MpPayment = {
+export type MpOrder = {
   id: string;
   status: string;
   statusDetail: string;
   amount: number;
   externalReference: string | null;
   dateApproved: string | null;
-};
-
-type MpGetResponse = {
-  id?: number | string;
-  status?: string;
-  status_detail?: string;
-  transaction_amount?: number;
-  external_reference?: string | null;
-  date_approved?: string | null;
+  /** Bruto da API — usado internamente para reler o QR. */
+  raw: MpOrderResponse;
 };
 
 /**
- * Consulta um pagamento pelo id.
+ * Consulta uma order pelo id (ORD…).
  * - null  = id inexistente/inválido (404/400 na API) — notificação falsa ou
  *           antiga; o chamador pode ignorar sem ficar reprocessando.
  * - lança erro em falha transitória (rede/5xx) — o webhook responde 500 e o
  *   Mercado Pago reenvia a notificação.
  */
-export async function getPayment(paymentId: string): Promise<MpPayment | null> {
-  if (!/^\d+$/.test(paymentId)) return null;
+export async function getOrder(orderId: string): Promise<MpOrder | null> {
+  // Ids de order da Orders API são alfanuméricos iniciando por letra (ORD…);
+  // ids numéricos puros são da Payments API legada e não resolvem aqui.
+  if (!/^[A-Za-z][A-Za-z0-9_-]{3,}$/.test(orderId)) return null;
 
-  const response = await fetch(`${MP_API}/v1/payments/${paymentId}`, {
+  const response = await fetch(`${MP_API}/v1/orders/${orderId}`, {
     headers: {
       Authorization: `Bearer ${mpAccessToken()}`,
       "Content-Type": "application/json",
@@ -194,18 +264,21 @@ export async function getPayment(paymentId: string): Promise<MpPayment | null> {
 
   if (response.status === 404 || response.status === 400) return null;
   if (!response.ok) {
-    throw new Error(`Mercado Pago: HTTP ${response.status} ao consultar pagamento`);
+    throw new Error(`Mercado Pago: HTTP ${response.status} ao consultar order`);
   }
 
-  const json = (await response.json()) as MpGetResponse;
+  const json = (await response.json()) as MpOrderResponse;
   if (!json.id) return null;
 
+  const payment = firstPayment(json);
+
   return {
-    id: String(json.id),
-    status: json.status ?? "",
-    statusDetail: json.status_detail ?? "",
-    amount: Number(json.transaction_amount ?? 0),
+    id: json.id,
+    status: json.status ?? payment?.status ?? "",
+    statusDetail: json.status_detail ?? payment?.status_detail ?? "",
+    amount: Number(json.total_amount ?? payment?.amount ?? 0),
     externalReference: json.external_reference ?? null,
-    dateApproved: json.date_approved ?? null,
+    dateApproved: (json as { date_approved?: string | null }).date_approved ?? null,
+    raw: json,
   };
 }

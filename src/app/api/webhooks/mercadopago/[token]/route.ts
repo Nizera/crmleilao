@@ -3,18 +3,22 @@ import { revalidatePath } from "next/cache";
 import type { NextRequest } from "next/server";
 
 import { settleChargeByReference } from "@/lib/charges-server";
-import { getPayment } from "@/lib/mercadopago";
+import { getOrder } from "@/lib/mercadopago";
 
 /**
- * Webhook do Mercado Pago (F3).
+ * Webhook do Mercado Pago (F3 — Orders API, tópico `order`).
  *
  * Segurança em três camadas:
  *  1. token secreto no path (`MP_WEBHOOK_TOKEN`), comparado em tempo constante;
- *  2. a notificação só traz o id — o pagamento é REBUSCADO na API do MP;
+ *  2. a notificação só traz o id — a order é REBUSCADA na API do MP;
  *  3. o `external_reference` precisa pertencer a uma cobrança nossa, com o
  *     mesmo valor (cheque em settleChargeByReference).
  *
- * Aceita POST (webhooks v2: {data:{id}}) e GET (IPN legado: ?topic=payment&id=).
+ * A URL precisa estar cadastrada em Suas integrações → Webhooks (evento
+ * Order) do painel do MP — com a Orders API não existe mais
+ * `notification_url` no body.
+ *
+ * Aceita POST (webhooks v2: {data:{id}}) e GET (query ?type=order&data.id=).
  */
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -25,38 +29,44 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
-/** Extrai o id numérico do pagamento da notificação (ou null para ignorar). */
-function extractPaymentId(body: unknown, searchParams: URLSearchParams): string | null {
+/** Ids de order da Orders API: alfanuméricos com prefixo (ORD…). */
+const ORDER_ID = /^[A-Za-z][A-Za-z0-9_-]{3,}$/;
+
+/** Extrai o id da order da notificação (ou null para ignorar). */
+function extractOrderId(body: unknown, searchParams: URLSearchParams): string | null {
   const topic =
     searchParams.get("topic") ?? searchParams.get("type") ?? searchParams.get("action");
-  if (topic && !/payment/i.test(topic.toLowerCase())) return null;
+  if (topic && !/order|payment/i.test(topic)) return null;
 
   const fromQuery = searchParams.get("id") ?? searchParams.get("data.id");
-  if (fromQuery && /^\d+$/.test(fromQuery)) return fromQuery;
+  if (fromQuery && ORDER_ID.test(fromQuery)) return fromQuery;
 
   if (body && typeof body === "object") {
     const record = body as Record<string, unknown>;
 
-    // Só notificações de pagamento: merchant_order etc. têm id próprio na
-    // sequência deles e seriam consultados como se fosse pagamento.
+    // Só notificações de order/pagamento: merchant_order etc. têm id próprio
+    // na sequência deles e seriam consultados como se fosse a nossa order
+    // (ids numéricos não passam no filtro ORDER_ID logo abaixo).
     const kind = [record.type, record.topic, record.action]
       .filter((value): value is string => typeof value === "string")
       .join(" ")
       .toLowerCase();
-    if (kind && !kind.includes("payment")) return null;
+    if (kind && !/order|payment/.test(kind)) return null;
 
     const data = record.data;
     if (data && typeof data === "object") {
       const inner = data as Record<string, unknown>;
-      if (inner.id != null && /^\d+$/.test(String(inner.id))) return String(inner.id);
+      if (inner.id != null && ORDER_ID.test(String(inner.id))) {
+        return String(inner.id);
+      }
     }
 
-    if (record.id != null && /^\d+$/.test(String(record.id))) {
+    if (record.id != null && ORDER_ID.test(String(record.id))) {
       return String(record.id);
     }
 
     if (typeof record.resource === "string") {
-      const match = record.resource.match(/\/(\d+)$/);
+      const match = record.resource.match(/\/([A-Za-z][A-Za-z0-9_-]{3,})$/);
       if (match) return match[1];
     }
   }
@@ -64,20 +74,25 @@ function extractPaymentId(body: unknown, searchParams: URLSearchParams): string 
   return null;
 }
 
-function targetForStatus(status: string) {
+/**
+ * Status da Orders API → status da cobrança local.
+ * Atenção à grafia: Orders usa `canceled` (um L), Payments usava `cancelled`.
+ */
+function targetForStatus(status: string, statusDetail: string) {
   switch (status) {
-    case "approved":
+    case "processed":
       return "approved" as const;
-    case "expired":
-      return "expired" as const;
-    case "cancelled":
-      return "cancelled" as const;
-    case "rejected":
+    case "canceled":
+      // A Orders API mesclou expiração e cancelamento em `canceled`.
+      return /cancel/i.test(statusDetail)
+        ? ("cancelled" as const)
+        : ("expired" as const);
+    case "failed":
     case "refunded":
     case "charged_back":
       return "rejected" as const;
     default:
-      // pending, in_process, authorized … nada a fazer ainda.
+      // action_required, processing … nada a fazer ainda.
       return null;
   }
 }
@@ -107,9 +122,9 @@ async function handle(
   if (request.method === "POST") {
     body = await request.json().catch(() => null);
   }
-  const paymentId = extractPaymentId(body, request.nextUrl.searchParams);
+  const orderId = extractOrderId(body, request.nextUrl.searchParams);
 
-  if (!paymentId) {
+  if (!orderId) {
     // Notificação de outro assunto (merchant_order, etc.) ou sem id: só ak.
     return new Response(JSON.stringify({ ok: true, ignored: true }), {
       status: 200,
@@ -117,9 +132,9 @@ async function handle(
     });
   }
 
-  let payment;
+  let order;
   try {
-    payment = await getPayment(paymentId);
+    order = await getOrder(orderId);
   } catch (error) {
     // Falha transitória: devolve 500 para o MP reenviar.
     console.error("[mercadopago-webhook] falha ao consultar:", error);
@@ -129,15 +144,15 @@ async function handle(
     });
   }
 
-  if (!payment) {
-    return new Response(JSON.stringify({ ok: true, ignored: "payment_not_found" }), {
+  if (!order) {
+    return new Response(JSON.stringify({ ok: true, ignored: "order_not_found" }), {
       status: 200,
       headers: JSON_HEADERS,
     });
   }
 
-  const target = targetForStatus(payment.status);
-  if (!target || !payment.externalReference?.startsWith("chg_")) {
+  const target = targetForStatus(order.status, order.statusDetail);
+  if (!target || !order.externalReference?.startsWith("chg_")) {
     return new Response(JSON.stringify({ ok: true, ignored: true }), {
       status: 200,
       headers: JSON_HEADERS,
@@ -147,11 +162,11 @@ async function handle(
   let result;
   try {
     result = await settleChargeByReference({
-      externalReference: payment.externalReference,
+      externalReference: order.externalReference,
       target,
-      mpPaymentId: payment.id,
-      amount: payment.amount,
-      paidAt: payment.dateApproved,
+      mpPaymentId: order.id,
+      amount: order.amount,
+      paidAt: order.dateApproved,
     });
   } catch (error) {
     console.error("[mercadopago-webhook] falha ao aplicar status:", error);
@@ -162,8 +177,8 @@ async function handle(
   }
 
   console.log(
-    `[mercadopago-webhook] pagamento ${payment.id} → ${payment.status}` +
-      ` (cobrança ${payment.externalReference}): ${result.ok ? "aplicado" : result.reason}`,
+    `[mercadopago-webhook] order ${order.id} → ${order.status}` +
+      ` (cobrança ${order.externalReference}): ${result.ok ? "aplicado" : result.reason}`,
   );
 
   if (result.ok) {

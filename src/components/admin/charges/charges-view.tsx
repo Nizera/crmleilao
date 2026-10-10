@@ -173,8 +173,10 @@ export function ChargesView({
       )}
       {mpReady && !webhookReady && (
         <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
-          Webhook não configurado (<code>MP_WEBHOOK_TOKEN</code>): sem ele, os
-          pagamentos precisam ser confirmados manualmente por aqui.
+          Webhook não configurado (<code>MP_WEBHOOK_TOKEN</code>): defina no .env,
+          reinicie e cadastre a URL em Suas integrações → Webhooks (evento
+          Order) no painel do MP. Sem isso, os pagamentos precisam ser
+          confirmados manualmente por aqui.
         </p>
       )}
 
