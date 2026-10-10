@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Boxes, Coins, Image, Package } from "lucide-react";
 
-import { listCustomerCharges, listLots, requireCustomer } from "@/lib/dal";
+import { listCustomerCharges, listCustomerShipments, listLots, requireCustomer } from "@/lib/dal";
 import {
   Card,
   CardContent,
@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { ClientChargesCard } from "@/components/client/charges-card";
+import { ClientShipmentsCard } from "@/components/client/shipments-card";
 import { isChargeActive } from "@/lib/charges";
 import { formatBRL, formatDateBR } from "@/lib/lots";
 
@@ -50,9 +51,10 @@ const roadmap = [
 
 export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
-  const [lots, charges] = await Promise.all([
+  const [lots, charges, shipments] = await Promise.all([
     listLots(),
     listCustomerCharges(customer.id),
+    listCustomerShipments(customer.id),
   ]);
 
   const hasActiveCharge = charges.some((charge) => isChargeActive(charge));
@@ -109,6 +111,8 @@ export default async function ClientHomePage() {
       </Card>
 
       <ClientChargesCard charges={charges} canGenerate={canGenerate} />
+
+      <ClientShipmentsCard shipments={shipments} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {roadmap.map((item) => (

@@ -43,7 +43,7 @@ export async function saveAppSettings(
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
 
-    const patch = {
+    const basePatch = {
       bid_increment: Number(parsed.data.bid_increment.replace(",", ".")),
       shipping_weekday: Number(parsed.data.shipping_weekday),
       wa_notice_template: parsed.data.wa_notice_template,
@@ -51,13 +51,31 @@ export async function saveAppSettings(
       wa_shipping_template: parsed.data.wa_shipping_template,
       updated_by: profile.id,
     };
+    const originPatch = {
+      origin_name: parsed.data.origin_name || null,
+      origin_address: parsed.data.origin_address || null,
+      origin_number: parsed.data.origin_number || null,
+      origin_district: parsed.data.origin_district || null,
+      origin_city: parsed.data.origin_city || null,
+      origin_state: parsed.data.origin_state || null,
+      origin_cep: parsed.data.origin_cep || null,
+    };
 
     const supabase = await createClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("app_settings")
-      .update(patch)
+      .update({ ...basePatch, ...originPatch })
       .eq("id", true)
       .select("id");
+
+    // Migração 0006 (colunas de origem) ainda não aplicada: salva só o resto.
+    if (error && /origin_|does not exist|schema cache/i.test(error.message)) {
+      ({ data, error } = await supabase
+        .from("app_settings")
+        .update(basePatch)
+        .eq("id", true)
+        .select("id"));
+    }
 
     if (error) return failure(friendly(error));
 
@@ -66,8 +84,15 @@ export async function saveAppSettings(
       const admin = createAdminClient();
       const { error: upsertError } = await admin
         .from("app_settings")
-        .upsert({ id: true, ...patch });
-      if (upsertError) return failure(friendly(upsertError));
+        .upsert({ id: true, ...basePatch, ...originPatch });
+      if (upsertError && /origin_/i.test(upsertError.message)) {
+        const retry = await admin
+          .from("app_settings")
+          .upsert({ id: true, ...basePatch });
+        if (retry.error) return failure(friendly(retry.error));
+      } else if (upsertError) {
+        return failure(friendly(upsertError));
+      }
     }
 
     revalidatePath("/admin/configuracao");

@@ -58,6 +58,13 @@ export function SettingsForm({ settings, disabled }: Props) {
       wa_notice_template: settings.wa_notice_template,
       wa_payment_template: settings.wa_payment_template,
       wa_shipping_template: settings.wa_shipping_template,
+      origin_name: settings.origin_name,
+      origin_address: settings.origin_address,
+      origin_number: settings.origin_number,
+      origin_district: settings.origin_district,
+      origin_city: settings.origin_city,
+      origin_state: settings.origin_state,
+      origin_cep: settings.origin_cep,
     },
   });
 
@@ -170,6 +177,105 @@ export function SettingsForm({ settings, disabled }: Props) {
             </FieldDescription>
             <FieldError>{errors.shipping_weekday?.message}</FieldError>
           </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Endereço de origem (envios)</CardTitle>
+          <CardDescription>
+            Remetente das etiquetas SuperFrete (Fase 4). Enquanto estiver
+            incompleto, o botão “Novo envio” fica bloqueado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 sm:grid sm:grid-cols-2">
+          <Field data-invalid={!!errors.origin_name}>
+            <FieldLabel htmlFor="origin_name">Nome do remetente</FieldLabel>
+            <Input
+              id="origin_name"
+              placeholder="Nome e sobrenome (ou Loja Nome)"
+              maxLength={50}
+              disabled={disabled}
+              {...form.register("origin_name")}
+            />
+            <FieldError>{errors.origin_name?.message}</FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.origin_address}>
+            <FieldLabel htmlFor="origin_address">Rua</FieldLabel>
+            <Input
+              id="origin_address"
+              placeholder="Rua das Flores"
+              maxLength={50}
+              disabled={disabled}
+              {...form.register("origin_address")}
+            />
+            <FieldError>{errors.origin_address?.message}</FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.origin_number}>
+            <FieldLabel htmlFor="origin_number">Número</FieldLabel>
+            <Input
+              id="origin_number"
+              placeholder="123 (ou S/N)"
+              maxLength={10}
+              disabled={disabled}
+              {...form.register("origin_number")}
+            />
+            <FieldError>{errors.origin_number?.message}</FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.origin_district}>
+            <FieldLabel htmlFor="origin_district">Bairro</FieldLabel>
+            <Input
+              id="origin_district"
+              placeholder="Centro"
+              maxLength={60}
+              disabled={disabled}
+              {...form.register("origin_district")}
+            />
+            <FieldError>{errors.origin_district?.message}</FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.origin_city}>
+            <FieldLabel htmlFor="origin_city">Cidade</FieldLabel>
+            <Input
+              id="origin_city"
+              placeholder="São Paulo"
+              maxLength={50}
+              disabled={disabled}
+              {...form.register("origin_city")}
+            />
+            <FieldError>{errors.origin_city?.message}</FieldError>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field data-invalid={!!errors.origin_state}>
+              <FieldLabel htmlFor="origin_state">UF</FieldLabel>
+              <Input
+                id="origin_state"
+                placeholder="SP"
+                maxLength={2}
+                className="uppercase"
+                disabled={disabled}
+                {...form.register("origin_state")}
+              />
+              <FieldError>{errors.origin_state?.message}</FieldError>
+            </Field>
+
+            <Field data-invalid={!!errors.origin_cep}>
+              <FieldLabel htmlFor="origin_cep">CEP</FieldLabel>
+              <Input
+                id="origin_cep"
+                inputMode="numeric"
+                placeholder="01310100"
+                maxLength={8}
+                disabled={disabled}
+                {...form.register("origin_cep")}
+              />
+              <FieldError>{errors.origin_cep?.message}</FieldError>
+            </Field>
+          </div>
         </CardContent>
       </Card>
 
