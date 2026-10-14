@@ -42,6 +42,8 @@ export type LotCustomer = {
   id: string;
   name: string | null;
   phone_e164: string;
+  /** Preenchido quando o cliente já criou a senha e entrou no painel. */
+  auth_user_id?: string | null;
 };
 
 export type Lot = LotRow & {

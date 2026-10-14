@@ -17,7 +17,7 @@ import {
   type ChargeStatus,
 } from "@/lib/charges";
 import { requireAdmin, requireCustomer, searchCustomers, type Customer } from "@/lib/dal";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -50,6 +50,7 @@ export async function searchChargeCustomers(
     await requireAdmin();
     return { ok: true, data: await searchCustomers(query) };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -79,6 +80,7 @@ export async function loadChargeContext(customerId: string): Promise<
       },
     };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -110,35 +112,42 @@ export async function createChargeAction(
     revalidateChargePaths();
     return { ok: true, data: { charge } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
 
 /**
- * Auto-atendimento no painel: o cliente gera o Pix de todos os lotes
- * elegíveis dele de uma vez.
+ * Auto-atendimento no painel: o cliente gera o Pix dos lotes que marcou.
  */
-export async function createSelfChargeAction(): Promise<ActionResult<{ charge: Charge }>> {
+export async function createSelfChargeAction(
+  lotIds: string[],
+): Promise<ActionResult<{ charge: Charge }>> {
   try {
     const { customer } = await requireCustomer();
-    const { activeCharge, eligibleLots } = await getChargeContext(customer.id);
+    const parsed = chargeCreateSchema.safeParse({
+      customer_id: customer.id,
+      lot_ids: lotIds,
+    });
+    if (!parsed.success) {
+      return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
+    }
 
+    const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
       return failure("Você já tem uma cobrança aguardando pagamento.");
-    }
-    if (eligibleLots.length === 0) {
-      return failure("Você não tem lotes aguardando pagamento.");
     }
 
     const charge = await createCharge({
       customerId: customer.id,
-      lotIds: eligibleLots.map((lot) => lot.id),
+      lotIds: parsed.data.lot_ids,
       createdBy: null,
     });
 
     revalidateChargePaths();
     return { ok: true, data: { charge } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -157,6 +166,7 @@ export async function cancelChargeAction(id: string): Promise<ActionResult> {
     revalidateChargePaths();
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -175,6 +185,7 @@ export async function markChargePaidAction(id: string): Promise<ActionResult> {
     revalidateChargePaths();
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

@@ -32,7 +32,7 @@ export const SHIPMENT_COLUMNS = [
   "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
   "price, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
-  "cancelled_at, notes, events, created_by, created_at, updated_at,",
+  "cancelled_at, events, created_by, created_at, updated_at,",
   "customer:customers(id, name, phone_e164)",
 ].join(" ");
 
@@ -159,6 +159,181 @@ export async function listEligibleShipmentLots(
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Fila de envios (por cliente e período)                                     */
+/* -------------------------------------------------------------------------- */
+
+export type ShipmentQueueLot = {
+  id: string;
+  code: string;
+  title: string;
+  arremate_value: number;
+  status: "pending_payment" | "paid" | "shipped" | "delivered" | "cancelled";
+  shipping_date: string | null;
+};
+
+export type ShipmentQueueRow = {
+  customerId: string;
+  name: string | null;
+  phone_e164: string;
+  lots: ShipmentQueueLot[];
+  paidTotal: number;
+  unpaidTotal: number;
+  shippingDate: string | null;
+  pendingShipment: Shipment | null;
+};
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Fila de trabalho da tela Envios: uma linha por cliente que arrematou no
+ * período, com lotes pagos e não pagos, e o envio ainda não concluído (se
+ * houver). O período é por `shipping_date` — a data em que o lote deve sair.
+ */
+export async function listShipmentQueue(params: {
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  q?: string;
+}): Promise<ShipmentQueueRow[]> {
+  const admin = createAdminClient();
+
+  let query = admin
+    .from("lots")
+    .select(
+      "id, code, title, arremate_value, status, shipping_date, customer_id, customers(id, name, phone_e164)",
+    )
+    .neq("status", "cancelled")
+    .order("shipping_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (params.periodFrom) query = query.gte("shipping_date", params.periodFrom);
+  if (params.periodTo) query = query.lte("shipping_date", params.periodTo);
+
+  const { data: lots, error } = await query;
+  if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
+
+  const rows = (lots ?? []) as unknown as {
+    id: string;
+    code: string;
+    title: string;
+    arremate_value: number;
+    status: ShipmentQueueLot["status"];
+    shipping_date: string | null;
+    customer_id: string;
+    customers: {
+      id: string;
+      name: string | null;
+      phone_e164: string;
+    } | null;
+  }[];
+
+  if (rows.length === 0) return [];
+
+  // Envios ativos e seus vínculos, para marcar o que já saiu.
+  const { data: active, error: activeError } = await admin
+    .from("shipments")
+    .select(SHIPMENT_COLUMNS)
+    .neq("status", "cancelled");
+  if (activeError) {
+    throw new Error(`Falha ao listar envios: ${activeError.message}`);
+  }
+
+  const activeRows = (active ?? []) as unknown as Shipment[];
+  const activeIds = activeRows.map((row) => row.id);
+
+  const lotToShipment = new Map<string, Shipment>();
+  if (activeIds.length > 0) {
+    const { data: links, error: linksError } = await admin
+      .from("shipment_lots")
+      .select("lot_id, shipment_id")
+      .in("shipment_id", activeIds);
+    if (linksError) {
+      throw new Error(`Falha ao listar vínculos: ${linksError.message}`);
+    }
+    const byId = new Map(activeRows.map((row) => [row.id, row]));
+    for (const link of (links ?? []) as unknown as {
+      lot_id: string;
+      shipment_id: string;
+    }[]) {
+      const shipment = byId.get(link.shipment_id);
+      if (shipment) lotToShipment.set(link.lot_id, shipment);
+    }
+  }
+
+  const byCustomer = new Map<
+    string,
+    {
+      name: string | null;
+      phone_e164: string;
+      lots: ShipmentQueueLot[];
+      pendingShipment: Shipment | null;
+    }
+  >();
+
+  for (const row of rows) {
+    const customer = row.customers;
+    if (!customer) continue;
+
+    const entry = byCustomer.get(row.customer_id) ?? {
+      name: customer.name,
+      phone_e164: customer.phone_e164,
+      lots: [],
+      pendingShipment: null,
+    };
+
+    entry.lots.push({
+      id: row.id,
+      code: row.code,
+      title: row.title,
+      arremate_value: Number(row.arremate_value),
+      status: row.status,
+      shipping_date: row.shipping_date,
+    });
+
+    const shipment = lotToShipment.get(row.id);
+    if (shipment && !entry.pendingShipment) entry.pendingShipment = shipment;
+
+    byCustomer.set(row.customer_id, entry);
+  }
+
+  const queue: ShipmentQueueRow[] = [];
+  for (const [customerId, entry] of byCustomer) {
+    const paidTotal = round2(
+      entry.lots
+        .filter((lot) => lot.status !== "pending_payment")
+        .reduce((sum, lot) => sum + lot.arremate_value, 0),
+    );
+    const unpaidTotal = round2(
+      entry.lots
+        .filter((lot) => lot.status === "pending_payment")
+        .reduce((sum, lot) => sum + lot.arremate_value, 0),
+    );
+
+    queue.push({
+      customerId,
+      name: entry.name,
+      phone_e164: entry.phone_e164,
+      lots: entry.lots,
+      paidTotal,
+      unpaidTotal,
+      shippingDate:
+        entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? null,
+      pendingShipment: entry.pendingShipment,
+    });
+  }
+
+  const needle = params.q?.trim().toLowerCase() ?? "";
+  if (!needle) return queue;
+
+  const digits = needle.replace(/\D/g, "");
+  return queue.filter((row) => {
+    const name = row.name?.toLowerCase() ?? "";
+    return name.includes(needle) || (digits.length >= 4 && row.phone_e164.includes(digits));
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Origem e segredo do webhook                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -210,14 +385,14 @@ export async function getOrigin(): Promise<OriginAddress | null> {
 export async function getWebhookSecret(): Promise<string | null> {
   const admin = createAdminClient();
   const { data } = await admin
-    .from("app_settings")
-    .select("superfrete_webhook_secret")
-    .eq("id", true)
+    .from("app_secrets")
+    .select("value")
+    .eq("key", "superfrete_webhook_secret")
     .maybeSingle();
-  return data?.superfrete_webhook_secret?.trim() || null;
+  return data?.value?.trim() || null;
 }
 
-/** Cadastra o webhook (uma vez) e grava o secret em app_settings. */
+/** Cadastra o webhook (uma vez) e grava o secret em `app_secrets`. */
 export async function ensureSuperfreteWebhook(): Promise<{ created: boolean }> {
   const existing = await getWebhookSecret();
   if (existing) return { created: false };
@@ -229,14 +404,16 @@ export async function ensureSuperfreteWebhook(): Promise<{ created: boolean }> {
 
   const admin = createAdminClient();
   const { error } = await admin
-    .from("app_settings")
-    .update({ superfrete_webhook_secret: secretToken })
-    .eq("id", true);
+    .from("app_secrets")
+    .upsert(
+      { key: "superfrete_webhook_secret", value: secretToken },
+      { onConflict: "key" },
+    );
 
   if (error) {
     throw new Error(
       `Webhook criado na SuperFrete, mas não foi possível gravar o segredo: ${error.message}. ` +
-        "Aplique a migração 0006_shipments.sql e ative de novo.",
+        "Aplique a migração 0009_security_hardening.sql e ative de novo.",
     );
   }
 
@@ -580,14 +757,61 @@ export async function payShipment(id: string): Promise<Shipment> {
     throw new Error("Este envio não está aguardando pagamento.");
   }
 
+  // Claim atômico: só quem leva o UPDATE dispara o checkout. Sem isso dois
+  // cliques (ou dois admins) chamam checkoutOrders ao mesmo tempo e debitem a
+  // carteira duas vezes. Se o pagamento falhar, volta para `pending` — quem
+  // conseguir o claim de novo tenta em seguida.
+  const admin = createAdminClient();
+  const { data: claimed, error: claimError } = await admin
+    .from("shipments")
+    .update({ status: "released" })
+    .eq("id", shipment.id)
+    .eq("status", "pending")
+    .select("id");
+
+  if (claimError) throw new Error(`Falha ao pagar etiqueta: ${claimError.message}`);
+  if (!claimed || claimed.length === 0) {
+    throw new Error("O pagamento desta etiqueta já está em andamento.");
+  }
+
+  // `applyStatusChange` compara contra o status do objeto local e usa um
+  // UPDATE condicional — sem sincronizar aqui, o patch (rastreio, etiqueta,
+  // preço) não seria aplicado.
+  shipment.status = "released";
+
+  // Fase 1: checkout. O saldo ainda não saiu, então se falhar devolver o
+  // claim para `pending` é seguro — a próxima tentativa recomeça do zero.
   try {
     await checkoutOrders([shipment.sf_order_id]);
-    const info = await getOrderInfo(shipment.sf_order_id);
-    await applyOrderInfo(shipment, info);
   } catch (error) {
+    const { error: revertError } = await admin
+      .from("shipments")
+      .update({ status: "pending" })
+      .eq("id", shipment.id)
+      .eq("status", "released")
+      .select("id");
+    if (revertError) console.error("[shipments] reverter claim:", revertError);
+    shipment.status = "pending";
+
     throw new Error(
       `${error instanceof Error ? error.message : "Falha ao pagar a etiqueta."} ` +
         "Confira o saldo da carteira em web.superfrete.com.",
+    );
+  }
+
+  // Fase 2: o débito JÁ aconteceu. Daqui em diante não se devolve o claim —
+  // reverter para `pending` faria o próximo clique chamar o checkout de novo
+  // e debitar a carteira duas vezes. Mantemos `released` (pagamento aceito na
+  // SuperFrete) para o "Sincronizar" da tela concluir rastreio e etiqueta.
+  try {
+    const info = await getOrderInfo(shipment.sf_order_id);
+    await applyOrderInfo(shipment, info);
+  } catch (error) {
+    console.error("[shipments] etiqueta paga, falha ao ler o pedido:", error);
+    throw new Error(
+      "Etiqueta paga, mas não foi possível ler os dados do envio. " +
+        "Use “Sincronizar” para concluir. " +
+        `(${error instanceof Error ? error.message : "erro desconhecido"})`,
     );
   }
 

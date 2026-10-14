@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/dal";
 import { settingsFormSchema } from "@/lib/settings";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -99,6 +99,7 @@ export async function saveAppSettings(
     revalidatePath("/admin/lotes");
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

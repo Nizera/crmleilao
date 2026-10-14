@@ -50,7 +50,6 @@ export type Charge = {
   ticket_url: string | null;
   expires_at: string | null;
   paid_at: string | null;
-  notes: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

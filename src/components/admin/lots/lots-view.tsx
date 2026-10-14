@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
+  KeyRound,
   MessageCircle,
   MoreHorizontal,
   Pencil,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { inviteLinkForCustomer } from "@/app/actions/invites";
 import { logWaMessage, setLotStatus } from "@/app/actions/lots";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
@@ -121,6 +123,39 @@ export function LotsView({
     });
   };
 
+  // Cliente ainda sem senha: o botão manda o convite de acesso em vez da
+  // mensagem de lote. Assim que ele define a senha, volta a mensagem.
+  const sendInvite = (lot: Lot) => {
+    const customer = lot.customer;
+    if (!customer) return;
+    startTransition(async () => {
+      const result = await inviteLinkForCustomer(customer.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const url = result.data.url;
+      const first = customer.name?.trim().split(" ")[0];
+      const text = `Oi${first ? `, ${first}` : ""}! Seu acesso ao painel do Caras das Legends: ${url}`;
+      const link = waMessageLink(customer.phone_e164, text);
+      window.open(link, "_blank", "noopener,noreferrer");
+
+      const logged = await logWaMessage({
+        customer_id: customer.id,
+        kind: "access_invite",
+        text_body: text,
+        link,
+      });
+      if (!logged.ok) {
+        toast.info(`Convite aberto, mas o registro falhou: ${logged.error}`);
+      } else {
+        toast.success("Convite aberto no WhatsApp.");
+      }
+    });
+  };
+
+  const hasAccess = (lot: Lot) => Boolean(lot.customer?.auth_user_id);
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -227,13 +262,23 @@ export function LotsView({
                         <Pencil />
                         Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!lot.customer}
-                        onSelect={() => sendWhatsApp(lot)}
-                      >
-                        <MessageCircle />
-                        Enviar no WhatsApp
-                      </DropdownMenuItem>
+                      {hasAccess(lot) ? (
+                        <DropdownMenuItem
+                          disabled={!lot.customer}
+                          onSelect={() => sendWhatsApp(lot)}
+                        >
+                          <MessageCircle />
+                          Mensagem do lote
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          disabled={!lot.customer}
+                          onSelect={() => sendInvite(lot)}
+                        >
+                          <KeyRound />
+                          Enviar convite
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs text-muted-foreground">
                         Mudar status

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { logWaMessage } from "@/app/actions/lots";
 import { requireAdmin, searchCustomers, type Customer } from "@/lib/dal";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import {
   quoteFrete,
   sfConfigured,
@@ -52,6 +52,7 @@ export async function searchShipmentCustomers(
     await requireAdmin();
     return { ok: true, data: await searchCustomers(query) };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -124,6 +125,7 @@ export async function loadShipmentContext(
       },
     };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -226,6 +228,7 @@ export async function quoteShipmentAction(input: {
 
     return { ok: true, data: options };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -267,6 +270,7 @@ export async function emitShipmentAction(input: {
     revalidateShipmentPaths();
     return { ok: true, data: result };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -283,6 +287,7 @@ export async function payShipmentAction(id: string): Promise<ActionResult<Shipme
     revalidateShipmentPaths();
     return { ok: true, data: shipment };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -301,6 +306,7 @@ export async function syncShipmentAction(
     revalidateShipmentPaths();
     return { ok: true, data: shipment };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -317,6 +323,7 @@ export async function cancelShipmentAction(id: string): Promise<ActionResult<Shi
     revalidateShipmentPaths();
     return { ok: true, data: shipment };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -342,6 +349,7 @@ export async function printShipmentAction(
     revalidateShipmentPaths();
     return { ok: true, data: result };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -358,6 +366,7 @@ export async function ensureWebhookAction(): Promise<ActionResult<{ created: boo
     revalidateShipmentPaths();
     return { ok: true, data: result };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -404,6 +413,7 @@ export async function getShippingNoticeAction(id: string): Promise<
       data: { text, link: waMessageLink(phone, text) },
     };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -429,6 +439,7 @@ export async function logShippingNotice(
       link,
     });
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

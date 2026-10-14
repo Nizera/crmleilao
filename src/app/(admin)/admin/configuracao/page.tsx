@@ -1,4 +1,9 @@
-import { getAppSettings, listTeam, requireAdmin } from "@/lib/dal";
+import {
+  getAppSettings,
+  listPendingInvites,
+  listTeam,
+  requireAdmin,
+} from "@/lib/dal";
 import { mpWebhookUrl } from "@/lib/mercadopago";
 import {
   ConfigView,
@@ -28,6 +33,10 @@ export default async function ConfiguracaoPage() {
   const { settings, ready } = await getAppSettings();
   const team = canEdit ? await listTeam().catch(() => null) : null;
 
+  // Convites pendentes trazem o token cru (vira link de acesso ao painel do
+  // cliente): só o dono lista. Sem isso, staff/viewer pegariam acesso.
+  const invites = canEdit ? await listPendingInvites().catch(() => []) : [];
+
   const mpKey = process.env.MP_ACCESS_TOKEN;
   const superfreteToken = process.env.SUPERFRETE_TOKEN;
   const whatsappToken = process.env.WHATSAPP_TOKEN;
@@ -35,11 +44,13 @@ export default async function ConfiguracaoPage() {
   const integrations: IntegrationInfo[] = [
     integrationStatus("Mercado Pago (Pix)", "Fase 3", mpKey, () => {
       const test = mpKey?.trim().startsWith("TEST-");
-      const webhook = mpWebhookUrl();
+      const webhook = canEdit ? mpWebhookUrl() : null;
       return `${test ? "token de teste" : "token de produção"}${
         webhook
           ? ` — cadastre a URL em Suas integrações → Webhooks (evento Order): ${webhook}`
-          : " — sem MP_WEBHOOK_TOKEN (confirmação manual)"
+          : canEdit
+            ? " — sem MP_WEBHOOK_TOKEN (confirmação manual)"
+            : " — URL do webhook visível apenas ao dono"
       }`;
     }),
     integrationStatus("SuperFrete (fretes)", "Fase 4", superfreteToken, () =>
@@ -75,6 +86,7 @@ export default async function ConfiguracaoPage() {
       settings={settings}
       team={team}
       integrations={integrations}
+      invites={invites}
     />
   );
 }

@@ -13,7 +13,7 @@ export default async function LotesPage() {
   await requireAdmin();
   const [{ settings }, lots, players, stock] = await Promise.all([
     getAppSettings(),
-    listLots(),
+    listLots({ notes: true }),
     listPlayers(),
     listStock(),
   ]);

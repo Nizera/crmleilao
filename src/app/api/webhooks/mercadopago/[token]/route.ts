@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import type { NextRequest } from "next/server";
 
@@ -8,10 +8,12 @@ import { getOrder } from "@/lib/mercadopago";
 /**
  * Webhook do Mercado Pago (F3 — Orders API, tópico `order`).
  *
- * Segurança em três camadas:
+ * Segurança em quatro camadas:
  *  1. token secreto no path (`MP_WEBHOOK_TOKEN`), comparado em tempo constante;
- *  2. a notificação só traz o id — a order é REBUSCADA na API do MP;
- *  3. o `external_reference` precisa pertencer a uma cobrança nossa, com o
+ *  2. assinatura HMAC `x-signature` (MP_WEBHOOK_SECRET) — veda replay/forja
+ *     de origem mesmo com o token vazado;
+ *  3. a notificação só traz o id — a order é REBUSCADA na API do MP;
+ *  4. o `external_reference` precisa pertencer a uma cobrança nossa, com o
  *     mesmo valor (cheque em settleChargeByReference).
  *
  * A URL precisa estar cadastrada em Suas integrações → Webhooks (evento
@@ -23,10 +25,107 @@ import { getOrder } from "@/lib/mercadopago";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+/** Tolerância de replay: assinatura com `ts` além disto é recusada. */
+const SIGNATURE_MAX_AGE_MS = 10 * 60 * 1000;
+
 function safeEqual(a: string, b: string): boolean {
   const ha = createHash("sha256").update(a, "utf8").digest();
   const hb = createHash("sha256").update(b, "utf8").digest();
   return timingSafeEqual(ha, hb);
+}
+
+/**
+ * Ids candidatos a entrar no manifesto da assinatura.
+ *
+ * O MP calcula o HMAC sobre `id:<data.id>`, mas o id aparece em lugares
+ * diferentes conforme o formato: GET legado traz `?data.id=` na query, o
+ * webhook v2 de POST traz `{data:{id}}` no body. Assinar só com a query faria
+ * todo POST de pagamento cair em 401 com o secret configurado — então o
+ * manifesto é montado para cada candidato e basta um bater.
+ *
+ * Lista vazia (nenhum id em lugar nenhum) vira `[""]`: o par `id:` é omitido,
+ * como manda a documentação.
+ */
+function signatureIdCandidates(body: unknown, search: URLSearchParams): string[] {
+  const candidates: (string | null)[] = [
+    search.get("data.id"),
+    search.get("id"),
+  ];
+
+  if (body && typeof body === "object") {
+    const data = (body as Record<string, unknown>).data;
+    if (data && typeof data === "object") {
+      const innerId = (data as Record<string, unknown>).id;
+      if (innerId != null) candidates.push(String(innerId));
+    }
+  }
+
+  const unique = [
+    ...new Set(
+      candidates.filter((value): value is string => !!value && value.length > 0),
+    ),
+  ];
+  return unique.length > 0 ? unique : [""];
+}
+
+/**
+ * Valida `x-signature` conforme o algoritmo oficial do MP:
+ *   1. extrai `ts` e `v1` do header (`ts=…,v1=…`);
+ *   2. monta o manifesto `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`
+ *      para cada id candidato, omitindo os pares cujos valores não vieram;
+ *   3. HMAC-SHA256(secret, manifesto) em hex;
+ *   4. compara com `v1` em tempo constante.
+ *
+ * Retorna `null` quando válido, ou o motivo da rejeição.
+ */
+function verifySignature(
+  request: NextRequest,
+  dataIds: string[],
+): string | null {
+  const secret = process.env.MP_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    // Sem secret configurado não há o que validar — deixa passar e avisa.
+    // As camadas de token de path + reconsulta da order + checagem de valor
+    // já impedem marcar como pago algo que não foi pago.
+    console.warn(
+      "[mercadopago-webhook] MP_WEBHOOK_SECRET não definido — assinatura x-signature " +
+        "NÃO está sendo validada. Configure em Suas integrações > Webhooks.",
+    );
+    return null;
+  }
+
+  const header = request.headers.get("x-signature");
+  if (!header) return "header ausente";
+
+  const parts = new Map<string, string>();
+  for (const chunk of header.split(",")) {
+    const idx = chunk.indexOf("=");
+    if (idx <= 0) continue;
+    parts.set(chunk.slice(0, idx).trim(), chunk.slice(idx + 1).trim());
+  }
+
+  const ts = parts.get("ts");
+  const v1 = parts.get("v1");
+  if (!ts || !v1) return "ts/v1 ausentes no header";
+
+  const age = Date.now() - Number(ts);
+  if (!Number.isFinite(age) || Math.abs(age) > SIGNATURE_MAX_AGE_MS) {
+    return "assinatura fora da janela de tolerância";
+  }
+
+  const requestId = request.headers.get("x-request-id") ?? "";
+
+  for (const dataId of dataIds) {
+    const manifest =
+      (dataId ? `id:${dataId};` : "") +
+      (requestId ? `request-id:${requestId};` : "") +
+      `ts:${ts};`;
+
+    const digest = createHmac("sha256", secret).update(manifest).digest("hex");
+    if (safeEqual(digest, v1)) return null;
+  }
+
+  return "hmac não confere";
 }
 
 /** Ids de order da Orders API: alfanuméricos com prefixo (ORD…). */
@@ -118,10 +217,27 @@ async function handle(
     });
   }
 
+  // O body é lido ANTES da assinatura: no webhook v2 o `data.id` está nele e
+  // entra no manifesto. Só existe um parse — depois reaproveitamos `body`.
   let body: unknown = null;
   if (request.method === "POST") {
     body = await request.json().catch(() => null);
   }
+
+  const signatureError = verifySignature(
+    request,
+    signatureIdCandidates(body, request.nextUrl.searchParams),
+  );
+  if (signatureError) {
+    console.warn(
+      `[mercadopago-webhook] assinatura rejeitada: ${signatureError}`,
+    );
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: JSON_HEADERS,
+    });
+  }
+
   const orderId = extractOrderId(body, request.nextUrl.searchParams);
 
   if (!orderId) {

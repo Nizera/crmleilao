@@ -8,6 +8,21 @@ import { customerExistsByPhone } from "@/lib/dal";
 import { isShippingComplete } from "@/lib/customers";
 import { hashInviteToken } from "@/lib/invites";
 import { toE164 } from "@/lib/phone";
+import { allow, clientIp } from "@/lib/ratelimit";
+
+const RATE_MSG = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
+
+/**
+ * Mensagem genérica para erro que veio do banco/auth.
+ *
+ * As server actions de login são públicas: propagar `error.message` expõe
+ * estrutura de schema, política de RLS e detalhes internos a qualquer
+ * visitante. O detalhe original vai para o log do servidor.
+ */
+function dbError(scope: string, error: { message: string }): string {
+  console.error(`[auth] ${scope}: ${error.message}`);
+  return "Não foi possível concluir agora. Tente novamente em instantes.";
+}
 
 export type AuthFormState = {
   error?: string;
@@ -27,6 +42,10 @@ export async function adminSignIn(
 
   if (!email || !password) {
     return { error: "Informe e-mail e senha." };
+  }
+
+  if (!(await allow("admin-signin", email.toLowerCase(), [await clientIp()]))) {
+    return { error: RATE_MSG };
   }
 
   const supabase = await createClient();
@@ -94,6 +113,10 @@ export async function customerSignIn(
     return { error: "Informe sua senha." };
   }
 
+  if (!(await allow("customer-signin", phone, [await clientIp()]))) {
+    return { error: RATE_MSG };
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({
     phone,
@@ -107,18 +130,22 @@ export async function customerSignIn(
   await redirectAfterCustomerLogin(supabase, data.user?.id);
 }
 
-/** Procura o usuário auth por telefone (quando o OTP já havia criado um). */
+/**
+ * Procura o usuário auth por telefone (quando o OTP já havia criado um).
+ * O GoTrue grava `auth.users.phone` sem o "+", então comparamos sem sinal.
+ */
 async function findAuthUserByPhone(
   admin: ReturnType<typeof createAdminClient>,
   phone: string
 ): Promise<string | null> {
+  const wanted = phone.replace("+", "");
   for (let page = 1; page <= 10; page++) {
     const { data, error } = await admin.auth.admin.listUsers({
       page,
       perPage: 100,
     });
     if (error || !data) return null;
-    const hit = data.users.find((u) => u.phone === phone);
+    const hit = data.users.find((u) => u.phone?.replace("+", "") === wanted);
     if (hit) return hit.id;
     if (data.users.length < 100) return null;
   }
@@ -148,6 +175,10 @@ export async function acceptCustomerInvite(
     return { error: "As senhas não conferem." };
   }
 
+  if (!(await allow("invite-accept", await clientIp()))) {
+    return { error: RATE_MSG };
+  }
+
   const admin = createAdminClient();
 
   const { data: invite, error: inviteError } = await admin
@@ -165,7 +196,7 @@ export async function acceptCustomerInvite(
           "Convites indisponíveis: aplique a migração 0007_customer_invites.sql no SQL Editor.",
       };
     }
-    return { error: `Falha ao ler o convite: ${inviteError.message}` };
+    return { error: dbError("ler convite", inviteError) };
   }
 
   const customer = Array.isArray(invite?.customer)
@@ -191,7 +222,7 @@ export async function acceptCustomerInvite(
       phone_confirm: true,
     });
     if (error) {
-      return { error: `Não foi possível definir a senha: ${error.message}` };
+      return { error: dbError("definir senha", error) };
     }
   } else {
     const { data: created, error: createError } =
@@ -204,18 +235,18 @@ export async function acceptCustomerInvite(
     if (createError) {
       // Já existe uma conta com este telefone (ex.: OTP interrompido).
       if (!/already|exist/i.test(createError.message)) {
-        return { error: `Não foi possível criar o acesso: ${createError.message}` };
+        return { error: dbError("criar acesso", createError) };
       }
       const existingId = await findAuthUserByPhone(admin, customer.phone_e164);
       if (!existingId) {
-        return { error: `Não foi possível criar o acesso: ${createError.message}` };
+        return { error: dbError("criar acesso (existente)", createError) };
       }
       const { error: updateError } = await admin.auth.admin.updateUserById(
         existingId,
         { password, phone_confirm: true },
       );
       if (updateError) {
-        return { error: `Não foi possível definir a senha: ${updateError.message}` };
+        return { error: dbError("definir senha (existente)", updateError) };
       }
       authUserId = existingId;
     } else {
@@ -233,11 +264,22 @@ export async function acceptCustomerInvite(
       .update({ auth_user_id: authUserId })
       .eq("id", customer.id);
     if (linkError) {
-      return { error: `Falha ao vincular o cliente: ${linkError.message}` };
+      return { error: dbError("vincular cliente", linkError) };
     }
   }
 
-  // 3) Marca o convite como usado (update condicional = uso único).
+  // 3) Entra na sessão com celular + senha. Só depois de entrar é que o
+  //    convite é consumido — assim um login que falha não queima o link.
+  const supabase = await createClient();
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    phone: customer.phone_e164,
+    password,
+  });
+  if (signInError) {
+    return { error: dbError("entrar após convite", signInError) };
+  }
+
+  // 4) Marca o convite como usado (update condicional = uso único).
   const { data: consumed } = await admin
     .from("customer_invites")
     .update({ used_at: new Date().toISOString() })
@@ -247,16 +289,6 @@ export async function acceptCustomerInvite(
     .maybeSingle();
   if (!consumed) {
     return { error: "Este convite já foi usado. Peça um novo link ao admin." };
-  }
-
-  // 4) Entra na sessão com celular + senha e segue para o próximo passo.
-  const supabase = await createClient();
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    phone: customer.phone_e164,
-    password,
-  });
-  if (signInError) {
-    return { error: `Não foi possível entrar: ${signInError.message}` };
   }
 
   await redirectAfterCustomerLogin(supabase, authUserId);
@@ -276,6 +308,11 @@ export async function requestCustomerOtp(
     return { error: "Informe um número de WhatsApp válido com DDD." };
   }
 
+  const ip = await clientIp();
+  if (!(await allow("otp-request", phone, [ip]))) {
+    return { error: RATE_MSG };
+  }
+
   if (!(await customerExistsByPhone(phone))) {
     return {
       error: "Não encontramos este número. Peça ao admin para cadastrar você.",
@@ -290,12 +327,12 @@ export async function requestCustomerOtp(
   });
 
   if (error) {
-    return {
-      error:
-        error.message === "Rate limit exceeded"
-          ? "Muitas tentativas. Aguarde 1 minuto e tente de novo."
-          : `Não foi possível enviar o código: ${error.message}`,
-    };
+    if (error.message === "Rate limit exceeded") {
+      return {
+        error: "Muitas tentativas. Aguarde 1 minuto e tente de novo.",
+      };
+    }
+    return { error: dbError("enviar OTP", error) };
   }
 
   return { notice: "Código enviado no seu WhatsApp." };
@@ -310,6 +347,10 @@ export async function verifyCustomerOtp(
 
   if (!phone) return { error: "Número inválido. Volte e informe de novo." };
   if (token.length !== 6) return { error: "O código tem 6 dígitos." };
+
+  if (!(await allow("otp-verify", phone, [await clientIp()]))) {
+    return { error: RATE_MSG };
+  }
 
   const supabase = await createClient();
 

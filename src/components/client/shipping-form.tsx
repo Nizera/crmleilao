@@ -111,7 +111,9 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
 
     setCepStatus("loading");
     try {
-      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
+        signal: AbortSignal.timeout(8000),
+      });
       if (!response.ok) throw new Error("falha na consulta");
       const json = (await response.json()) as {
         erro?: boolean;
@@ -125,13 +127,13 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
         return;
       }
 
+      // Só pula campo que o cliente já digitou à mão (dirty), senão preenche.
       const fill = (
         name: "address_street" | "address_district" | "address_city" | "address_state",
         value: string | undefined,
       ) => {
         if (!value) return;
-        const current = form.getValues(name);
-        if (current && current.trim().length > 0) return;
+        if (form.formState.dirtyFields[name]) return;
         form.setValue(name, value, { shouldValidate: true, shouldDirty: true });
       };
       fill("address_street", json.logradouro);
@@ -139,6 +141,7 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
       fill("address_city", json.localidade);
       fill("address_state", json.uf);
       setCepStatus("done");
+      form.setFocus("address_number");
     } catch {
       setCepStatus("error");
     }

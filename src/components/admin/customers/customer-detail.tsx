@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, MessageCircle, Pencil, Trash2 } from "lucide-react";
@@ -12,6 +12,7 @@ import { CustomerFormSheet } from "@/components/admin/customers/customer-form";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   Card,
   CardContent,
@@ -196,10 +197,7 @@ export function CustomerDetailView({ customer, lots, invite }: Props) {
             <Row label="E-mail" value={customer.email ?? "—"} />
             <Row label="CPF/CNPJ" value={customer.cpf_cnpj ?? "—"} />
             <Row label="Convite" value={inviteLabel(invite)} />
-            <Row
-              label="Cadastrado em"
-              value={new Date(customer.created_at).toLocaleDateString("pt-BR")}
-            />
+            <Row label="Cadastrado em" value={<DateBR value={customer.created_at} />} />
           </CardContent>
         </Card>
 
@@ -302,12 +300,16 @@ function StatCard({
   );
 }
 
-function inviteLabel(invite: InviteStatus): string {
+function inviteLabel(invite: InviteStatus): ReactNode {
   switch (invite.status) {
     case "active":
-      return invite.expires_at
-        ? `Ativo até ${new Date(invite.expires_at).toLocaleDateString("pt-BR")}`
-        : "Ativo";
+      return invite.expires_at ? (
+        <>
+          Ativo até <DateBR value={invite.expires_at} />
+        </>
+      ) : (
+        "Ativo"
+      );
     case "used":
       return "Já usado";
     case "expired":
@@ -317,7 +319,7 @@ function inviteLabel(invite: InviteStatus): string {
   }
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

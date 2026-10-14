@@ -11,7 +11,8 @@ create table if not exists public.customer_invites (
   id          uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.customers (id)
               on delete cascade,
-  token_hash  text not null unique,        -- sha256 do token (nunca o token cru)
+  token       text not null unique,        -- token cru (mostra o link no admin)
+  token_hash  text not null unique,        -- sha256 p/ conferência do link
   created_by  uuid references auth.users (id) on delete set null,
   created_at  timestamptz not null default now(),
   expires_at  timestamptz not null default (now() + interval '7 days'),
@@ -22,8 +23,15 @@ create table if not exists public.customer_invites (
 create index if not exists customer_invites_customer_idx
   on public.customer_invites (customer_id, created_at desc);
 
+create index if not exists customer_invites_pending_idx
+  on public.customer_invites (created_at desc)
+  where used_at is null;
+
 comment on table public.customer_invites is
-  'Convites de acesso ao painel do cliente: link com token (sha256), uso único, expira em 7 dias. Gerado pelo admin; definido o link o cliente cria a senha e a conta auth fica vinculada em customers.auth_user_id.';
+  'Convites de acesso ao painel do cliente: link com token, uso único, expira em 7 dias. Gerado sozinho quando o lote cria um cliente novo, ou pelo botão da ficha do cliente.';
+
+comment on column public.customer_invites.token is
+  'Token cru da URL. Visível só para a equipe (RLS fechada) para reexibir o link em Configuração.';
 
 -- ---------------------------------------------------------------------------
 -- RLS fechada de propósito: sem policy de leitura/escrita — só o service

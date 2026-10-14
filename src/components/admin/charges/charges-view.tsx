@@ -21,6 +21,7 @@ import { ChargeFormSheet } from "@/components/admin/charges/charge-form-sheet";
 import { ChargeQrSheet } from "@/components/admin/charges/charge-qr-sheet";
 import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badge";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,17 +67,6 @@ type Props = {
   webhookReady: boolean;
   migrationReady: boolean;
 };
-
-const fmtDateTime = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
 
 export function ChargesView({
   rows,
@@ -270,10 +260,10 @@ export function ChargesView({
                     <ChargeStatusBadge status={charge.status} />
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
-                    {fmtDateTime(charge.created_at)}
+                    <DateBR time value={charge.created_at} />
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
-                    {charge.paid_at ? fmtDateTime(charge.paid_at) : "—"}
+                    <DateBR time value={charge.paid_at} fallback="—" />
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

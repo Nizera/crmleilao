@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Pencil, Plus, Search } from "lucide-react";
 
 import { CustomerFormSheet } from "@/components/admin/customers/customer-form";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -135,7 +136,7 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
                   {customer.cpf_cnpj ?? "—"}
                 </TableCell>
                 <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
-                  {new Date(customer.created_at).toLocaleDateString("pt-BR")}
+                  <DateBR value={customer.created_at} />
                 </TableCell>
                 <TableCell>
                   <Button

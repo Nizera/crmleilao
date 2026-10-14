@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin, getAppSettings } from "@/lib/dal";
+import { requireAdmin, getAppSettings, searchCustomers, type Customer } from "@/lib/dal";
 import { toE164 } from "@/lib/phone";
-import type { ActionResult } from "@/lib/result";
+import { createInviteForCustomer } from "@/lib/invites-server";
+import { saveNote } from "@/lib/notes";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { parseLotItems } from "@/lib/stock";
 import {
   lotSchema,
@@ -20,7 +22,7 @@ async function resolveCustomerId(input: {
   customer_id?: string;
   phone?: string;
   customer_name?: string;
-}): Promise<string> {
+}): Promise<{ id: string; isNew: boolean }> {
   const supabase = await createClient();
   const phone = toE164(input.phone ?? "");
 
@@ -41,7 +43,7 @@ async function resolveCustomerId(input: {
           .update({ name: input.customer_name })
           .eq("id", existing.id);
       }
-      return existing.id;
+      return { id: existing.id, isNew: false };
     }
 
     const { data: created, error: insertError } = await supabase
@@ -57,12 +59,12 @@ async function resolveCustomerId(input: {
           .select("id")
           .eq("phone_e164", phone)
           .single();
-        if (row) return row.id;
+        if (row) return { id: row.id, isNew: false };
       }
       throw new Error(`Falha ao cadastrar cliente: ${insertError.message}`);
     }
 
-    return created.id;
+    return { id: created.id, isNew: true };
   }
 
   if (input.customer_id) {
@@ -71,7 +73,7 @@ async function resolveCustomerId(input: {
       .select("id")
       .eq("id", input.customer_id)
       .maybeSingle();
-    if (data) return data.id;
+    if (data) return { id: data.id, isNew: false };
   }
 
   throw new Error("Informe o WhatsApp do cliente com DDD.");
@@ -79,7 +81,7 @@ async function resolveCustomerId(input: {
 
 export async function saveLot(
   formData: FormData,
-): Promise<ActionResult<{ id: string; code: string }>> {
+): Promise<ActionResult<{ id: string; code: string; inviteUrl?: string }>> {
   try {
     const { profile } = await requireAdmin();
     if (profile.role === "viewer") {
@@ -93,7 +95,8 @@ export async function saveLot(
     const values = parsed.data;
     const items = parseLotItems(formData.get("items"));
 
-    const customer_id = await resolveCustomerId(values);
+    const customer = await resolveCustomerId(values);
+    const customer_id = customer.id;
     const supabase = await createClient();
     const { settings } = await getAppSettings();
 
@@ -134,7 +137,6 @@ export async function saveLot(
       shipping_date:
         values.shipping_date ||
         nextShippingDate(values.auction_date, settings.shipping_weekday),
-      notes: values.notes || null,
     };
 
     let lotId: string;
@@ -172,6 +174,17 @@ export async function saveLot(
 
     if (stockError) {
       return failure(`Falha no estoque: ${stockError.message}`);
+    }
+
+    // Observações internas: fora da tabela do lote, que o cliente lê na
+    // íntegra. Por último: assim uma falha aqui não deixa lote criado sem a
+    // baixa de estoque.
+    try {
+      await saveNote("lot", lotId, values.notes ?? "", profile.id);
+    } catch (noteError) {
+      return failure(
+        noteError instanceof Error ? noteError.message : "Erro inesperado.",
+      );
     }
 
     const files = formData
@@ -216,12 +229,22 @@ export async function saveLot(
       }
     }
 
+    // Cliente recém-criado pelo lote: nasce com convite de acesso pronto.
+    // Se falhar, o lote já está salvo — não derruba a operação.
+    let inviteUrl: string | undefined;
+    if (customer.isNew) {
+      const invite = await createInviteForCustomer(customer.id, profile.id);
+      if (invite.ok) inviteUrl = invite.url;
+    }
+
     revalidatePath("/admin/lotes");
     revalidatePath("/admin/estoque");
+    revalidatePath("/admin/clientes");
     revalidatePath(`/painel/lotes/${code}`);
 
-    return { ok: true, data: { id: lotId, code } };
+    return { ok: true, data: { id: lotId, code, inviteUrl } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -294,8 +317,19 @@ export async function setLotStatus(
 
     return { ok: true, data: { status } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
+}
+
+/**
+ * Troca o token de convite por um marcador, dentro da URL.
+ *
+ * Formas cobertas: `…/painel/convite?token=ABC` (texto puro) e
+ * `…%3Ftoken%3DABC` (mesma URL codificada dentro do link do wa.me).
+ */
+function redactInviteToken(value: string): string {
+  return value.replace(/(token(?:%3D|=))[^&\s"']+/gi, "$1REMOVIDO");
 }
 
 export async function logWaMessage(input: {
@@ -307,6 +341,9 @@ export async function logWaMessage(input: {
 }): Promise<ActionResult> {
   try {
     const { profile } = await requireAdmin();
+    if (profile.role === "viewer") {
+      return failure("Seu perfil é somente leitura.");
+    }
 
     const supabase = await createClient();
     let customer_id: string | null = input.customer_id ?? null;
@@ -320,12 +357,22 @@ export async function logWaMessage(input: {
       customer_id = data?.customer_id ?? null;
     }
 
+    // O convite é token de uso único que abre o painel do cliente. A policy
+    // de leitura de `message_log` é `is_admin()` — QUALQUER membro da equipe,
+    // inclusive `viewer` — enquanto o link da Configuração é restrito a
+    // owner/staff. Sem este corte, um viewer leria o token no histórico e
+    // assumiria o painel. O registro fica legível, mas sem o segredo.
+    const isInvite = input.kind === "access_invite";
+    const text_body = (isInvite ? redactInviteToken(input.text_body) : input.text_body)
+      .slice(0, 4000);
+    const link = isInvite ? redactInviteToken(input.link) : input.link;
+
     const { error } = await supabase.from("message_log").insert({
       lot_id: input.lot_id ?? null,
       customer_id,
       kind: input.kind,
-      text_body: input.text_body.slice(0, 4000),
-      link: input.link,
+      text_body,
+      link,
       sent_by: profile.id,
     });
 
@@ -334,6 +381,19 @@ export async function logWaMessage(input: {
     revalidatePath("/admin/lotes");
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+  }
+}
+
+export async function searchLotCustomers(
+  query: string,
+): Promise<ActionResult<Customer[]>> {
+  try {
+    await requireAdmin();
+    return { ok: true, data: await searchCustomers(query) };
+  } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

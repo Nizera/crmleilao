@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCustomer } from "@/lib/dal";
 import { shippingFormSchema } from "@/lib/customers";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createClient } from "@/lib/supabase/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -75,6 +75,7 @@ export async function saveShippingData(
     revalidatePath("/painel");
     return { ok: true, data: { id: data.id } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

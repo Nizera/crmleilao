@@ -14,6 +14,7 @@ import type { LotItemRow, Player, StockItem, StockMovement } from "@/lib/stock";
 import { isChargeActive, type Charge, type ChargeStatus } from "@/lib/charges";
 import { CHARGE_COLUMNS } from "@/lib/charges-server";
 import { hashInviteToken } from "@/lib/invites";
+import { loadNotes } from "@/lib/notes";
 import type { Shipment, ShipmentStatus } from "@/lib/shipments";
 import {
   attachLots,
@@ -122,24 +123,38 @@ export async function customerExistsByPhone(phoneE164: string) {
 
 const LOT_COLUMNS = [
   "id, code, customer_id, title, description, images, arremate_value, status,",
-  "auction_date, shipping_date, paid_at, shipped_at, notes, created_at, updated_at,",
-  "customer:customers(id, name, phone_e164),",
+  "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
+  "customer:customers(id, name, phone_e164, auth_user_id),",
   "items:lot_items(stock_item_id, player_id, color, qty, applied,",
   "player:players(id, name, country))",
 ].join(" ");
 
-/** Todos os lotes. Só a equipe enxerga — o cliente é filtrado pelo RLS. */
-export const listLots = cache(async (): Promise<Lot[]> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("lots")
-    .select(LOT_COLUMNS)
-    .order("auction_date", { ascending: false })
-    .order("created_at", { ascending: false });
+/**
+ * Todos os lotes. Só a equipe enxerga — o cliente é filtrado pelo RLS.
+ * `notes: true` (tela administrativa) anexa as observações internas, que
+ * moram em `internal_notes` e são invisíveis para o cliente (migração 0012).
+ */
+export const listLots = cache(
+  async (opts: { notes?: boolean } = {}): Promise<Lot[]> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("lots")
+      .select(LOT_COLUMNS)
+      .order("auction_date", { ascending: false })
+      .order("created_at", { ascending: false });
 
-  if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
-  return (data ?? []) as unknown as Lot[];
-});
+    if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
+
+    const lots = (data ?? []) as unknown as Lot[];
+    if (!opts.notes) return lots;
+
+    const notes = await loadNotes(
+      "lot",
+      lots.map((lot) => lot.id),
+    );
+    return lots.map((lot) => ({ ...lot, notes: notes.get(lot.id) ?? null }));
+  },
+);
 
 export const getLotById = cache(
   async (id: string): Promise<Lot | null> => {
@@ -217,7 +232,7 @@ export type CustomerDetail = Customer & {
 };
 
 const CUSTOMER_COLUMNS =
-  "id, name, phone_e164, email, cpf_cnpj, notes, auth_user_id, created_at, updated_at";
+  "id, name, phone_e164, email, cpf_cnpj, auth_user_id, created_at, updated_at";
 
 export type CustomerPage = {
   rows: CustomerDetail[];
@@ -255,8 +270,14 @@ export async function listCustomersPage(params: {
   const { data, count, error } = await query;
   if (error) throw new Error(`Falha ao listar clientes: ${error.message}`);
 
+  const rows = (data ?? []) as CustomerDetail[];
+  const notes = await loadNotes(
+    "customer",
+    rows.map((row) => row.id),
+  );
+
   return {
-    rows: (data ?? []) as CustomerDetail[],
+    rows: rows.map((row) => ({ ...row, notes: notes.get(row.id) ?? null })),
     total: count ?? 0,
     page,
     pageSize,
@@ -273,7 +294,10 @@ export const getCustomer = cache(
       .maybeSingle();
 
     if (error) throw new Error(`Falha ao carregar cliente: ${error.message}`);
-    return (data as CustomerDetail) ?? null;
+    if (!data) return null;
+
+    const notes = await loadNotes("customer", [id]);
+    return { ...(data as CustomerDetail), notes: notes.get(id) ?? null };
   },
 );
 
@@ -531,6 +555,60 @@ export type InvitePreview =
   | { state: "ok"; name: string | null; phone_e164: string }
   | { state: "invalid" | "used" | "expired" };
 
+/** Convites ainda não usados (pendentes) — exibidos em Configuração. */
+export type PendingInvite = {
+  id: string;
+  token: string;
+  created_at: string;
+  expires_at: string;
+  /**
+   * Calculado no servidor, junto com os dados. Se o componente de UI calculasse
+   * `new Date() < new Date()` no render, o valor divergiria entre o SSR e o
+   * browser (e a badge trocaria depois da hidratação).
+   */
+  expired: boolean;
+  customer_id: string;
+  name: string | null;
+  phone_e164: string;
+};
+
+export const listPendingInvites = cache(async (): Promise<PendingInvite[]> => {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("customer_invites")
+    .select(
+      "id, token, created_at, expires_at, customer:customers(id, name, phone_e164)",
+    )
+    .is("used_at", null)
+    // Convites anteriores à migração 0011 só têm `token_hash` — sem o token
+    // cru não dá para remontar o link, e listar geraria `?token=null`.
+    .not("token", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error || !data) return [];
+
+  return data.flatMap((row) => {
+    if (!row.token) return [];
+    const customer = Array.isArray(row.customer)
+      ? row.customer[0]
+      : row.customer;
+    if (!customer) return [];
+    return [
+      {
+        id: row.id,
+        token: row.token,
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+        expired: new Date(row.expires_at).getTime() < Date.now(),
+        customer_id: customer.id,
+        name: customer.name,
+        phone_e164: customer.phone_e164,
+      },
+    ];
+  });
+});
+
 /**
  * Lê o convite pelo token cru (hash na consulta) para a tela pública
  * /painel/convite. Não expõe dados além do primeiro nome e do número.
@@ -570,7 +648,7 @@ export const getInvitePreview = cache(
 /** Mesmas colunas de CHARGE_COLUMNS, com o cliente `!inner` p/ busca por nome. */
 const CHARGE_LIST_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
-  "description, qr_code, qr_code_base64, ticket_url, expires_at, paid_at, notes,",
+  "description, qr_code, qr_code_base64, ticket_url, expires_at, paid_at,",
   "created_by, created_at, updated_at,",
   "customer:customers!inner(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status)",
@@ -604,7 +682,10 @@ export async function listCharges(params: {
     query = query.eq("status", params.status);
   }
 
-  const raw = params.q?.trim().replace(/[(),]/g, " ").trim() ?? "";
+  // Mesma sanitização do `name`: o valor entra dentro de `.or()` do PostgREST
+  // (delimitadores `,` `()`, escape `\` e aspas de citação). Sem isso uma
+  // busca com apóstrofo quebrava o parse e devolvia erro na listagem.
+  const raw = params.q?.trim().replace(/[,'"%()\\]/g, " ").trim() ?? "";
   if (raw.length >= 2) {
     const digits = raw.replace(/\D/g, "").slice(0, 20);
     const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
@@ -742,7 +823,10 @@ export async function listShipments(params: {
     query = query.eq("status", params.status);
   }
 
-  const raw = params.q?.trim().replace(/[(),]/g, " ").trim() ?? "";
+  // Mesma sanitização do `name`: o valor entra dentro de `.or()` do PostgREST
+  // (delimitadores `,` `()`, escape `\` e aspas de citação). Sem isso uma
+  // busca com apóstrofo quebrava o parse e devolvia erro na listagem.
+  const raw = params.q?.trim().replace(/[,'"%()\\]/g, " ").trim() ?? "";
   if (raw.length >= 2) {
     const digits = raw.replace(/\D/g, "").slice(0, 20);
     const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);

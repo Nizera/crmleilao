@@ -2,7 +2,12 @@ import { ShipmentsView } from "@/components/admin/shipments/shipments-view";
 import { listShipments, requireAdmin, type ShipmentPage } from "@/lib/dal";
 import type { ShipmentStatus } from "@/lib/shipments";
 import { sfConfigured, sfSandbox } from "@/lib/superfrete";
-import { getOrigin, getWebhookSecret } from "@/lib/shipments-server";
+import {
+  getOrigin,
+  getWebhookSecret,
+  listShipmentQueue,
+  type ShipmentQueueRow,
+} from "@/lib/shipments-server";
 
 export const metadata = { title: "Envios" };
 
@@ -18,6 +23,31 @@ const VALID_STATUSES = [
   "cancelled",
 ];
 
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+function shiftDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Semana de leilão corrente: terça a domingo. Sai na terça seguinte.
+ * Ex.: terça 13/10 → 06/10 a 12/10. Domingo 18/10 → 12/10 a 18/10.
+ * Usa UTC puro para não depender do fuso do servidor.
+ */
+function defaultPeriod(): { from: string; to: string } {
+  const now = new Date();
+  const iso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const dow = now.getUTCDay();
+  let to: string;
+  if (dow === 0) to = iso;
+  else if (dow === 1) to = shiftDays(iso, 6);
+  else to = shiftDays(iso, -(dow - 1));
+  return { from: shiftDays(to, -6), to };
+}
+
 export default async function EnviosPage({
   searchParams,
 }: PageProps<"/admin/envios">) {
@@ -29,14 +59,27 @@ export default async function EnviosPage({
   const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
 
+  // Fila: filtro de período (manual ou padrão). Histórico: só quando pedir explicitamente.
+  const rawFrom = first(params.de);
+  const rawTo = first(params.ate);
+  const useQueue = first(params.vista) !== "historico";
+  const fallback = defaultPeriod();
+  const periodFrom = ISO.test(rawFrom) ? rawFrom : fallback.from;
+  const periodTo = ISO.test(rawTo) ? rawTo : fallback.to;
+
+  let queue: ShipmentQueueRow[] = [];
   let data: ShipmentPage = { rows: [], total: 0, page, pageSize: 10 };
   let migrationReady = true;
   try {
-    data = await listShipments({
-      q,
-      status: status as ShipmentStatus | "all",
-      page,
-    });
+    if (useQueue) {
+      queue = await listShipmentQueue({ periodFrom, periodTo, q });
+    } else {
+      data = await listShipments({
+        q,
+        status: status as ShipmentStatus | "all",
+        page,
+      });
+    }
   } catch (error) {
     if (
       error instanceof Error &&
@@ -55,6 +98,9 @@ export default async function EnviosPage({
   return (
     <ShipmentsView
       {...data}
+      queue={useQueue ? queue : null}
+      periodFrom={periodFrom}
+      periodTo={periodTo}
       q={q}
       status={status}
       migrationReady={migrationReady}

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/dal";
 import { parseAdminRole, type AdminRole } from "@/lib/roles";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -79,6 +79,7 @@ export async function updateMemberRole(
     revalidatePath("/admin/configuracao");
     return { ok: true, data: { role: nextRole } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -115,6 +116,7 @@ export async function removeMember(
     revalidatePath("/admin/configuracao");
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

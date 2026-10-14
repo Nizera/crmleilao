@@ -6,9 +6,11 @@ import { ImagePlus, X } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
-import { saveLot } from "@/app/actions/lots";
+import { saveLot, searchLotCustomers } from "@/app/actions/lots";
 import { StockPicker } from "@/components/admin/lots/stock-picker";
 import { Button } from "@/components/ui/button";
+import { formatPhoneBR } from "@/lib/customers";
+import type { Customer } from "@/lib/dal";
 import {
   Field,
   FieldDescription,
@@ -41,9 +43,11 @@ import {
   LOT_STATUS_LABELS,
   nextShippingDate,
   todayISO,
+  waMessageLink,
   type Lot,
   type LotFormValues,
 } from "@/lib/lots";
+import { toE164 } from "@/lib/phone";
 import { WEEKDAY_LABELS } from "@/lib/settings";
 
 type Props = {
@@ -116,6 +120,12 @@ function LotForm({
   const [keptImages, setKeptImages] = useState<string[]>(lot?.images ?? []);
   const [uploads, setUploads] = useState<{ file: File; url: string }[]>([]);
   const [shippingTouched, setShippingTouched] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<Customer[] | null>(null);
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    lot?.customer ? { id: lot.customer_id, name: lot.customer.name, phone_e164: lot.customer.phone_e164 } : null,
+  );
   const [items, setItems] = useState<LotItemPick[]>(
     (lot?.items ?? []).map((row) => ({
       stock_item_id: row.stock_item_id,
@@ -162,6 +172,32 @@ function LotForm({
     setUploads((current) => current.filter((item) => item.url !== url));
   };
 
+  const searchCustomer = async () => {
+    const q = customerQuery.trim();
+    if (q.length < 2) return;
+    setCustomerSearching(true);
+    const result = await searchLotCustomers(q);
+    setCustomerSearching(false);
+    if (result.ok) setCustomerResults(result.data);
+  };
+
+  const pickCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    form.setValue("customer_id", customer.id, { shouldValidate: true });
+    form.setValue("phone", customer.phone_e164, { shouldValidate: true });
+    form.setValue("customer_name", customer.name ?? "", { shouldValidate: true });
+    setCustomerResults(null);
+    setCustomerQuery("");
+  };
+
+  const clearCustomer = () => {
+    setSelectedCustomer(null);
+    form.setValue("customer_id", "", { shouldValidate: false });
+    form.setValue("phone", "", { shouldValidate: false });
+    form.setValue("customer_name", "", { shouldValidate: false });
+    setServerError(null);
+  };
+
   const submit = form.handleSubmit((values) => {
     setServerError(null);
 
@@ -175,19 +211,59 @@ function LotForm({
     for (const { file } of uploads) fd.append("images", file);
 
     startTransition(async () => {
-      const result: ActionResult<{ id: string; code: string }> =
-        await saveLot(fd);
+      try {
+        const result: ActionResult<{
+          id: string;
+          code: string;
+          inviteUrl?: string;
+        }> = await saveLot(fd);
 
-      if (!result.ok) {
-        setServerError(result.error);
-        return;
+        if (!result.ok) {
+          setServerError(result.error);
+          return;
+        }
+
+        if (result.data.inviteUrl) {
+          // Cliente novo: o convite de acesso nasceu junto com o lote.
+          const url = result.data.inviteUrl;
+          const phone = toE164(values.phone ?? "");
+          void navigator.clipboard.writeText(url).catch(() => undefined);
+          toast.success(`Lote ${result.data.code} criado.`, {
+            description:
+              "Cliente novo cadastrado e convite de acesso copiado — mande no WhatsApp dele.",
+            action: phone
+              ? {
+                  label: "WhatsApp",
+                  onClick: () => {
+                    window.open(
+                      waMessageLink(
+                        phone,
+                        `Oi! Seu acesso ao painel do Caras das Legends: ${url}`,
+                      ),
+                      "_blank",
+                      "noopener",
+                    );
+                  },
+                }
+              : undefined,
+          });
+        } else {
+          toast.success(
+            values.id ? "Lote atualizado." : `Lote ${result.data.code} criado.`,
+          );
+        }
+
+        uploads.forEach(({ url }) => URL.revokeObjectURL(url));
+        onDone();
+      } catch (error) {
+        // Server action rejeitada (rede, body acima do limite, exceção no
+        // servidor). Sem este catch a transição falhava em silêncio.
+        setServerError(
+          error instanceof Error && error.message
+            ? error.message
+            : "Falha ao salvar o lote. Tente novamente.",
+        );
       }
-
-      toast.success(
-        values.id ? "Lote atualizado." : `Lote ${result.data.code} criado.`,
-      );
-      uploads.forEach(({ url }) => URL.revokeObjectURL(url));
-      onDone();
     });
   });
 
@@ -202,31 +278,102 @@ function LotForm({
       className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
     >
       <FieldGroup>
-        <Field data-invalid={!!errors.phone}>
-          <FieldLabel htmlFor="phone">WhatsApp do cliente</FieldLabel>
-          <Input
-            id="phone"
-            inputMode="tel"
-            placeholder="+55 11 99999-8888"
-            autoComplete="tel"
-            {...form.register("phone")}
-          />
-          <FieldDescription>
-            Se o número ainda não existir, o cliente é cadastrado agora.
-          </FieldDescription>
-          <FieldError>{errors.phone?.message}</FieldError>
+        <Field data-invalid={!selectedCustomer && !!errors.phone}>
+          <FieldLabel>Cliente</FieldLabel>
+          {selectedCustomer ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {selectedCustomer.name ?? "Sem nome"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatPhoneBR(selectedCustomer.phone_e164)}
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={clearCustomer}>
+                Trocar
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <Input
+                  value={customerQuery}
+                  onChange={(e) => setCustomerQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void searchCustomer();
+                    }
+                  }}
+                  placeholder="Nome ou WhatsApp com DDD"
+                  autoComplete="off"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void searchCustomer()}
+                  disabled={customerSearching}
+                >
+                  {customerSearching ? "…" : "Buscar"}
+                </Button>
+              </div>
+              {customerResults && customerResults.length > 0 && (
+                <ul className="mt-1 max-h-48 divide-y overflow-y-auto rounded-md border">
+                  {customerResults.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => pickCustomer(c)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-muted"
+                      >
+                        <span className="truncate">{c.name ?? "Sem nome"}</span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {formatPhoneBR(c.phone_e164)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {customerResults && customerResults.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Nenhum cliente encontrado. Digite o WhatsApp abaixo para cadastrar um novo.
+                </p>
+              )}
+            </>
+          )}
         </Field>
 
-        <Field>
-          <FieldLabel htmlFor="customer_name">Nome do cliente</FieldLabel>
-          <Input
-            id="customer_name"
-            placeholder="Opcional"
-            autoComplete="off"
-            {...form.register("customer_name")}
-          />
-          <FieldError>{errors.customer_name?.message}</FieldError>
-        </Field>
+        {!selectedCustomer && (
+          <Field data-invalid={!!errors.phone}>
+            <FieldLabel htmlFor="phone">WhatsApp do cliente</FieldLabel>
+            <Input
+              id="phone"
+              inputMode="tel"
+              placeholder="+55 11 99999-8888"
+              autoComplete="tel"
+              {...form.register("phone")}
+            />
+            <FieldDescription>
+              Se o número ainda não existir, o cliente é cadastrado agora.
+            </FieldDescription>
+            <FieldError>{errors.phone?.message}</FieldError>
+          </Field>
+        )}
+
+        {!selectedCustomer && (
+          <Field>
+            <FieldLabel htmlFor="customer_name">Nome do cliente</FieldLabel>
+            <Input
+              id="customer_name"
+              placeholder="Opcional"
+              autoComplete="off"
+              {...form.register("customer_name")}
+            />
+            <FieldError>{errors.customer_name?.message}</FieldError>
+          </Field>
+        )}
 
         <Field data-invalid={!!errors.title}>
           <FieldLabel htmlFor="title">Lote</FieldLabel>

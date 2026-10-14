@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { logWaMessage } from "@/app/actions/lots";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   Sheet,
   SheetContent,
@@ -115,12 +116,7 @@ export function ChargeQrPanel({
           <p className="text-right text-xs text-muted-foreground">
             Válido até
             <br />
-            {new Date(charge.expires_at).toLocaleString("pt-BR", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            <DateBR time value={charge.expires_at} />
           </p>
         )}
       </div>

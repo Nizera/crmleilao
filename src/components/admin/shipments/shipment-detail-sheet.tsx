@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/app/actions/shipments";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   Sheet,
   SheetContent,
@@ -45,17 +46,6 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onUpdate: (shipment: Shipment) => void;
 };
-
-const fmtDateTime = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
 
 export function ShipmentDetailSheet({
   shipment,
@@ -203,13 +193,10 @@ export function ShipmentDetailSheet({
                   : "—"
               }
             />
-            <Field
-              label="Etiqueta paga em"
-              value={fmtDateTime(shipment.paid_at)}
-            />
-            <Field label="Postado em" value={fmtDateTime(shipment.posted_at)} />
-            <Field label="Entregue em" value={fmtDateTime(shipment.delivered_at)} />
-            <Field label="Cancelado em" value={fmtDateTime(shipment.cancelled_at)} />
+            <Field label="Etiqueta paga em" value={<DateBR time value={shipment.paid_at} fallback="—" />} />
+            <Field label="Postado em" value={<DateBR time value={shipment.posted_at} fallback="—" />} />
+            <Field label="Entregue em" value={<DateBR time value={shipment.delivered_at} fallback="—" />} />
+            <Field label="Cancelado em" value={<DateBR time value={shipment.cancelled_at} fallback="—" />} />
           </dl>
 
           {volume && (
@@ -359,7 +346,7 @@ export function ShipmentDetailSheet({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Última atualização: {fmtDateTime(shipment.updated_at)} · pedido
+            Última atualização: <DateBR time value={shipment.updated_at} /> · pedido
             SuperFrete <span className="font-mono">{shipment.sf_order_id}</span>
           </p>
         </div>
@@ -368,7 +355,7 @@ export function ShipmentDetailSheet({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>

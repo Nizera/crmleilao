@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/dal";
-import type { ActionResult } from "@/lib/result";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createClient } from "@/lib/supabase/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -58,6 +58,7 @@ export async function adjustStock(
 
     return { ok: true, data: { qty_on_hand: Number(data) } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

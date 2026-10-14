@@ -1,11 +1,13 @@
 "use client";
 
-import { Download, TriangleAlert } from "lucide-react";
+import { Copy, Download, MessageCircle, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 
 import { SettingsForm } from "@/components/admin/config/settings-form";
 import { TeamCard } from "@/components/admin/config/team-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   Card,
   CardContent,
@@ -13,7 +15,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { TeamMember } from "@/lib/dal";
+import type { PendingInvite, TeamMember } from "@/lib/dal";
+import { formatPhoneBR } from "@/lib/customers";
+import { waMessageLink } from "@/lib/lots";
 import type { AppSettings } from "@/lib/settings";
 
 export type IntegrationInfo = {
@@ -31,7 +35,12 @@ type Props = {
   settings: AppSettings;
   team: TeamMember[] | null;
   integrations: IntegrationInfo[];
+  invites: PendingInvite[];
 };
+
+function invitePath(token: string): string {
+  return `/painel/convite?token=${token}`;
+}
 
 export function ConfigView({
   selfId,
@@ -40,6 +49,7 @@ export function ConfigView({
   settings,
   team,
   integrations,
+  invites,
 }: Props) {
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
@@ -113,6 +123,100 @@ export function ConfigView({
               </Badge>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Acessos de clientes</CardTitle>
+          <CardDescription>
+            Convites pendentes de quem ainda não entrou no painel — gerados
+            sozinhos quando o lote cadastra um cliente novo. Cada link vale 7
+            dias e uma única vez.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2">
+          {invites.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhum convite pendente. Novos clientes criados pelos lotes
+              aparecem aqui automaticamente.
+            </p>
+          ) : (
+            invites.map((invite) => {
+              // `expired` vem pronto do servidor: calcular `new Date()` aqui
+              // divergiria entre SSR e browser (mismatch de hidratação).
+              const expired = invite.expired;
+              const path = invitePath(invite.token);
+              const absoluteUrl = () =>
+                `${window.location.origin}${path}`;
+
+              return (
+                <div
+                  key={invite.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {invite.name ?? "Sem nome"}
+                      </span>
+                      <Badge variant="outline">
+                        {formatPhoneBR(invite.phone_e164)}
+                      </Badge>
+                      <Badge
+                        variant={expired ? "secondary" : "default"}
+                        className="text-[10px]"
+                      >
+                        {expired
+                          ? "Expirado"
+                          : (
+                            <>
+                              Válido até <DateBR value={invite.expires_at} />
+                            </>
+                          )}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                      {path}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(absoluteUrl())
+                          .then(() => toast.success("Link copiado."))
+                          .catch(() => toast.error("Não foi possível copiar."));
+                      }}
+                    >
+                      <Copy />
+                      Copiar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        window.open(
+                          waMessageLink(
+                            invite.phone_e164,
+                            `Oi! Seu acesso ao painel do Caras das Legends: ${absoluteUrl()}`,
+                          ),
+                          "_blank",
+                          "noopener",
+                        )
+                      }
+                    >
+                      <MessageCircle />
+                      WhatsApp
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
 

@@ -293,7 +293,7 @@ export const SUPERFRETE_WEBHOOK_EVENTS = [
 
 /**
  * Cadastra o webhook da aplicação. A resposta traz o `secret_token` usado
- * para validar o header X-ME-Signature — guarde-o (app_settings).
+ * para validar o header X-ME-Signature — guarde-o (em `app_secrets`).
  */
 export async function createWebhookApp(input: {
   name: string;

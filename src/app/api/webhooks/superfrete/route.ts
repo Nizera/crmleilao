@@ -10,7 +10,7 @@ import { applySuperfreteEvent, getWebhookSecret } from "@/lib/shipments-server";
  * Segurança:
  *  1. valida `X-ME-Signature` = HMAC-SHA256(corpo, secret_token) — o secret é
  *     o devolvido ao cadastrar o Webhook App (POST /api/v0/webhook), gravado
- *     em app_settings.superfrete_webhook_secret;
+ *     em app_secrets (key = superfrete_webhook_secret, só service role);
  *  2. o evento é aplicado por id da etiqueta (`data.id`), com transição
  *     monotônica idempotente em applySuperfreteEvent.
  *

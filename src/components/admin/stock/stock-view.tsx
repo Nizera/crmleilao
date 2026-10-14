@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { adjustStock } from "@/app/actions/stock";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -45,14 +46,6 @@ type MatrixRow = {
   country: string;
   cells: Partial<Record<string, StockItem>>;
 };
-
-const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 export function StockView({ stock, movements, tab = "saldo" }: Props) {
   const [selected, setSelected] = useState<StockItem | null>(null);
@@ -303,7 +296,7 @@ export function StockView({ stock, movements, tab = "saldo" }: Props) {
                 {movements.rows.map((movement) => (
                   <TableRow key={movement.id}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {fmtDateTime(movement.created_at)}
+                      <DateBR time value={movement.created_at} />
                     </TableCell>
                     <TableCell>
                       {movement.stock_item?.player?.name ?? "—"}

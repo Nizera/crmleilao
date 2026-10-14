@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { requireAdmin } from "@/lib/dal";
 import { customerFormSchema, normalizePhone } from "@/lib/customers";
-import type { ActionResult } from "@/lib/result";
+import { deleteNotes, saveNote } from "@/lib/notes";
+import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createClient } from "@/lib/supabase/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -56,8 +57,9 @@ export async function saveCustomer(
       phone_e164: phone,
       email: parsed.data.email || null,
       cpf_cnpj: parsed.data.cpf_cnpj || null,
-      notes: parsed.data.notes || null,
     };
+
+    let savedId: string;
 
     if (id) {
       const { data, error } = await supabase
@@ -70,26 +72,36 @@ export async function saveCustomer(
       if (error) return failure(`Falha ao salvar cliente: ${error.message}`);
       if (!data) return failure("Cliente não encontrado.");
 
-      revalidateClientPages(id);
-      return { ok: true, data: { id } };
-    }
+      savedId = data.id;
+    } else {
+      const { data, error } = await supabase
+        .from("customers")
+        .insert(row)
+        .select("id")
+        .single();
 
-    const { data, error } = await supabase
-      .from("customers")
-      .insert(row)
-      .select("id")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        return failure("Já existe um cliente com este WhatsApp.");
+      if (error) {
+        if (error.code === "23505") {
+          return failure("Já existe um cliente com este WhatsApp.");
+        }
+        return failure(`Falha ao criar cliente: ${error.message}`);
       }
-      return failure(`Falha ao criar cliente: ${error.message}`);
+
+      savedId = data.id;
     }
 
-    revalidateClientPages(data.id);
-    return { ok: true, data: { id: data.id } };
+    try {
+      await saveNote("customer", savedId, parsed.data.notes ?? "", profile.id);
+    } catch (noteError) {
+      return failure(
+        noteError instanceof Error ? noteError.message : "Erro inesperado.",
+      );
+    }
+
+    revalidateClientPages(savedId);
+    return { ok: true, data: { id: savedId } };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }
@@ -122,10 +134,17 @@ export async function deleteCustomer(
     const { error } = await supabase.from("customers").delete().eq("id", id);
     if (error) return failure(`Falha ao excluir cliente: ${error.message}`);
 
+    try {
+      await deleteNotes("customer", id);
+    } catch {
+      // Cliente já excluído: nota órfã não derruba a operação.
+    }
+
     revalidatePath("/admin/clientes");
     revalidatePath("/admin/lotes");
     return { ok: true, data: null };
   } catch (error) {
+    rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
 }

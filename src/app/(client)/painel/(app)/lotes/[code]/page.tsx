@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LotGallery } from "@/components/client/lot-gallery";
 import { getLotByCode, listLotItems, requireCustomer } from "@/lib/dal";
 import {
   formatBRL,
@@ -44,19 +45,7 @@ export default async function CustomerLotPage({
         <LotStatusBadge status={lot.status} />
       </div>
 
-      {images.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {images.map((url) => (
-            <div
-              key={url}
-              className="aspect-square overflow-hidden rounded-md border bg-muted"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt={lot.title} className="size-full object-cover" />
-            </div>
-          ))}
-        </div>
-      )}
+      {images.length > 0 && <LotGallery images={images} title={lot.title} />}
 
       <Card>
         <CardHeader>

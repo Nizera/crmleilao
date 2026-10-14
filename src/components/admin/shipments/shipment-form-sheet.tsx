@@ -32,11 +32,21 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (shipment: Shipment) => void;
+  /** Abre já com esse cliente escolhido (fila de envios). */
+  initialCustomer?: { id: string; name: string | null; phone_e164: string } | null;
+  /** Rótulo do cabeçalho. */
+  title?: string;
 };
 
 type Volume = { height: number; width: number; length: number; weight: number };
 
-export function ShipmentFormSheet({ open, onOpenChange, onCreated }: Props) {
+export function ShipmentFormSheet({
+  open,
+  onOpenChange,
+  onCreated,
+  initialCustomer,
+  title = "Novo envio",
+}: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -44,19 +54,30 @@ export function ShipmentFormSheet({ open, onOpenChange, onCreated }: Props) {
         className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl"
       >
         <SheetHeader className="border-b px-6 py-4">
-          <SheetTitle>Novo envio</SheetTitle>
+          <SheetTitle>{title}</SheetTitle>
           <SheetDescription>
             Agrupe os lotes pagos de um cliente, cotar e emita a etiqueta
             SuperFrete.
           </SheetDescription>
         </SheetHeader>
-        {open && <ShipmentForm onDone={(shipment) => onCreated(shipment)} />}
+        {open && (
+          <ShipmentForm
+            onDone={(shipment) => onCreated(shipment)}
+            initialCustomer={initialCustomer}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
 }
 
-function ShipmentForm({ onDone }: { onDone: (shipment: Shipment) => void }) {
+function ShipmentForm({
+  onDone,
+  initialCustomer,
+}: {
+  onDone: (shipment: Shipment) => void;
+  initialCustomer?: { id: string; name: string | null; phone_e164: string } | null;
+}) {
   const [pending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -64,9 +85,17 @@ function ShipmentForm({ onDone }: { onDone: (shipment: Shipment) => void }) {
   const [results, setResults] = useState<Customer[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const [selected, setSelected] = useState<Customer | null>(null);
+  const [selected, setSelected] = useState<Customer | null>(
+    initialCustomer
+      ? {
+          id: initialCustomer.id,
+          name: initialCustomer.name,
+          phone_e164: initialCustomer.phone_e164,
+        }
+      : null,
+  );
   const [context, setContext] = useState<ShipmentContext | null>(null);
-  const [loadingContext, setLoadingContext] = useState(false);
+  const [loadingContext, setLoadingContext] = useState(Boolean(initialCustomer));
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchDate, setBatchDate] = useState("");
   const [volume, setVolume] = useState<Volume>({

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { removeMember, updateMemberRole } from "@/app/actions/team";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateBR } from "@/components/ui/date-br";
 import {
   Card,
   CardContent,
@@ -116,9 +117,7 @@ export function TeamCard({ team, selfId, canEdit }: Props) {
                           </div>
                         </TableCell>
                         <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
-                          {new Date(member.created_at).toLocaleDateString(
-                            "pt-BR",
-                          )}
+                          <DateBR value={member.created_at} />
                         </TableCell>
                         <TableCell>
                           <Select

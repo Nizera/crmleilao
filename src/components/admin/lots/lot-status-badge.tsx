@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { LOT_STATUS_LABELS, type LotStatus } from "@/lib/lots";
 
 const TONE: Record<LotStatus, string> = {
@@ -9,9 +10,21 @@ const TONE: Record<LotStatus, string> = {
   cancelled: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400",
 };
 
-export function LotStatusBadge({ status }: { status: LotStatus }) {
+export function LotStatusBadge({
+  status,
+  size = "md",
+}: {
+  status: LotStatus;
+  size?: "sm" | "md";
+}) {
   return (
-    <Badge variant="outline" className={TONE[status]}>
+    <Badge
+      variant="outline"
+      className={cn(
+        TONE[status],
+        size === "sm" && "px-1.5 py-0 text-[11px] leading-tight",
+      )}
+    >
       {LOT_STATUS_LABELS[status]}
     </Badge>
   );
