@@ -93,7 +93,7 @@ const panelPerks = [
   "Seus lotes arrematados em um lugar só, com foto e valor",
   "Gere o Pix de tudo que está pendente em 1 clique",
   "Acompanhe o envio, o rastreio e a data da postagem",
-  "Acesso pelo seu WhatsApp, com código de 6 dígitos",
+  "Acesso pelo seu WhatsApp e a senha do seu convite",
 ];
 
 export default function LandingPage() {
