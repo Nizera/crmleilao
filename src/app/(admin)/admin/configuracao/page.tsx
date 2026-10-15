@@ -38,6 +38,8 @@ export default async function ConfiguracaoPage() {
   const invites = canEdit ? await listPendingInvites().catch(() => []) : [];
 
   const mpKey = process.env.MP_ACCESS_TOKEN;
+  const mpWebhookToken = process.env.MP_WEBHOOK_TOKEN?.trim();
+  const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET?.trim();
   const superfreteToken = process.env.SUPERFRETE_TOKEN;
   const whatsappToken = process.env.WHATSAPP_TOKEN;
 
@@ -53,6 +55,16 @@ export default async function ConfiguracaoPage() {
             : " — URL do webhook visível apenas ao dono"
       }`;
     }),
+    {
+      name: "Webhook do Mercado Pago",
+      phase: "Segurança",
+      configured: Boolean(mpWebhookToken && mpWebhookSecret),
+      detail: !mpWebhookToken
+        ? "sem MP_WEBHOOK_TOKEN: a URL do webhook devolve 503 e nenhuma notificação é aceita"
+        : !mpWebhookSecret
+          ? "sem MP_WEBHOOK_SECRET: as notificações são aceitas sem validar a assinatura x-signature — configure para fechar o endpoint"
+          : "token de path e assinatura x-signature configurados",
+    },
     integrationStatus("SuperFrete (fretes)", "Fase 4", superfreteToken, () =>
       process.env.SUPERFRETE_SANDBOX === "false"
         ? "token em produção"
@@ -64,12 +76,6 @@ export default async function ConfiguracaoPage() {
       whatsappToken,
       () => "envio de mídia pelo Meta",
     ),
-    {
-      name: "Login por OTP no WhatsApp",
-      phase: "Login do cliente",
-      configured: null,
-      detail: "Supabase → Authentication → Providers → Phone (Twilio Verify)",
-    },
     {
       name: "Gemini",
       phase: "Descartado",

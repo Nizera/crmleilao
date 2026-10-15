@@ -7,7 +7,8 @@ export const metadata = { title: "Dados para envio" };
 
 /**
  * Primeiro login (endereço obrigatório) e "Meus dados".
- * O guard de verifyCustomerOtp manda para cá quando o endereço está incompleto.
+ * O primeiro acesso pelo link de convite manda para cá quando o endereço
+ * ainda está incompleto.
  */
 export default async function CadastroPage() {
   const { customer } = await requireCustomer();

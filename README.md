@@ -40,7 +40,7 @@ em que aquela integração é usada. `GEMINI_API_KEY` existe no `.env.example` m
 
 As migrações criam as tabelas, o RLS e os gatilhos:
 
-- `0001_init.sql` — `customers`, `admin_profiles`, vínculo OTP e helpers de auth
+- `0001_init.sql` — `customers`, `admin_profiles`, vínculo cliente↔auth e helpers de auth
 - `0002_lots.sql` — `lots`, `message_log`, bucket `lot-images` e a data de envio padrão
 - `0003_stock.sql` — `players`, `stock_items`, `lot_items`, `stock_movements`
   (ledger), RPC `reconcile_lot_items` / `adjust_stock`, catálogo 20×4 e RLS
@@ -52,6 +52,16 @@ As migrações criam as tabelas, o RLS e os gatilhos:
 - `0006_shipments.sql` — `shipments`/`shipment_lots` (etiqueta, rastreio e
   histórico), endereço de origem e secret do webhook em `app_settings`, efeitos
   nos lotes e RLS (admin escreve, cliente lê os próprios)
+- `0007_customer_invites.sql` — convites de acesso do painel do cliente
+- `0008_fix_auth_phone_trigger.sql` — gatilho de `auth.users` só vincula cliente existente
+- `0009_security_hardening.sql` — auditoria: `add_admin` travado, policies de
+  escrita, `app_secrets`, índices e `search_path` vazio
+- `0010_rate_limits.sql` — tabela `rate_limits` + RPC atômica `bump_rate_limit`
+- `0011_invites_token_column.sql` — `customer_invites.token` para convite com senha
+- `0012_internal_notes.sql` — observações internas saem das linhas do cliente
+  para `internal_notes` (colunas `notes` removidas)
+- `0013_hardening.sql` — `app_secrets` sem SELECT para anon/authenticated e RPC
+  `hardening_status()` de diagnóstico (confirma o revog e o índice de convites)
 
 ```bash
 npx supabase link --project-ref <seu-project-ref>
@@ -59,7 +69,11 @@ npx supabase db push
 ```
 
 Sem CLI logado? Cole o conteúdo da migração no **Supabase → SQL Editor → New
-query → Run** (na ordem `0001`, `0002`, `0003`, `0004`, `0005`, `0006`).
+query → Run**, na ordem (`0001` … `0013`). Depois confira tudo com:
+
+```bash
+node scripts/verify-migrations.mjs   # espera 15/15 ok
+```
 
 Depois, libere o primeiro administrador (RLS impede que qualquer usuário se torne admin):
 
@@ -70,35 +84,28 @@ select public.add_admin('seu-email@exemplo.com');
 O e-mail precisa já existir em `auth.users` (faça um login admin falhando uma vez
 ou crie o usuário pelo painel do Supabase).
 
-## Login do cliente (OTP por WhatsApp)
+## Login do cliente (link de convite + senha)
 
-O Supabase só envia OTP em WhatsApp pelos provedores **Twilio** e **Twilio Verify**
-— e o código já manda `channel: "whatsapp"` em `requestCustomerOtp`, então a
-integração é **só configuração**, sem mudança de código.
+Não existe cadastro aberto: só entra quem já está em `customers` e recebeu um
+link de convite.
 
-1. Crie a conta Twilio (plano pago; trial só envia para números verificados) e
-   conclua o **WhatsApp Sender self-signup** — exige *business verification* da
-   Meta já feita e um número que **não** esteja logado no app WhatsApp.
-2. Twilio → **Verify** → crie um *Verification Service*. O Twilio auto-gera os
-   templates de autenticação da Meta (Copy Code) nos idiomas suportados, sem
-   aprovação manual.
-3. Supabase → **Authentication → Providers → Phone** → ative, escolha
-   **Twilio Verify** e cole `Account SID`, `Auth Token` e o SID do serviço.
-   > O campo se chama **"Twilio Message Service SID"** mas espera o **Verify
-   > Service SID (`VA…`)** — é assim que o Auth (GoTrue) usa
-   > (`…/v2/Services/{sid}/Verifications`).
+1. Admin → **Clientes** → gerar convite. A ação grava em `customer_invites`
+   apenas o `token_hash` (o token cru aparece só para o dono na tela de
+   Configuração) e devolve o link `/painel/convite?token=…`.
+2. O cliente abre o link, escolhe uma senha de **8+ caracteres** e é logado na
+   hora. O convite é uso único: o consumo é um
+   `update … where used_at is null` feito **antes** do login, então duas
+   requisições simultâneas não passam ambas — e se algo falhar entre o consumo
+   e a sessão, o link é devolvido.
+3. A partir daí o acesso é **WhatsApp + senha** em `/painel/login`.
 
-Custo por login (Twilio Verify, ago/2026): **US$0,05 de taxa do Verify por
-verificação bem-sucedida** (≈ R$0,27) **+ R$0,035** da mensagem de autenticação
-da Meta ≈ **R$0,31 por login**. Nada de mensalidade.
+O limite de tentativas fica em `rate_limits` (migração `0010`) e é aplicado
+por assunto **e** por IP: 5 tentativas de senha por 15 min, 15 tentativas de
+convite por 15 min e um teto global de 30 por IP no mesmo intervalo.
 
-> Alternativa mais barata: enviar direto pela **Meta Cloud API** (R$0,035 por
-> mensagem, sem taxa de plataforma) — exige Send SMS Hook, Edge Function e
-> template AUTHENTICATION aprovado. ~R$14/mês para 400 logins vs ~R$124.
-
-O envio é restrito a telefones já existentes em `customers`
-(`customerExistsByPhone`): quem nunca participou de um lote recebe
-*"Não encontramos este número"* e não gera conta.
+> O fluxo antigo de OTP por WhatsApp (Twilio Verify) foi removido: era pago por
+> login e devolvia "não encontramos este número", o que servia de oráculo para
+> descobrir telefones cadastrados.
 
 ## Estoque e clientes (F2)
 
@@ -189,13 +196,13 @@ O envio é restrito a telefones já existentes em `customers`
     `{name}` `{tracking}`, chips para inserir e prévia ao vivo. O botão
     "Enviar no WhatsApp" de Lotes usa o template salvo.
   - **Integrações** — status das chaves `MP_*`, `SUPERFRETE_*`, `WHATSAPP_*`
-    e do OTP no Supabase (o valor secreto nunca aparece).
+    e dos dois segredos do webhook do Mercado Pago (o valor nunca aparece).
   - **Equipe** — lista com e-mails, troca de papel e remoção (dono só; não
     remove a si mesmo nem o último dono). Novo membro: criar o usuário em
     Authentication → Users e rodar `select public.add_admin(...)`.
   - **Exportação LGPD** — CSV (`;`, UTF-8 com BOM) de clientes e lotes via
     `/admin/configuracao/export?tipo=…`, restrito ao dono.
-- **Primeiro login do cliente** — `verifyCustomerOtp` manda para
+- **Primeiro login do cliente** — `redirectAfterCustomerLogin` manda para
   `/painel/cadastro` quando o endereço está incompleto; o formulário pede nome,
   CEP (auto-preenchimento via ViaCEP), rua, número, bairro, cidade e UF. Depois
   fica em **Meus dados** (header do painel). Sem `0004`, o login cai direto no
@@ -210,7 +217,7 @@ O envio é restrito a telefones já existentes em `customers`
 | --- | --- | --- |
 | `/` | público | landing |
 | `/login` | público | login admin (e-mail + senha) |
-| `/painel/login` | público | login do cliente (OTP WhatsApp) |
+| `/painel/login` | público | login do cliente (WhatsApp + senha) |
 | `/admin/dashboard` | `admin_profiles.role` | painel |
 | `/admin/lotes` | admin | **F1–F2** — CRUD, fotos, WhatsApp, baixa de estoque |
 | `/admin/estoque` | admin | **F2** — matriz 20×4, ajuste manual e movimentações |

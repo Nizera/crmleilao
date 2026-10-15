@@ -4,11 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { customerExistsByPhone } from "@/lib/dal";
 import { isShippingComplete } from "@/lib/customers";
 import { hashInviteToken } from "@/lib/invites";
 import { toE164 } from "@/lib/phone";
-import { allow, clientIp } from "@/lib/ratelimit";
+import { allowPublic } from "@/lib/ratelimit";
 
 const RATE_MSG = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
 
@@ -44,7 +43,7 @@ export async function adminSignIn(
     return { error: "Informe e-mail e senha." };
   }
 
-  if (!(await allow("admin-signin", email.toLowerCase(), [await clientIp()]))) {
+  if (!(await allowPublic("admin-signin", email.toLowerCase()))) {
     return { error: RATE_MSG };
   }
 
@@ -113,7 +112,7 @@ export async function customerSignIn(
     return { error: "Informe sua senha." };
   }
 
-  if (!(await allow("customer-signin", phone, [await clientIp()]))) {
+  if (!(await allowPublic("customer-signin", phone))) {
     return { error: RATE_MSG };
   }
 
@@ -131,7 +130,7 @@ export async function customerSignIn(
 }
 
 /**
- * Procura o usuário auth por telefone (quando o OTP já havia criado um).
+ * Procura o usuário auth já existente por telefone.
  * O GoTrue grava `auth.users.phone` sem o "+", então comparamos sem sinal.
  */
 async function findAuthUserByPhone(
@@ -153,9 +152,13 @@ async function findAuthUserByPhone(
 }
 
 /**
- * Primeiro acesso via link de convite: valida o token, cria (ou atualiza)
- * a conta auth com o telefone já cadastrado, marca o convite como usado,
- * entra na sessão e manda para o cadastro de dados.
+ * Primeiro acesso via link de convite: valida o token, **consome o convite de
+ * forma atômica**, cria (ou atualiza) a conta auth com o telefone já
+ * cadastrado, entra na sessão e manda para o cadastro de dados.
+ *
+ * O consumo vem antes do login de propósito: duas requisições simultâneas com
+ * o mesmo link disputam o mesmo `update … where used_at is null` e só uma
+ * passa. Se algo entre o consumo e o login falhar, `release()` devolve o link.
  */
 export async function acceptCustomerInvite(
   _prev: AuthFormState,
@@ -175,7 +178,7 @@ export async function acceptCustomerInvite(
     return { error: "As senhas não conferem." };
   }
 
-  if (!(await allow("invite-accept", await clientIp()))) {
+  if (!(await allowPublic("invite-accept", hashInviteToken(token)))) {
     return { error: RATE_MSG };
   }
 
@@ -213,73 +216,8 @@ export async function acceptCustomerInvite(
     return { error: "Este link expirou. Peça um novo link ao admin." };
   }
 
-  // 1) Cria (ou atualiza) a conta auth com o telefone já cadastrado.
-  let authUserId: string | null = customer.auth_user_id;
-
-  if (authUserId) {
-    const { error } = await admin.auth.admin.updateUserById(authUserId, {
-      password,
-      phone_confirm: true,
-    });
-    if (error) {
-      return { error: dbError("definir senha", error) };
-    }
-  } else {
-    const { data: created, error: createError } =
-      await admin.auth.admin.createUser({
-        phone: customer.phone_e164,
-        password,
-        phone_confirm: true,
-      });
-
-    if (createError) {
-      // Já existe uma conta com este telefone (ex.: OTP interrompido).
-      if (!/already|exist/i.test(createError.message)) {
-        return { error: dbError("criar acesso", createError) };
-      }
-      const existingId = await findAuthUserByPhone(admin, customer.phone_e164);
-      if (!existingId) {
-        return { error: dbError("criar acesso (existente)", createError) };
-      }
-      const { error: updateError } = await admin.auth.admin.updateUserById(
-        existingId,
-        { password, phone_confirm: true },
-      );
-      if (updateError) {
-        return { error: dbError("definir senha (existente)", updateError) };
-      }
-      authUserId = existingId;
-    } else {
-      authUserId = created.user?.id ?? null;
-      if (!authUserId) {
-        return { error: "Não foi possível criar o acesso." };
-      }
-    }
-  }
-
-  // 2) Garante o vínculo customers.auth_user_id (o trigger também faz isso).
-  if (customer.auth_user_id !== authUserId) {
-    const { error: linkError } = await admin
-      .from("customers")
-      .update({ auth_user_id: authUserId })
-      .eq("id", customer.id);
-    if (linkError) {
-      return { error: dbError("vincular cliente", linkError) };
-    }
-  }
-
-  // 3) Entra na sessão com celular + senha. Só depois de entrar é que o
-  //    convite é consumido — assim um login que falha não queima o link.
-  const supabase = await createClient();
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    phone: customer.phone_e164,
-    password,
-  });
-  if (signInError) {
-    return { error: dbError("entrar após convite", signInError) };
-  }
-
-  // 4) Marca o convite como usado (update condicional = uso único).
+  // 1) Consome o convite ANTES de qualquer mutação de conta. Update
+  //    condicional é o teste de uso único: só uma requisição ganha.
   const { data: consumed } = await admin
     .from("customer_invites")
     .update({ used_at: new Date().toISOString() })
@@ -291,80 +229,92 @@ export async function acceptCustomerInvite(
     return { error: "Este convite já foi usado. Peça um novo link ao admin." };
   }
 
-  await redirectAfterCustomerLogin(supabase, authUserId);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Cliente: OTP por telefone                                                 */
-/* -------------------------------------------------------------------------- */
-
-export async function requestCustomerOtp(
-  _prev: AuthFormState,
-  formData: FormData
-): Promise<AuthFormState> {
-  const phone = toE164(String(formData.get("phone") ?? ""));
-
-  if (!phone) {
-    return { error: "Informe um número de WhatsApp válido com DDD." };
-  }
-
-  const ip = await clientIp();
-  if (!(await allow("otp-request", phone, [ip]))) {
-    return { error: RATE_MSG };
-  }
-
-  if (!(await customerExistsByPhone(phone))) {
-    return {
-      error: "Não encontramos este número. Peça ao admin para cadastrar você.",
-    };
-  }
-
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signInWithOtp({
-    phone,
-    options: { channel: "whatsapp", shouldCreateUser: true },
-  });
-
-  if (error) {
-    if (error.message === "Rate limit exceeded") {
-      return {
-        error: "Muitas tentativas. Aguarde 1 minuto e tente de novo.",
-      };
+  const release = async (why: string) => {
+    const { error } = await admin
+      .from("customer_invites")
+      .update({ used_at: null })
+      .eq("id", invite.id);
+    if (error) {
+      console.error(
+        `[convite] não foi possível liberar o convite ${invite.id} (${why}): ${error.message}`,
+      );
     }
-    return { error: dbError("enviar OTP", error) };
+  };
+
+  // 2) Cria (ou atualiza) a conta auth com o telefone já cadastrado.
+  let authUserId: string | null = customer.auth_user_id;
+
+  if (authUserId) {
+    const { error } = await admin.auth.admin.updateUserById(authUserId, {
+      password,
+      phone_confirm: true,
+    });
+    if (error) {
+      await release("definir senha");
+      return { error: dbError("definir senha", error) };
+    }
+  } else {
+    const { data: created, error: createError } =
+      await admin.auth.admin.createUser({
+        phone: customer.phone_e164,
+        password,
+        phone_confirm: true,
+      });
+
+    if (createError) {
+      // Já existe uma conta com este telefone (ex.: convite anterior).
+      if (!/already|exist/i.test(createError.message)) {
+        await release("criar acesso");
+        return { error: dbError("criar acesso", createError) };
+      }
+      const existingId = await findAuthUserByPhone(admin, customer.phone_e164);
+      if (!existingId) {
+        await release("criar acesso (existente)");
+        return { error: dbError("criar acesso (existente)", createError) };
+      }
+      const { error: updateError } = await admin.auth.admin.updateUserById(
+        existingId,
+        { password, phone_confirm: true },
+      );
+      if (updateError) {
+        await release("definir senha (existente)");
+        return { error: dbError("definir senha (existente)", updateError) };
+      }
+      authUserId = existingId;
+    } else {
+      authUserId = created.user?.id ?? null;
+      if (!authUserId) {
+        await release("criar acesso (sem id)");
+        return { error: "Não foi possível criar o acesso." };
+      }
+    }
   }
 
-  return { notice: "Código enviado no seu WhatsApp." };
-}
-
-export async function verifyCustomerOtp(
-  _prev: AuthFormState,
-  formData: FormData
-): Promise<AuthFormState> {
-  const phone = toE164(String(formData.get("phone") ?? ""));
-  const token = String(formData.get("token") ?? "").replace(/\D/g, "");
-
-  if (!phone) return { error: "Número inválido. Volte e informe de novo." };
-  if (token.length !== 6) return { error: "O código tem 6 dígitos." };
-
-  if (!(await allow("otp-verify", phone, [await clientIp()]))) {
-    return { error: RATE_MSG };
+  // 3) Garante o vínculo customers.auth_user_id (o trigger também faz isso).
+  if (customer.auth_user_id !== authUserId) {
+    const { error: linkError } = await admin
+      .from("customers")
+      .update({ auth_user_id: authUserId })
+      .eq("id", customer.id);
+    if (linkError) {
+      await release("vincular cliente");
+      return { error: dbError("vincular cliente", linkError) };
+    }
   }
 
+  // 4) Entra na sessão com celular + senha. O convite já está consumido, então
+  //    um login que falha devolve o link em vez de queimá-lo.
   const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.verifyOtp({
-    phone,
-    token,
-    type: "sms",
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    phone: customer.phone_e164,
+    password,
   });
-
-  if (error) {
-    return { error: "Código incorreto ou expirado." };
+  if (signInError) {
+    await release("entrar após convite");
+    return { error: dbError("entrar após convite", signInError) };
   }
 
-  await redirectAfterCustomerLogin(supabase, data.user?.id);
+  await redirectAfterCustomerLogin(supabase, authUserId);
 }
 
 export async function customerSignOut(): Promise<void> {

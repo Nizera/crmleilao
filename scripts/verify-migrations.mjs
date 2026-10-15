@@ -85,12 +85,17 @@ async function rpc(key, fn, args = {}) {
     log("0009 has_staff_write existe", r.status === 200, `HTTP ${r.status} ${r.body.slice(0, 120)}`);
   }
 
-  // 6. app_secrets invisível p/ anon (0009)
+  // 6. app_secrets invisível p/ anon (0009).
+  //    Dois formatos de "não enxerga": 200 com [] (só RLS negando as linhas)
+  //    ou 401/403 (a 0013 também revogou o SELECT da tabela, aí o PostgREST
+  //    nem chega na RLS). Ambos significam fechado.
   {
     const r1 = await q(secret, "app_secrets?select=key&limit=1");
     log("0009 tabela app_secrets (service role)", r1.status === 200, `HTTP ${r1.status} ${r1.body.slice(0, 140)}`);
     const r2 = await q(anon, "app_secrets?select=key&limit=1");
-    log("0009 app_secrets invisível p/ anon", r2.status === 200 && r2.body.trim() === "[]", `HTTP ${r2.status} ${r2.body.slice(0, 140)}`);
+    const hidden =
+      r2.status === 401 || r2.status === 403 || (r2.status === 200 && r2.body.trim() === "[]");
+    log("0009 app_secrets invisível p/ anon", hidden, `HTTP ${r2.status} ${r2.body.slice(0, 140)}`);
   }
 
   // 7. internal_notes existe e é invisível para anon (0012)
@@ -109,6 +114,30 @@ async function rpc(key, fn, args = {}) {
     const r = await q(secret, `${table}?select=notes&limit=1`);
     const dropped = r.status >= 400 && /notes/i.test(r.body);
     log(`0012 ${table}.notes removida`, dropped, `HTTP ${r.status} ${r.body.slice(0, 160)}`);
+  }
+
+  // 9. 0013: app_secrets sem SELECT para anon/authenticated + índice parcial.
+  //    Privilegio e índice não aparecem no PostgREST, então a migração expõe
+  //    um RPC só de service_role que devolve booleanos.
+  {
+    const r = await rpc(secret, "hardening_status");
+    let rows = [];
+    try {
+      const parsed = JSON.parse(r.body);
+      // RPC quebrada devolve {"message": "..."} em vez de uma lista.
+      if (Array.isArray(parsed)) rows = parsed;
+    } catch {
+      rows = [];
+    }
+    const flag = (name) => rows.some((row) => row.check_name === name && row.check_ok === true);
+    const detail = `HTTP ${r.status} ${r.body.slice(0, 200)}`;
+
+    log(
+      "0013 app_secrets sem SELECT p/ anon+authenticated",
+      flag("app_secrets_no_select_authenticated") && flag("app_secrets_no_select_anon"),
+      detail,
+    );
+    log("0013 índice customer_invites_pending_idx", flag("customer_invites_pending_idx"), detail);
   }
 
   let fail = 0;

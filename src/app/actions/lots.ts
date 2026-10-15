@@ -189,10 +189,28 @@ export async function saveLot(
 
     const files = formData
       .getAll("images")
-      .filter((f): f is File => f instanceof File && f.size > 0);
+      .filter((f): f is File => f instanceof File && f.size > 0)
+      .slice(0, 6);
+
+    // A Vercel corta o corpo da requisição em 4,5 MB e devolve um 413 sem
+    // contexto. Conferir aqui devolve a mensagem que o admin entende.
+    const oversized = files.find((file) => file.size > 5_000_000);
+    if (oversized) {
+      return failure(
+        `A imagem "${oversized.name}" tem ${Math.round(oversized.size / 1_000_000)} MB. ` +
+          "O envio aceita até 5 MB por foto — remova ou comprima antes de salvar.",
+      );
+    }
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > 4_000_000) {
+      return failure(
+        `As ${files.length} fotos somam ${Math.round(totalBytes / 1_000_000)} MB ` +
+          "e o envio aceita até 4 MB no total. Remova ou troque algumas imagens.",
+      );
+    }
 
     const uploaded: string[] = [];
-    for (const file of files.slice(0, 6)) {
+    for (const file of files) {
       const ext = (file.name.split(".").pop() ?? "jpg")
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "")

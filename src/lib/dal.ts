@@ -76,7 +76,7 @@ export const requireAdmin = cache(async () => {
 
 /**
  * Guarda do painel do cliente (/painel). Exige sessão E cliente vinculado.
- * O vínculo auth_user_id <-> customers é feito no primeiro login por OTP.
+ * O vínculo auth_user_id <-> customers é feito no link de convite.
  */
 export const requireCustomer = cache(async () => {
   const supabase = await createClient();
@@ -100,26 +100,6 @@ export const requireCustomer = cache(async () => {
 
 export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
   required.includes(role);
-
-/**
- * Existe um cliente cadastrado com este WhatsApp?
- *
- * Usado antes de enviar o OTP: só quem já aparece no cadastro (lançado
- * junto com o lote) pode entrar. Consulta com service role porque o RLS
- * de `customers` só libera leitura para o próprio cliente ou a equipe.
- */
-export async function customerExistsByPhone(phoneE164: string) {
-  const supabase = createAdminClient();
-
-  const { data, error } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("phone_e164", phoneE164)
-    .maybeSingle();
-
-  if (error) return null;
-  return data !== null;
-}
 
 const LOT_COLUMNS = [
   "id, code, customer_id, title, description, images, arremate_value, status,",

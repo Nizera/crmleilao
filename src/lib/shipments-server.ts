@@ -38,6 +38,17 @@ export const SHIPMENT_COLUMNS = [
 
 export type TransitionResult = { ok: boolean; reason?: string };
 
+/**
+ * Divide em pedaços para `.in()`: a query string cresce com o número de ids e
+ * o PostgREST/edge tem limite de URL.
+ */
+function chunk<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) return [];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 /** Histórico de eventos do webhook guardado em `events` (depuração). */
 type ShipmentEvent = { event: string; received_at: string; detail?: unknown };
 
@@ -230,32 +241,46 @@ export async function listShipmentQueue(params: {
 
   if (rows.length === 0) return [];
 
-  // Envios ativos e seus vínculos, para marcar o que já saiu.
-  const { data: active, error: activeError } = await admin
-    .from("shipments")
-    .select(SHIPMENT_COLUMNS)
-    .neq("status", "cancelled");
-  if (activeError) {
-    throw new Error(`Falha ao listar envios: ${activeError.message}`);
-  }
-
-  const activeRows = (active ?? []) as unknown as Shipment[];
-  const activeIds = activeRows.map((row) => row.id);
-
-  const lotToShipment = new Map<string, Shipment>();
-  if (activeIds.length > 0) {
-    const { data: links, error: linksError } = await admin
+  // 2) Só os envios ligados A ESTES lotes. Começar pelos vínculos e depois
+  //    buscar os envios envolvidos evita varrer todos os envios ativos do
+  //    banco (colunas pesadas: eventos, endereço, QR) a cada visita à fila.
+  const lotIds = rows.map((row) => row.id);
+  const links: { lot_id: string; shipment_id: string }[] = [];
+  for (const lotChunk of chunk(lotIds, 200)) {
+    const { data, error: linksError } = await admin
       .from("shipment_lots")
       .select("lot_id, shipment_id")
-      .in("shipment_id", activeIds);
+      .in("lot_id", lotChunk);
     if (linksError) {
       throw new Error(`Falha ao listar vínculos: ${linksError.message}`);
     }
+    links.push(
+      ...((data ?? []) as unknown as {
+        lot_id: string;
+        shipment_id: string;
+      }[]),
+    );
+  }
+
+  const shipmentIds = [...new Set(links.map((link) => link.shipment_id))];
+
+  const activeRows: Shipment[] = [];
+  for (const idChunk of chunk(shipmentIds, 200)) {
+    const { data: active, error: activeError } = await admin
+      .from("shipments")
+      .select(SHIPMENT_COLUMNS)
+      .in("id", idChunk)
+      .neq("status", "cancelled");
+    if (activeError) {
+      throw new Error(`Falha ao listar envios: ${activeError.message}`);
+    }
+    activeRows.push(...((active ?? []) as unknown as Shipment[]));
+  }
+
+  const lotToShipment = new Map<string, Shipment>();
+  if (activeRows.length > 0) {
     const byId = new Map(activeRows.map((row) => [row.id, row]));
-    for (const link of (links ?? []) as unknown as {
-      lot_id: string;
-      shipment_id: string;
-    }[]) {
+    for (const link of links) {
       const shipment = byId.get(link.shipment_id);
       if (shipment) lotToShipment.set(link.lot_id, shipment);
     }

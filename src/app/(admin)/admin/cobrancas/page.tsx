@@ -1,6 +1,10 @@
 import { ChargesView } from "@/components/admin/charges/charges-view";
 import { getAppSettings, listCharges, requireAdmin, type ChargePage } from "@/lib/dal";
-import { mpConfigured, mpWebhookConfigured } from "@/lib/mercadopago";
+import {
+  mpConfigured,
+  mpSignatureConfigured,
+  mpWebhookConfigured,
+} from "@/lib/mercadopago";
 import type { ChargeStatus } from "@/lib/charges";
 
 export const metadata = { title: "Cobranças" };
@@ -55,6 +59,7 @@ export default async function CobrancasPage({
       paymentTemplate={settings.wa_payment_template}
       mpReady={mpConfigured()}
       webhookReady={mpWebhookConfigured()}
+      signatureReady={mpSignatureConfigured()}
       migrationReady={migrationReady}
     />
   );

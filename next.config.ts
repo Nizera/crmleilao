@@ -54,11 +54,14 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // Fotos do lote: até 6 × 5 MB no mesmo FormData de uma server action.
-  // O padrão do Next é 1 MB e derrubava o upload de foto real.
+  // Fotos do lote: até 6 imagens já comprimidas no navegador (WebP, ~500 KB
+  // cada) no mesmo FormData de uma server action. O Next padrão é 1 MB e
+  // derrubava o upload. Isto é só o teto do Next: na Vercel o corpo é cortado
+  // em 4,5 MB na infraestrutura e nenhuma flag muda isso — por isso a
+  // compressão acontece no cliente, não aqui.
   experimental: {
     serverActions: {
-      bodySizeLimit: "35mb",
+      bodySizeLimit: "8mb",
     },
   },
   async headers() {

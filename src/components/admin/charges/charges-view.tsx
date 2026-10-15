@@ -65,6 +65,7 @@ type Props = {
   paymentTemplate: string;
   mpReady: boolean;
   webhookReady: boolean;
+  signatureReady: boolean;
   migrationReady: boolean;
 };
 
@@ -78,6 +79,7 @@ export function ChargesView({
   paymentTemplate,
   mpReady,
   webhookReady,
+  signatureReady,
   migrationReady,
 }: Props) {
   const router = useRouter();
@@ -167,6 +169,13 @@ export function ChargesView({
           reinicie e cadastre a URL em Suas integrações → Webhooks (evento
           Order) no painel do MP. Sem isso, os pagamentos precisam ser
           confirmados manualmente por aqui.
+        </p>
+      )}
+      {mpReady && webhookReady && !signatureReady && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+          Assinatura do webhook ausente (<code>MP_WEBHOOK_SECRET</code>): as
+          notificações continuam sendo aceitas sem validar o <code>x-signature</code>.
+          Recomendado definir no .env e reiniciar.
         </p>
       )}
 

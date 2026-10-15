@@ -38,6 +38,15 @@ export function mpWebhookConfigured(): boolean {
 }
 
 /**
+ * Há segredo da assinatura `x-signature`? Sem isso o endpoint continua
+ * aceitando notificação (fail-open de propósito, com warn no log) — a defesa
+ * passa a ser só o token de path + reconsulta da order na API.
+ */
+export function mpSignatureConfigured(): boolean {
+  return Boolean(process.env.MP_WEBHOOK_SECRET?.trim());
+}
+
+/**
  * URL do webhook para cadastrar em Suas integrações → Webhooks (evento
  * Order) do painel do Mercado Pago. Com a Orders API essa URL não é mais
  * enviada na requisição — o cadastro é manual, uma única vez.
@@ -281,4 +290,41 @@ export async function getOrder(orderId: string): Promise<MpOrder | null> {
     dateApproved: (json as { date_approved?: string | null }).date_approved ?? null,
     raw: json,
   };
+}
+
+/**
+ * Cancela no Mercado Pago uma order que acabou de ser criada mas que não
+ * pôde ser salva localmente. Sem isso, a ordem viveria no MP sem cobrança
+ * correspondente aqui e um pagamento nela não teria onde cair.
+ *
+ * Devolve `true` quando é seguro desfazer tudo localmente:
+ * - 404/400 = a order nunca existiu, não há o que compensar;
+ * - 200 com status `cancelled` = cancelada de fato.
+ *
+ * Qualquer outra resposta (rede, 4xx/5xx) devolve `false` e o chamador
+ * mantém a cobrança local em vez de apagá-la.
+ */
+export async function cancelPixOrder(orderId: string): Promise<boolean> {
+  if (!/^[A-Za-z][A-Za-z0-9_-]{3,}$/.test(orderId)) return false;
+
+  try {
+    const response = await fetch(`${MP_API}/v1/orders/${orderId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${mpAccessToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "cancelled" }),
+      cache: "no-store",
+    });
+
+    if (response.status === 404 || response.status === 400) return true;
+    if (!response.ok) return false;
+
+    const json = (await response.json()) as MpOrderResponse;
+    return json.status === "cancelled";
+  } catch (error) {
+    console.error(`[mercadopago] falha ao cancelar ${orderId}:`, error);
+    return false;
+  }
 }

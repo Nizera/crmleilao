@@ -7,7 +7,7 @@ import {
   type ChargeLotRef,
   type ChargeStatus,
 } from "@/lib/charges";
-import { createPixOrder } from "@/lib/mercadopago";
+import { cancelPixOrder, createPixOrder } from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -269,6 +269,13 @@ export async function createCharge(input: {
             : undefined,
     });
   } catch (error) {
+    // A order pode ter chegado a existir no MP antes da rede falhar. Desfaz o
+    // reclame mesmo assim (o caso comum é não ter sido criada) e deixa o
+    // external_reference no log para conferir no painel do Mercado Pago.
+    console.error(
+      `[charges] falha ao criar Pix (${externalReference}):`,
+      error instanceof Error ? error.message : error,
+    );
     await rollback();
     throw error;
   }
@@ -285,8 +292,27 @@ export async function createCharge(input: {
     .eq("id", chargeId);
 
   if (saveError) {
-    await rollback();
-    throw new Error(`Falha ao salvar o Pix da cobrança: ${saveError.message}`);
+    console.error(
+      `[charges] não foi possível salvar o Pix da cobrança ${chargeId} ` +
+        `(order ${order.orderId}): ${saveError.message}`,
+    );
+
+    // Apagar a cobrança aqui deixaria a order viva no Mercado Pago sem
+    // correspondência local: um pagamento nela não teria onde cair. Só
+    // desfazemos se o cancelamento no MP for confirmado.
+    if (order.orderId && (await cancelPixOrder(order.orderId))) {
+      await rollback();
+      throw new Error(
+        `Falha ao salvar o Pix da cobrança: ${saveError.message}. ` +
+          "A ordem foi cancelada no Mercado Pago — tente gerar de novo.",
+      );
+    }
+
+    throw new Error(
+      "A cobrança foi criada no Mercado Pago, mas não foi possível salvar o QR aqui. " +
+        "Recarregue a tela: ela deve aparecer em Cobranças. Se não aparecer, " +
+        "cancele a cobrança aberta no painel do Mercado Pago e gere outra.",
+    );
   }
 
   const charge = await getChargeById(chargeId);

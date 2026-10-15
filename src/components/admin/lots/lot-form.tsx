@@ -119,6 +119,7 @@ function LotForm({
   const [serverError, setServerError] = useState<string | null>(null);
   const [keptImages, setKeptImages] = useState<string[]>(lot?.images ?? []);
   const [uploads, setUploads] = useState<{ file: File; url: string }[]>([]);
+  const [compressing, setCompressing] = useState(false);
   const [shippingTouched, setShippingTouched] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[] | null>(null);
@@ -157,14 +158,24 @@ function LotForm({
   const remaining = MAX_IMAGES - keptImages.length - uploads.length;
   const statusValue = useWatch({ control: form.control, name: "status" });
 
-  const addFiles = (list: FileList | null) => {
-    if (!list || remaining <= 0) return;
+  const addFiles = async (list: FileList | null) => {
+    if (!list || remaining <= 0 || compressing) return;
     const picked = Array.from(list)
       .filter((file) => file.size > 0)
-      .slice(0, remaining)
-      .map((file) => ({ file, url: URL.createObjectURL(file) }));
+      .slice(0, remaining);
 
-    setUploads((current) => [...current, ...picked]);
+    setCompressing(true);
+    try {
+      const processed = await Promise.all(
+        picked.map(async (file) => {
+          const compressed = await compressImage(file);
+          return { file: compressed, url: URL.createObjectURL(compressed) };
+        }),
+      );
+      setUploads((current) => [...current, ...processed]);
+    } finally {
+      setCompressing(false);
+    }
   };
 
   const removeUpload = (url: string) => {
@@ -200,6 +211,17 @@ function LotForm({
 
   const submit = form.handleSubmit((values) => {
     setServerError(null);
+
+    // Teto da Vercel para o corpo da requisição: 4,5 MB e não tem como
+    // levantar isso. Conferir aqui devolve uma mensagem em vez de um 413.
+    const totalBytes = totalUploadBytes(uploads.map((item) => item.file));
+    if (totalBytes > 4_000_000) {
+      setServerError(
+        `As fotos somam ${Math.round(totalBytes / 1_000_000)} MB e o envio aceita até 4 MB. ` +
+          "Remova ou troque algumas imagens.",
+      );
+      return;
+    }
 
     const fd = new FormData();
     for (const [key, value] of Object.entries(values)) {
@@ -517,16 +539,20 @@ function LotForm({
           {remaining > 0 && (
             <button
               type="button"
+              disabled={compressing}
               onClick={() => fileInputRef.current?.click()}
-              className="flex size-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground transition hover:border-foreground/40 hover:text-foreground"
+              className="flex size-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground transition hover:border-foreground/40 hover:text-foreground disabled:opacity-50"
             >
               <ImagePlus className="size-4" />
-              <span className="text-[11px]">Adicionar</span>
+              <span className="text-[11px]">
+                {compressing ? "Otimizando…" : "Adicionar"}
+              </span>
             </button>
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          JPG, PNG, WebP ou AVIF até 5 MB. Até {MAX_IMAGES} fotos.
+          JPG, PNG, WebP ou AVIF até 5 MB. Até {MAX_IMAGES} fotos
+          {compressing ? "" : " — reduzimos para caber no envio"}.
         </p>
         <input
           ref={fileInputRef}
@@ -558,12 +584,18 @@ function LotForm({
             uploads.forEach(({ url }) => URL.revokeObjectURL(url));
             onDone();
           }}
-          disabled={pending}
+          disabled={pending || compressing}
         >
           Cancelar
         </Button>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Salvando…" : lot ? "Salvar alterações" : "Criar lote"}
+        <Button type="submit" disabled={pending || compressing}>
+          {pending
+            ? "Salvando…"
+            : compressing
+              ? "Otimizando fotos…"
+              : lot
+                ? "Salvar alterações"
+                : "Criar lote"}
         </Button>
       </div>
     </form>
@@ -572,6 +604,89 @@ function LotForm({
 
 function FieldGroup({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-4">{children}</div>;
+}
+
+/** Lado maior que isto não aparece no painel nem na galeria. */
+const MAX_EDGE = 1600;
+/**
+ * Orçamento por foto. A Vercel rejeita corpo acima de 4,5 MB (413, sem flag
+ * que mude isso) e são até 6 fotos no mesmo FormData — então cada uma precisa
+ * ficar bem abaixo de 750 KB.
+ */
+const MAX_BYTES_PER_PHOTO = 500_000;
+/** Abaixo disso não vale o custo de reencodar. */
+const MIN_WORTH_COMPRESSING = 250_000;
+
+const COMPRESS_PASSES = [
+  { maxEdge: MAX_EDGE, quality: 0.8 },
+  { maxEdge: 1400, quality: 0.7 },
+  { maxEdge: 1200, quality: 0.6 },
+];
+
+/**
+ * Reduz a foto no navegador antes de mandar para o servidor.
+ *
+ * Duas razões: o corpo da requisição tem teto rígido na Vercel e a
+ * galeria/listagem carrega bem mais rápido. Qualquer falha devolve o arquivo
+ * original — nunca quebra o envio.
+ */
+async function compressImage(file: File): Promise<File> {
+  if (file.size < MIN_WORTH_COMPRESSING) return file;
+  if (!["image/jpeg", "image/png", "image/webp", "image/avif"].includes(file.type)) {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const sourceWidth = bitmap.width;
+    const sourceHeight = bitmap.height;
+    let best: Blob | null = null;
+    let bestWidth = sourceWidth;
+    let bestHeight = sourceHeight;
+
+    for (const pass of COMPRESS_PASSES) {
+      const scale = Math.min(1, pass.maxEdge / Math.max(bitmap.width, bitmap.height));
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) break;
+
+      ctx.drawImage(bitmap, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", pass.quality),
+      );
+      if (!blob) break;
+
+      best = blob;
+      bestWidth = width;
+      bestHeight = height;
+      if (blob.size <= MAX_BYTES_PER_PHOTO) break;
+
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    bitmap.close();
+
+    if (!best) return file;
+    // Reduzimos o lado? Então troca mesmo que o peso tenha ficado parecido.
+    const downscaled = bestWidth < sourceWidth || bestHeight < sourceHeight;
+    if (!downscaled && best.size >= file.size) return file;
+
+    const name = `${file.name.replace(/\.[^.]+$/, "")}.webp`;
+    return new File([best], name, { type: "image/webp", lastModified: Date.now() });
+  } catch {
+    return file;
+  }
+}
+
+/** Tamanho total das fotos a enviar — teto rígido da Vercel é 4,5 MB. */
+function totalUploadBytes(files: File[]): number {
+  return files.reduce((sum, file) => sum + file.size, 0);
 }
 
 function ImageThumb({

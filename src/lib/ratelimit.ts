@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Limite de tentativas das telas públicas (login, OTP, convite).
+ * Limite de tentativas das telas públicas (login, convite).
  *
  * O contador é gravado no banco (migração 0010) porque as server actions não
  * compartilham memória entre instâncias. `bump_rate_limit` faz um upsert
@@ -15,26 +15,28 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * continua funcionando (só perde a proteção) em vez de derrubar o acesso.
  */
 export type RateBucket =
-  | "otp-request"
-  | "otp-verify"
   | "admin-signin"
   | "customer-signin"
-  | "invite-accept";
+  | "invite-accept"
+  | "ip-only";
 
 const RULES: Record<RateBucket, { limit: number; window: number }> = {
-  // Evita SMS/viagem para qualquer número e brute force do código de 6 dígitos.
-  "otp-request": { limit: 3, window: 600 },
-  "otp-verify": { limit: 10, window: 600 },
   // Senha de 8+ caracteres: volume baixo por conta.
   "admin-signin": { limit: 5, window: 900 },
   "customer-signin": { limit: 5, window: 900 },
   // Convite é uso único, mas a tentativa de adivinhar token não pode ser livre.
   "invite-accept": { limit: 15, window: 900 },
+  // Teto por IP. Os outros buckets são por assunto (e-mail/telefone/token):
+  // trocar o assunto zera a chave, então este teto é o que impede enumeração
+  // em massa a partir de um único lugar.
+  "ip-only": { limit: 30, window: 900 },
 };
 
 /**
- * IP do chamador. Server actions recebem os headers da requisição que as
- * invocou; atrás de proxy, `x-forwarded-for` traz o cliente real.
+ * IP do chamador. Na Vercel o `x-forwarded-for` é gravado pelo próprio
+ * edge/router e o valor do cliente é sobrescrito, então o primeiro campo é o
+ * IP real e não é forjável. Fora da Vercel (proxy próprio) certifique-se de
+ * que o proxy sobrescreva o header antes de confiar nele.
  */
 export async function clientIp(): Promise<string> {
   try {
@@ -83,4 +85,18 @@ export async function allow(
     console.warn("[rate-limit] indisponível:", error);
     return true;
   }
+}
+
+/**
+ * Contador das telas públicas: um por assunto (e-mail/telefone/token) **e**
+ * um teto por IP, na mesma chamada. Assunto é o que protege o dono de conta;
+ * o teto por IP é o que segura quem troca de assunto a cada tentativa.
+ */
+export async function allowPublic(
+  bucket: RateBucket,
+  subject: string,
+): Promise<boolean> {
+  const ip = await clientIp();
+  if (!(await allow(bucket, subject, [ip]))) return false;
+  return allow("ip-only", ip);
 }
