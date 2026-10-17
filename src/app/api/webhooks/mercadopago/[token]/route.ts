@@ -26,7 +26,11 @@ import { getOrder } from "@/lib/mercadopago";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 /** Tolerância de replay: assinatura com `ts` além disto é recusada. */
-const SIGNATURE_MAX_AGE_MS = 10 * 60 * 1000;
+// O MP reenvia notificações não confirmadas por dias (15 min, 30 min, 6 h,
+// 48 h, 96 h) e a doc não diz se o reenvio é reassinado com `ts` novo. Uma
+// janela de 10 min rejeitaria reenvios legítimos. Replay aqui é inofensivo:
+// a order é rebuscada na API e a transição de status é idempotente.
+const SIGNATURE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function safeEqual(a: string, b: string): boolean {
   const ha = createHash("sha256").update(a, "utf8").digest();
@@ -60,9 +64,15 @@ function signatureIdCandidates(body: unknown, search: URLSearchParams): string[]
     }
   }
 
+  // A doc do MP manda converter o data.id para MINÚSCULAS no manifesto quando
+  // ele é alfanumérico em maiúsculas (ex.: ORD01JQ… → ord01jq…). Os ids da
+  // Orders API são sempre assim. Mantém-se também o valor original por
+  // segurança (ids numéricos/legados não mudam com o lower-case).
   const unique = [
     ...new Set(
-      candidates.filter((value): value is string => !!value && value.length > 0),
+      candidates
+        .filter((value): value is string => !!value && value.length > 0)
+        .flatMap((value) => [value.toLowerCase(), value]),
     ),
   ];
   return unique.length > 0 ? unique : [""];
@@ -108,7 +118,16 @@ function verifySignature(
   const v1 = parts.get("v1");
   if (!ts || !v1) return "ts/v1 ausentes no header";
 
-  const age = Date.now() - Number(ts);
+  // A documentação atual diz `ts` em milissegundos e o exemplo oficial é de
+  // 13 dígitos (`ts=1742505638683`) — nesse formato a linha abaixo é um
+  // no-op. Ela fica como rede de segurança: se um dia o valor vier em
+  // segundos (~1,7e9), sem converter a idade daria ~1,7 trilhão e TODA
+  // notificação cairia em "fora da janela". Abaixo de 1e11 (ms ≈ 1973,
+  // s ≈ 5138) são segundos. O manifesto continua usando o `ts` exatamente
+  // como veio — só a checagem de idade normaliza.
+  const tsNumber = Number(ts);
+  const tsMs = tsNumber < 1e11 ? tsNumber * 1000 : tsNumber;
+  const age = Date.now() - tsMs;
   if (!Number.isFinite(age) || Math.abs(age) > SIGNATURE_MAX_AGE_MS) {
     return "assinatura fora da janela de tolerância";
   }
@@ -181,11 +200,15 @@ function targetForStatus(status: string, statusDetail: string) {
   switch (status) {
     case "processed":
       return "approved" as const;
+    case "expired":
+      // Status próprio na Orders API (Pix não pago dentro do prazo).
+      return "expired" as const;
     case "canceled":
-      // A Orders API mesclou expiração e cancelamento em `canceled`.
-      return /cancel/i.test(statusDetail)
-        ? ("cancelled" as const)
-        : ("expired" as const);
+      // Mantém a heurística antiga como fallback: se o MP voltar a mesclar
+      // expiração em `canceled`, o status_detail ainda distingue os casos.
+      return /expire/i.test(statusDetail)
+        ? ("expired" as const)
+        : ("cancelled" as const);
     case "failed":
     case "refunded":
     case "charged_back":
