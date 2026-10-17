@@ -7,7 +7,12 @@ import {
   type ChargeLotRef,
   type ChargeStatus,
 } from "@/lib/charges";
-import { cancelPixOrder, createPixOrder } from "@/lib/mercadopago";
+import {
+  cancelPixOrder,
+  createPixOrder,
+  getOrder,
+  targetChargeStatus,
+} from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -441,4 +446,81 @@ export async function cancelCharge(chargeId: string): Promise<TransitionResult> 
   const charge = await getChargeById(chargeId);
   if (!charge) return { ok: false, reason: "not_found" };
   return applyTransition(charge, "cancelled");
+}
+
+/**
+ * Reconsulta a order no Mercado Pago e aplica o mesmo status que o webhook
+ * aplicaria. Caminho de recuperação para cobranças pagas enquanto o webhook
+ * esteve recusando notificação, e teste manual sem gerar um novo Pix.
+ */
+export async function syncChargeWithMp(chargeId: string): Promise<TransitionResult> {
+  const charge = await getChargeById(chargeId);
+  if (!charge) return { ok: false, reason: "not_found" };
+  if (!isChargeOpen(charge.status)) return { ok: false, reason: `already_${charge.status}` };
+
+  const orderId = charge.mp_payment_id?.trim();
+  if (!orderId) return { ok: false, reason: "no_order" };
+
+  const order = await getOrder(orderId);
+  if (!order) return { ok: false, reason: "order_not_found" };
+
+  // A order consultada precisa ser a mesma que originou esta cobrança.
+  if (order.externalReference !== charge.external_reference) {
+    return { ok: false, reason: "reference_mismatch" };
+  }
+
+  const target = targetChargeStatus(order.status, order.statusDetail);
+  if (!target) return { ok: false, reason: `mp_${order.status || "desconhecido"}` };
+
+  return settleChargeByReference({
+    externalReference: charge.external_reference,
+    target,
+    mpPaymentId: order.id,
+    amount: order.amount,
+    paidAt: order.dateApproved,
+  });
+}
+
+export type MpSyncSummary = {
+  checked: number;
+  applied: number;
+  unchanged: number;
+  /** Charge id → motivo, para o admin entender o que ficou de fora. */
+  skipped: Record<string, string>;
+};
+
+/**
+ * Varre as cobranças abertas que já têm order e sincroniza cada uma.
+ * Processa no máximo `limit` por chamada — cada uma faz uma consulta à API
+ * do MP e a action roda dentro do tempo limite da função serverless.
+ */
+export async function syncOpenChargesWithMp(limit = 25): Promise<MpSyncSummary> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("charges")
+    .select("id")
+    .in("status", ["pending", "in_process"])
+    .not("mp_payment_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(`Falha ao listar cobranças abertas: ${error.message}`);
+
+  const summary: MpSyncSummary = { checked: 0, applied: 0, unchanged: 0, skipped: {} };
+
+  for (const row of (data ?? []) as { id: string }[]) {
+    summary.checked += 1;
+    try {
+      const result = await syncChargeWithMp(row.id);
+      if (result.ok) summary.applied += 1;
+      else {
+        summary.unchanged += 1;
+        summary.skipped[row.id] = result.reason ?? "sem alteração";
+      }
+    } catch (syncError) {
+      summary.skipped[row.id] = syncError instanceof Error ? syncError.message : "erro";
+    }
+  }
+
+  return summary;
 }

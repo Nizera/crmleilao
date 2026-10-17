@@ -12,11 +12,17 @@ import {
   MoreHorizontal,
   Plus,
   QrCode,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { cancelChargeAction, markChargePaidAction } from "@/app/actions/charges";
+import {
+  cancelChargeAction,
+  markChargePaidAction,
+  syncChargeAction,
+  syncPendingChargesAction,
+} from "@/app/actions/charges";
 import { ChargeFormSheet } from "@/components/admin/charges/charge-form-sheet";
 import { ChargeQrSheet } from "@/components/admin/charges/charge-qr-sheet";
 import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badge";
@@ -86,6 +92,7 @@ export function ChargesView({
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState(q);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [qrCharge, setQrCharge] = useState<Charge | null>(null);
 
@@ -130,6 +137,55 @@ export function ChargesView({
     });
   };
 
+  const runSync = (charge: Charge) => {
+    setBusyId(charge.id);
+    startTransition(async () => {
+      const result = await syncChargeAction(charge.id);
+      if (result.ok) toast.success(`Cobrança ${charge.code} sincronizada com o Mercado Pago.`);
+      else toast.error(result.error);
+      setBusyId(null);
+    });
+  };
+
+  const runSyncAll = () => {
+    const confirmed = window.confirm(
+      "Consultar o Mercado Pago para as cobranças pendentes?\n\n" +
+        "As que já foram pagas lá passam a constar como pagas aqui (e os lotes como Pago). " +
+        "As expiradas são marcadas como Expirada e liberam os lotes.",
+    );
+    if (!confirmed) return;
+
+    setSyncingAll(true);
+    startTransition(async () => {
+      const result = await syncPendingChargesAction();
+      setSyncingAll(false);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      const { checked, applied, skipped } = result.data;
+      const reasons = Object.values(skipped).reduce<Record<string, number>>((acc, reason) => {
+        acc[reason] = (acc[reason] ?? 0) + 1;
+        return acc;
+      }, {});
+      const detail = Object.entries(reasons)
+        .map(([reason, count]) => `${count}× ${reason.replace(/_/g, " ")}`)
+        .join(" · ");
+
+      if (applied > 0) {
+        toast.success(
+          `${applied} ${applied === 1 ? "cobrança atualizada" : "cobranças atualizadas"} no Mercado Pago ` +
+            `(${checked} conferida${checked === 1 ? "" : "s"}).`,
+        );
+      } else {
+        toast.info(`Nada mudou: ${checked} cobrança${checked === 1 ? "" : "s"} conferida(s).`);
+      }
+      if (detail) toast.message(`Não aplicado — ${detail}.`);
+    });
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -141,14 +197,29 @@ export function ChargesView({
               : `${total} ${total === 1 ? "cobrança" : "cobranças"} no total.`}
           </p>
         </div>
-        <Button
-          onClick={() => setFormOpen(true)}
-          disabled={!mpReady}
-          title={mpReady ? undefined : "Configure MP_ACCESS_TOKEN para gerar Pix."}
-        >
-          <Plus />
-          Nova cobrança
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={runSyncAll}
+            disabled={!mpReady || syncingAll}
+            title={
+              mpReady
+                ? "Consulta o Mercado Pago e aplica o status de cada cobrança pendente."
+                : "Configure MP_ACCESS_TOKEN para consultar o Mercado Pago."
+            }
+          >
+            {syncingAll ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            Sincronizar pendentes
+          </Button>
+          <Button
+            onClick={() => setFormOpen(true)}
+            disabled={!mpReady}
+            title={mpReady ? undefined : "Configure MP_ACCESS_TOKEN para gerar Pix."}
+          >
+            <Plus />
+            Nova cobrança
+          </Button>
+        </div>
       </div>
 
       {!migrationReady && (
@@ -298,6 +369,10 @@ export function ChargesView({
                         {active && (
                           <>
                             <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => runSync(charge)}>
+                              <RefreshCw />
+                              Sincronizar com o Mercado Pago
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => runAction(charge, "paid")}>
                               <Check />
                               Marcar como pago
@@ -309,10 +384,16 @@ export function ChargesView({
                           </>
                         )}
                         {!active && open && (
-                          <DropdownMenuItem onClick={() => runAction(charge, "cancel")}>
-                            <Ban />
-                            Cancelar cobrança
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuItem onClick={() => runSync(charge)}>
+                              <RefreshCw />
+                              Sincronizar com o Mercado Pago
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => runAction(charge, "cancel")}>
+                              <Ban />
+                              Cancelar cobrança
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>

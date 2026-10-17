@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import type { NextRequest } from "next/server";
 
 import { settleChargeByReference } from "@/lib/charges-server";
-import { getOrder } from "@/lib/mercadopago";
+import { getOrder, targetChargeStatus } from "@/lib/mercadopago";
 
 /**
  * Webhook do Mercado Pago (F3 — Orders API, tópico `order`).
@@ -192,33 +192,6 @@ function extractOrderId(body: unknown, searchParams: URLSearchParams): string | 
   return null;
 }
 
-/**
- * Status da Orders API → status da cobrança local.
- * Atenção à grafia: Orders usa `canceled` (um L), Payments usava `cancelled`.
- */
-function targetForStatus(status: string, statusDetail: string) {
-  switch (status) {
-    case "processed":
-      return "approved" as const;
-    case "expired":
-      // Status próprio na Orders API (Pix não pago dentro do prazo).
-      return "expired" as const;
-    case "canceled":
-      // Mantém a heurística antiga como fallback: se o MP voltar a mesclar
-      // expiração em `canceled`, o status_detail ainda distingue os casos.
-      return /expire/i.test(statusDetail)
-        ? ("expired" as const)
-        : ("cancelled" as const);
-    case "failed":
-    case "refunded":
-    case "charged_back":
-      return "rejected" as const;
-    default:
-      // action_required, processing … nada a fazer ainda.
-      return null;
-  }
-}
-
 async function handle(
   request: NextRequest,
   token: string,
@@ -290,7 +263,7 @@ async function handle(
     });
   }
 
-  const target = targetForStatus(order.status, order.statusDetail);
+  const target = targetChargeStatus(order.status, order.statusDetail);
   if (!target || !order.externalReference?.startsWith("chg_")) {
     return new Response(JSON.stringify({ ok: true, ignored: true }), {
       status: 200,

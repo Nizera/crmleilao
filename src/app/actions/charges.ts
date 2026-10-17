@@ -7,6 +7,9 @@ import {
   createCharge,
   getChargeContext,
   markChargePaid,
+  syncChargeWithMp,
+  syncOpenChargesWithMp,
+  type MpSyncSummary,
 } from "@/lib/charges-server";
 import {
   chargeCreateSchema,
@@ -36,6 +39,18 @@ function transitionMessage(reason: string | undefined): string {
     return `Esta cobrança já está com status “${label}”.`;
   }
   if (reason === "not_found") return "Cobrança não encontrada.";
+  if (reason === "no_order") {
+    return "Esta cobrança não tem ordem registrada no Mercado Pago. Gere o Pix de novo.";
+  }
+  if (reason === "order_not_found") {
+    return "O Mercado Pago não conhece esta ordem — ela pode ter sido cancelada no painel de lá.";
+  }
+  if (reason === "reference_mismatch") {
+    return "A ordem consultada não é a desta cobrança. Não confirme nada manualmente; confira no painel do Mercado Pago.";
+  }
+  if (reason?.startsWith("mp_")) {
+    return `O Mercado Pago ainda está com esta ordem em “${reason.slice(3)}” — nada a aplicar agora.`;
+  }
   if (reason === "amount_mismatch") {
     return "O valor pago não confere com o valor da cobrança — confira o extrato do Mercado Pago antes de confirmar.";
   }
@@ -184,6 +199,46 @@ export async function markChargePaidAction(id: string): Promise<ActionResult> {
 
     revalidateChargePaths();
     return { ok: true, data: null };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+  }
+}
+
+/** Reconsulta a ordem no Mercado Pago e aplica o status — sem esperar o webhook. */
+export async function syncChargeAction(id: string): Promise<ActionResult> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") {
+      return failure("Seu perfil é somente leitura.");
+    }
+
+    const result = await syncChargeWithMp(id);
+    if (!result.ok) return failure(transitionMessage(result.reason));
+
+    revalidateChargePaths();
+    return { ok: true, data: null };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+  }
+}
+
+/** Sincroniza em lote as cobranças abertas que já têm ordem no MP. */
+export async function syncPendingChargesAction(
+  limit = 25,
+): Promise<ActionResult<MpSyncSummary>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") {
+      return failure("Seu perfil é somente leitura.");
+    }
+
+    const safeLimit = Math.min(Math.max(Math.trunc(Number(limit) || 25), 1), 50);
+    const summary = await syncOpenChargesWithMp(safeLimit);
+
+    revalidateChargePaths();
+    return { ok: true, data: summary };
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");

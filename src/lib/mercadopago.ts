@@ -328,3 +328,37 @@ export async function cancelPixOrder(orderId: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Status da cobrança local que um status de order do MP deve produzir. */
+export type MpChargeTarget = "approved" | "expired" | "cancelled" | "rejected";
+
+/**
+ * Status da Orders API → status da cobrança local.
+ * Atenção à grafia: Orders usa `canceled` (um L), Payments usava `cancelled`.
+ *
+ * Usado pelo webhook e pela sincronização manual — as duas vias precisam
+ * enxergar a order do mesmo jeito senão a reconciliação divergiria.
+ */
+export function targetChargeStatus(
+  status: string,
+  statusDetail: string,
+): MpChargeTarget | null {
+  switch (status) {
+    case "processed":
+      return "approved";
+    case "expired":
+      // Status próprio na Orders API (Pix não pago dentro do prazo).
+      return "expired";
+    case "canceled":
+      // Mantém a heurística antiga como fallback: se o MP voltar a mesclar
+      // expiração em `canceled`, o status_detail ainda distingue os casos.
+      return /expire/i.test(statusDetail) ? "expired" : "cancelled";
+    case "failed":
+    case "refunded":
+    case "charged_back":
+      return "rejected";
+    default:
+      // created, processing, action_required … nada a fazer ainda.
+      return null;
+  }
+}
