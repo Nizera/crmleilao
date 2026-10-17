@@ -103,6 +103,7 @@ export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
 
 const LOT_COLUMNS = [
   "id, code, customer_id, title, description, images, arremate_value, status,",
+  "charge_id,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id),",
   "items:lot_items(stock_item_id, player_id, color, qty, applied,",

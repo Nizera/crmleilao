@@ -77,6 +77,36 @@ export function isChargeActive(
   return true;
 }
 
+/**
+ * Status que a tela deve ENXERGAR.
+ *
+ * O Mercado Pago expira sozinho uma Pix não paga, mas o webhook de `expired`
+ * pode demorar minutos (ou nem chegar). Sem isso o cliente via "Pendente" para
+ * sempre, sem botão de pagar — como se tivesse quebrado.
+ *
+ * Só `pending` expira por tempo: `in_process` significa que o MP já está
+ * processando um pagamento e o prazo deixa de valer.
+ */
+export function effectiveChargeStatus(
+  charge: Pick<Charge, "status" | "expires_at">,
+  now: Date = new Date(),
+): ChargeStatus {
+  if (!isChargeActive(charge, now) && isChargeOpen(charge.status)) return "expired";
+  return charge.status;
+}
+
+/**
+ * Segundos/dias até o vencimento de uma cobrança aberta.
+ * Negativo quando já venceu; `null` quando não há prazo ou não está aberta.
+ */
+export function chargeExpiryDeltaMs(
+  charge: Pick<Charge, "status" | "expires_at">,
+  now: Date = new Date(),
+): number | null {
+  if (!isChargeOpen(charge.status) || !charge.expires_at) return null;
+  return new Date(charge.expires_at).getTime() - now.getTime();
+}
+
 /** QR do Mercado Pago veio como base64 puro; aqui vira data URL para o <img>. */
 export function chargeQRDataUrl(base64: string | null | undefined): string | null {
   if (!base64) return null;

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import {
   cancelCharge,
   createCharge,
+  getChargeById,
   getChargeContext,
   markChargePaid,
   syncChargeWithMp,
@@ -49,7 +50,10 @@ function transitionMessage(reason: string | undefined): string {
     return "A ordem consultada não é a desta cobrança. Não confirme nada manualmente; confira no painel do Mercado Pago.";
   }
   if (reason?.startsWith("mp_")) {
-    return `O Mercado Pago ainda está com esta ordem em “${reason.slice(3)}” — nada a aplicar agora.`;
+    return (
+      `Ainda não recebemos a confirmação do pagamento no Mercado Pago ` +
+      `(status “${reason.slice(3)}”). Pode levar alguns minutos — tente verificar de novo.`
+    );
   }
   if (reason === "amount_mismatch") {
     return "O valor pago não confere com o valor da cobrança — confira o extrato do Mercado Pago antes de confirmar.";
@@ -161,6 +165,58 @@ export async function createSelfChargeAction(
 
     revalidateChargePaths();
     return { ok: true, data: { charge } };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+  }
+}
+
+/** Garante que a cobrança consultada pertence ao cliente logado. */
+async function requireOwnCharge(
+  id: string,
+  customerId: string,
+): Promise<ActionResult<Charge>> {
+  const charge = await getChargeById(id);
+  if (!charge || charge.customer_id !== customerId) {
+    return failure("Cobrança não encontrada.");
+  }
+  return { ok: true, data: charge };
+}
+
+/**
+ * O cliente cancela o próprio Pix aberto, liberando os lotes para nova
+ * cobrança. Sem isso, quem não conseguiu pagar ficaria travado até o
+ * Mercado Pago expirar a order (3 dias).
+ */
+export async function cancelSelfChargeAction(id: string): Promise<ActionResult> {
+  try {
+    const { customer } = await requireCustomer();
+    const own = await requireOwnCharge(id, customer.id);
+    if (!own.ok) return own;
+
+    const result = await cancelCharge(own.data.id);
+    if (!result.ok) return failure(transitionMessage(result.reason));
+
+    revalidateChargePaths();
+    return { ok: true, data: null };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+  }
+}
+
+/** "Já paguei": consulta o Mercado Pago na hora, sem esperar o webhook. */
+export async function syncSelfChargeAction(id: string): Promise<ActionResult> {
+  try {
+    const { customer } = await requireCustomer();
+    const own = await requireOwnCharge(id, customer.id);
+    if (!own.ok) return own;
+
+    const result = await syncChargeWithMp(own.data.id);
+    if (!result.ok) return failure(transitionMessage(result.reason));
+
+    revalidateChargePaths();
+    return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");

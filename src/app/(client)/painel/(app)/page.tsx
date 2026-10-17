@@ -9,7 +9,6 @@ import {
 import { ClientChargesCard } from "@/components/client/charges-card";
 import { ClientShipmentsCard } from "@/components/client/shipments-card";
 import { ClientLotsList } from "@/components/client/client-lots-list";
-import { isChargeActive } from "@/lib/charges";
 
 export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
@@ -18,10 +17,6 @@ export default async function ClientHomePage() {
     listCustomerCharges(customer.id),
     listCustomerShipments(customer.id),
   ]);
-
-  const hasActiveCharge = charges.some((charge) => isChargeActive(charge));
-  const eligibleLots = lots.filter((lot) => lot.status === "pending_payment");
-  const canGenerate = !hasActiveCharge && eligibleLots.length > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -34,11 +29,7 @@ export default async function ClientHomePage() {
         </p>
       </div>
 
-      <ClientChargesCard
-        lots={lots}
-        charges={charges}
-        canGenerate={canGenerate}
-      />
+      <ClientChargesCard lots={lots} charges={charges} />
 
       <Card>
         <CardHeader>

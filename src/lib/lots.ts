@@ -29,6 +29,8 @@ export type LotRow = {
   images: string[];
   arremate_value: number;
   status: LotStatus;
+  /** Cobrança que está cobrando este lote (nula quando elegível para nova cobrança). */
+  charge_id: string | null;
   auction_date: string;
   shipping_date: string | null;
   paid_at: string | null;
