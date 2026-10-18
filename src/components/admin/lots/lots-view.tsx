@@ -12,7 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { inviteLinkForCustomer } from "@/app/actions/invites";
-import { logWaMessage, setLotStatus } from "@/app/actions/lots";
+import { getLotDetailAction, logWaMessage, setLotStatus } from "@/app/actions/lots";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
 import { Button } from "@/components/ui/button";
@@ -55,16 +55,20 @@ import type { AppSettings } from "@/lib/settings";
 
 const ALL = "all";
 
+const formatQty = (qty: number | undefined) => (qty ? `${qty} un.` : "—");
+
 export function LotsView({
   lots,
   players,
   stock,
   settings,
+  qtyByLot,
 }: {
   lots: Lot[];
   players: Player[];
   stock: StockItem[];
   settings: AppSettings;
+  qtyByLot: Map<string, number>;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>(ALL);
@@ -95,8 +99,17 @@ export function LotsView({
   };
 
   const openEdit = (lot: Lot) => {
-    setEditing(lot);
-    setSheetOpen(true);
+    // A lista é magra: itens, fotos e descrição vêm do detalhe, senão o form
+    // abriria vazio e apagaria dados no próximo save.
+    startTransition(async () => {
+      const result = await getLotDetailAction(lot.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setEditing(result.data);
+      setSheetOpen(true);
+    });
   };
 
   const changeStatus = (lot: Lot, next: LotStatus) => {
@@ -232,9 +245,7 @@ export function LotsView({
                   <span className="block truncate">{lot.title}</span>
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
-                  {lot.items?.length
-                    ? `${lot.items.reduce((sum, row) => sum + row.qty, 0)} un.`
-                    : "—"}
+                  {formatQty(qtyByLot.get(lot.id))}
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatBRL(lot.arremate_value)}

@@ -2,16 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin, getAppSettings, searchCustomers, type Customer } from "@/lib/dal";
+import {
+  getLotById,
+  requireAdmin,
+  getAppSettings,
+  searchCustomers,
+  type Customer,
+} from "@/lib/dal";
 import { toE164 } from "@/lib/phone";
 import { createInviteForCustomer } from "@/lib/invites-server";
-import { saveNote } from "@/lib/notes";
+import { loadNotes, saveNote } from "@/lib/notes";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { parseLotItems } from "@/lib/stock";
 import {
   lotSchema,
   nextShippingDate,
   LOT_STATUSES,
+  type Lot,
   type LotStatus,
 } from "@/lib/lots";
 import { createClient } from "@/lib/supabase/server";
@@ -77,6 +84,28 @@ async function resolveCustomerId(input: {
   }
 
   throw new Error("Informe o WhatsApp do cliente com DDD.");
+}
+
+/**
+ * Detalhe completo do lote para abrir o formulário de edição.
+ *
+ * A listagem do admin é magra (sem itens, fotos e descrição — payload morto
+ * para 500+ linhas); sem isto aqui o form abriria vazio e, ao salvar,
+ * apagaria figurinhas e fotos do lote.
+ */
+export async function getLotDetailAction(id: string): Promise<ActionResult<Lot>> {
+  try {
+    await requireAdmin();
+    const lot = await getLotById(id);
+    if (!lot) return failure("Lote não encontrado.");
+
+    const notes = await loadNotes("lot", [id]);
+    return { ok: true, data: { ...lot, notes: notes.get(id) ?? null } };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    console.error("[lots] detalhe:", error);
+    return failure("Não foi possível carregar o lote. Tente de novo.");
+  }
 }
 
 export async function saveLot(

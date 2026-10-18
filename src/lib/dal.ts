@@ -101,26 +101,65 @@ export const requireCustomer = cache(async () => {
 export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
   required.includes(role);
 
-const LOT_COLUMNS = [
-  "id, code, customer_id, title, description, images, arremate_value, status,",
+/** Colunas sempre presentes de um lote (listagens e detalhe). */
+const LOT_BASE_COLUMNS = [
+  "id, code, customer_id, title, arremate_value, status,",
   "charge_id,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id),",
-  "items:lot_items(stock_item_id, player_id, color, qty, applied,",
-  "player:players(id, name, country))",
 ].join(" ");
+
+/**
+ * `description` (4000 chars), `images` e o embed `items` (até 200 linhas com
+ * join de players) vêm **só quando quem chama pede**: em listagem eles eram
+ * payload morto — 500 lotes viravam ~3-5 MB e uma URL de `.in()` que o
+ * PostgREST nem aceita. Detalhe pede tudo; listagem pede o mínimo.
+ */
+function lotColumns(opts: {
+  description?: boolean;
+  images?: boolean;
+  items?: boolean;
+} = {}): string {
+  const extra: string[] = [];
+  if (opts.description) extra.push("description");
+  if (opts.images) extra.push("images");
+  if (opts.items) {
+    extra.push(
+      "items:lot_items(stock_item_id, player_id, color, qty, applied, " +
+        "player:players(id, name, country))",
+    );
+  }
+  return extra.length > 0 ? `${LOT_BASE_COLUMNS} ${extra.join(", ")}` : LOT_BASE_COLUMNS;
+}
+
+/** Detalhe do lote (admin e cliente): tudo que as telas chegam a usar. */
+const LOT_COLUMNS = lotColumns({ description: true, images: true, items: true });
 
 /**
  * Todos os lotes. Só a equipe enxerga — o cliente é filtrado pelo RLS.
  * `notes: true` (tela administrativa) anexa as observações internas, que
  * moram em `internal_notes` e são invisíveis para o cliente (migração 0012).
+ * `images/items/description` são pedidos por quem chama (ver `lotColumns`).
  */
 export const listLots = cache(
-  async (opts: { notes?: boolean } = {}): Promise<Lot[]> => {
+  async (
+    opts: {
+      notes?: boolean;
+      images?: boolean;
+      items?: boolean;
+      description?: boolean;
+    } = {},
+  ): Promise<Lot[]> => {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("lots")
-      .select(LOT_COLUMNS)
+      .select(
+        lotColumns({
+          images: opts.images,
+          items: opts.items,
+          description: opts.description,
+        }),
+      )
       .order("auction_date", { ascending: false })
       .order("created_at", { ascending: false });
 
@@ -282,18 +321,41 @@ export const getCustomer = cache(
   },
 );
 
-/** Histórico de lotes de um cliente. */
+/**
+ * Histórico de lotes de um cliente (painel do cliente e detalhe no admin).
+ * Sem `description/images/items`: nenhuma das duas telas renderiza isso numa
+ * listagem — só o detalhe do lote carrega (ver `lotColumns`).
+ */
 export const listCustomerLots = cache(async (customerId: string): Promise<Lot[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("lots")
-    .select(LOT_COLUMNS)
+    .select(LOT_BASE_COLUMNS)
     .eq("customer_id", customerId)
     .order("auction_date", { ascending: false })
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Falha ao listar lotes do cliente: ${error.message}`);
   return (data ?? []) as unknown as Lot[];
+});
+
+/**
+ * Total de unidades por lote, para a coluna "Figurinhas" da listagem admin.
+ * Vem `lot_id, qty` (uma linha por item, ~60 B) em vez do embed inteiro com
+ * join de players — e sem travar o formulário de edição, que busca o lote
+ * completo na hora de abrir.
+ */
+export const listLotItemQty = cache(async (): Promise<Map<string, number>> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("lot_items").select("lot_id, qty");
+
+  if (error) throw new Error(`Falha ao totalizar itens dos lotes: ${error.message}`);
+
+  const qty = new Map<string, number>();
+  for (const row of (data ?? []) as { lot_id: string; qty: number | null }[]) {
+    qty.set(row.lot_id, (qty.get(row.lot_id) ?? 0) + Number(row.qty ?? 0));
+  }
+  return qty;
 });
 
 /* -------------------------------------------------------------------------- */
@@ -635,11 +697,21 @@ const CHARGE_LIST_COLUMNS = [
   "lots:lots(id, code, title, arremate_value, status)",
 ].join(" ");
 
+/**
+ * Teto de ids de cliente dentro de `customer_id.in.(...)` na busca.
+ * Medido contra o PostgREST do projeto: 300 ids (11 KB) responde 200, 500
+ * (18,5 KB) já estoura o limite de URL. Acima disso `qTruncated` avisa o
+ * admin em vez de sumir com resultado em silêncio.
+ */
+const CUSTOMER_MATCH_CAP = 300;
+
 export type ChargePage = {
   rows: Charge[];
   total: number;
   page: number;
   pageSize: number;
+  /** Busca por cliente atingiu o teto — parte dos resultados ficou de fora. */
+  qTruncated?: boolean;
 };
 
 export async function listCharges(params: {
@@ -667,6 +739,7 @@ export async function listCharges(params: {
   // (delimitadores `,` `()`, escape `\` e aspas de citação). Sem isso uma
   // busca com apóstrofo quebrava o parse e devolvia erro na listagem.
   const raw = params.q?.trim().replace(/[,'"%()\\]/g, " ").trim() ?? "";
+  let qTruncated = false;
   if (raw.length >= 2) {
     const digits = raw.replace(/\D/g, "").slice(0, 20);
     const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
@@ -682,9 +755,13 @@ export async function listCharges(params: {
         .from("customers")
         .select("id")
         .or(customerFilters.join(","))
-        .limit(50);
+        .limit(CUSTOMER_MATCH_CAP + 1);
 
-      const ids = (customers ?? []).map((row) => row.id);
+      const matched = customers ?? [];
+      qTruncated = matched.length > CUSTOMER_MATCH_CAP;
+      const ids = matched
+        .slice(0, CUSTOMER_MATCH_CAP)
+        .map((row) => row.id as string);
       if (ids.length > 0) filters.push(`customer_id.in.(${ids.join(",")})`);
     }
 
@@ -699,6 +776,7 @@ export async function listCharges(params: {
     total: count ?? 0,
     page,
     pageSize,
+    qTruncated,
   };
 }
 
@@ -782,6 +860,8 @@ export type ShipmentPage = {
   total: number;
   page: number;
   pageSize: number;
+  /** Busca por cliente atingiu o teto — parte dos resultados ficou de fora. */
+  qTruncated?: boolean;
 };
 
 export async function listShipments(params: {
@@ -810,6 +890,7 @@ export async function listShipments(params: {
   // (delimitadores `,` `()`, escape `\` e aspas de citação). Sem isso uma
   // busca com apóstrofo quebrava o parse e devolvia erro na listagem.
   const raw = params.q?.trim().replace(/[,'"%()\\]/g, " ").trim() ?? "";
+  let qTruncated = false;
   if (raw.length >= 2) {
     const digits = raw.replace(/\D/g, "").slice(0, 20);
     const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
@@ -829,9 +910,13 @@ export async function listShipments(params: {
         .from("customers")
         .select("id")
         .or(customerFilters.join(","))
-        .limit(50);
+        .limit(CUSTOMER_MATCH_CAP + 1);
 
-      const ids = (customers ?? []).map((row) => row.id);
+      const matched = customers ?? [];
+      qTruncated = matched.length > CUSTOMER_MATCH_CAP;
+      const ids = matched
+        .slice(0, CUSTOMER_MATCH_CAP)
+        .map((row) => row.id as string);
       if (ids.length > 0) filters.push(`customer_id.in.(${ids.join(",")})`);
     }
 
@@ -844,7 +929,7 @@ export async function listShipments(params: {
   const rows = (data ?? []) as unknown as Shipment[];
   const withLots = await attachLots(rows);
 
-  return { rows: withLots, total: count ?? 0, page, pageSize };
+  return { rows: withLots, total: count ?? 0, page, pageSize, qTruncated };
 }
 
 /**

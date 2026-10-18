@@ -63,26 +63,33 @@ export async function attachLots<T extends { id: string; lots?: unknown }>(
   if (rows.length === 0) return rows as never;
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("shipment_lots")
-    .select("shipment_id, lots(id, code, title)")
-    .in(
-      "shipment_id",
-      rows.map((row) => row.id),
-    );
 
-  if (error) throw new Error(`Falha ao listar lotes do envio: ${error.message}`);
+  // Pedacos de 200: `.in()` com todos os ids da página estoura o limite de
+  // URL quando o histórico cresce (ver `chunk`).
+  const results = await Promise.all(
+    chunk(rows.map((row) => row.id), 200).map((piece) =>
+      admin
+        .from("shipment_lots")
+        .select("shipment_id, lots(id, code, title)")
+        .in("shipment_id", piece),
+    ),
+  );
 
   type LinkRow = {
     shipment_id: string;
     lots: { id: string; code: string; title: string } | null;
   };
   const byShipment = new Map<string, { id: string; code: string; title: string }[]>();
-  for (const link of (data ?? []) as unknown as LinkRow[]) {
-    if (!link.lots) continue;
-    const list = byShipment.get(link.shipment_id) ?? [];
-    list.push(link.lots);
-    byShipment.set(link.shipment_id, list);
+  for (const result of results) {
+    if (result.error) {
+      throw new Error(`Falha ao listar lotes do envio: ${result.error.message}`);
+    }
+    for (const link of (result.data ?? []) as unknown as LinkRow[]) {
+      if (!link.lots) continue;
+      const list = byShipment.get(link.shipment_id) ?? [];
+      list.push(link.lots);
+      byShipment.set(link.shipment_id, list);
+    }
   }
 
   return rows.map((row) => ({

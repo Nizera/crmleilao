@@ -61,17 +61,35 @@ export async function loadNotes(
   if (unique.length === 0) return new Map();
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("internal_notes")
-    .select("entity_id, body")
-    .eq("entity_type", target)
-    .in("entity_id", unique);
 
-  if (error) throw new Error(`Falha ao carregar observações: ${error.message}`);
+  // `.in()` monta a lista na query string: com centenas de ids a URL passa do
+  // limite do PostgREST/edge e a tela inteira falha. Pedacos de 200 cabem
+  // com folga (200 uuids ≈ 7,4 KB).
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    chunks.push(unique.slice(i, i + 200));
+  }
 
-  return new Map(
-    (data ?? []).map((row) => [row.entity_id as string, (row.body ?? "") as string]),
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from("internal_notes")
+        .select("entity_id, body")
+        .eq("entity_type", target)
+        .in("entity_id", chunk),
+    ),
   );
+
+  const map = new Map<string, string>();
+  for (const result of results) {
+    if (result.error) {
+      throw new Error(`Falha ao carregar observações: ${result.error.message}`);
+    }
+    for (const row of (result.data ?? []) as { entity_id: string; body: string | null }[]) {
+      map.set(row.entity_id, row.body ?? "");
+    }
+  }
+  return map;
 }
 
 /** Remove as observações de uma entidade (ex.: cliente excluído). */

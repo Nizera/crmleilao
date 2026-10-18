@@ -1,5 +1,6 @@
 import {
   getAppSettings,
+  listLotItemQty,
   listLots,
   listPlayers,
   listStock,
@@ -11,11 +12,14 @@ export const metadata = { title: "Lotes" };
 
 export default async function LotesPage() {
   await requireAdmin();
-  const [{ settings }, lots, players, stock] = await Promise.all([
+  const [{ settings }, lots, players, stock, qtyByLot] = await Promise.all([
     getAppSettings(),
+    // Lista magra: itens/fotos/descrição ficam no detalhe (getLotDetailAction),
+    // exceto o total de unidades, que vem em `qtyByLot`.
     listLots({ notes: true }),
     listPlayers(),
     listStock(),
+    listLotItemQty(),
   ]);
 
   return (
@@ -24,6 +28,7 @@ export default async function LotesPage() {
       players={players}
       stock={stock}
       settings={settings}
+      qtyByLot={qtyByLot}
     />
   );
 }

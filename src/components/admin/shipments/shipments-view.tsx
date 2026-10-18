@@ -79,6 +79,8 @@ type Props = {
   pageSize: number;
   q: string;
   status: string;
+  /** Busca por cliente no histórico atingiu o teto de ids. */
+  qTruncated?: boolean;
   /** Fila por cliente (período ligado) ou histórico de envios (null). */
   queue: ShipmentQueueRow[] | null;
   periodFrom: string;
@@ -97,6 +99,7 @@ export function ShipmentsView({
   pageSize,
   q,
   status,
+  qTruncated,
   queue,
   periodFrom,
   periodTo,
@@ -296,6 +299,12 @@ export function ShipmentsView({
                 ? "Nenhum envio ainda — agrupe os lotes pagos e emita a etiqueta."
                 : `${total} ${total === 1 ? "envio" : "envios"} no total.`}
           </p>
+          {qTruncated && !isQueue && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              A busca por cliente passou de 300 correspondências — refine o
+              termo para enxergar todas.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {sandbox && (

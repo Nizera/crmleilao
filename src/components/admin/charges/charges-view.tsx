@@ -68,6 +68,7 @@ type Props = {
   pageSize: number;
   q: string;
   status: string;
+  qTruncated?: boolean;
   paymentTemplate: string;
   mpReady: boolean;
   webhookReady: boolean;
@@ -82,6 +83,7 @@ export function ChargesView({
   pageSize,
   q,
   status,
+  qTruncated,
   paymentTemplate,
   mpReady,
   webhookReady,
@@ -196,6 +198,12 @@ export function ChargesView({
               ? "Nenhuma cobrança ainda — agrupe lotes e gere o Pix."
               : `${total} ${total === 1 ? "cobrança" : "cobranças"} no total.`}
           </p>
+          {qTruncated && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              A busca por cliente passou de 300 correspondências — refine o
+              termo para enxergar todas.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button

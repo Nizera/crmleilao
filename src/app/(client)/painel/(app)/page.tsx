@@ -32,7 +32,8 @@ function HistoryLink({ href, count }: { href: string; count?: number }) {
 export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   const [lots, charges, shipments] = await Promise.all([
-    listLots(),
+    // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
+    listLots({ images: true }),
     listCustomerCharges(customer.id),
     listCustomerShipments(customer.id),
   ]);
