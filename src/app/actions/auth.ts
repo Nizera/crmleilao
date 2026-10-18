@@ -6,8 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isShippingComplete } from "@/lib/customers";
 import { hashInviteToken } from "@/lib/invites";
-import { toE164 } from "@/lib/phone";
 import { allowPublic } from "@/lib/ratelimit";
+import {
+  adminLoginSchema,
+  customerLoginSchema,
+  inviteAcceptSchema,
+} from "@/lib/auth-schemas";
 
 const RATE_MSG = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
 
@@ -42,12 +46,16 @@ export async function adminSignIn(
   _prev: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-
-  if (!email || !password) {
-    return { error: "Informe e-mail e senha." };
+  const parsed = adminLoginSchema.safeParse({
+    email: String(formData.get("email") ?? ""),
+    password: String(formData.get("password") ?? ""),
+  });
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Informe e-mail e senha.",
+    };
   }
+  const { email, password } = parsed.data;
 
   if (!(await allowPublic("admin-signin", email.toLowerCase()))) {
     return { error: RATE_MSG };
@@ -108,15 +116,18 @@ export async function customerSignIn(
   _prev: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const phone = toE164(String(formData.get("phone") ?? ""));
-  const password = String(formData.get("password") ?? "");
-
-  if (!phone) {
-    return { error: "Informe um número de WhatsApp válido com DDD." };
+  const parsed = customerLoginSchema.safeParse({
+    phone: String(formData.get("phone") ?? ""),
+    password: String(formData.get("password") ?? ""),
+  });
+  if (!parsed.success) {
+    return {
+      error:
+        parsed.error.issues[0]?.message ??
+        "Informe um número de WhatsApp válido com DDD.",
+    };
   }
-  if (!password) {
-    return { error: "Informe sua senha." };
-  }
+  const { phone, password } = parsed.data;
 
   if (!(await allowPublic("customer-signin", phone))) {
     return { error: RATE_MSG };
@@ -170,19 +181,15 @@ export async function acceptCustomerInvite(
   _prev: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const token = String(formData.get("token") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const confirm = String(formData.get("confirm") ?? "");
-
-  if (!token) {
-    return { error: "Link de convite inválido. Peça um novo link ao admin." };
+  const parsed = inviteAcceptSchema.safeParse({
+    token: String(formData.get("token") ?? ""),
+    password: String(formData.get("password") ?? ""),
+    confirm: String(formData.get("confirm") ?? ""),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Confira os dados." };
   }
-  if (password.length < 8) {
-    return { error: "A senha precisa de pelo menos 8 caracteres." };
-  }
-  if (password !== confirm) {
-    return { error: "As senhas não conferem." };
-  }
+  const { token, password } = parsed.data;
 
   if (!(await allowPublic("invite-accept", hashInviteToken(token)))) {
     return { error: RATE_MSG };
