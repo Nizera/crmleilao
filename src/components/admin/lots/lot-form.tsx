@@ -75,7 +75,7 @@ export function LotFormSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl"
+        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-2xl"
       >
         <SheetHeader className="border-b px-6 py-4">
           <SheetTitle>
