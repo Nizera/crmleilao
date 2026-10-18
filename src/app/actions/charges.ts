@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 import {
   cancelCharge,
@@ -38,6 +38,7 @@ function selfError(scope: string, error: unknown): string {
 }
 
 function revalidateChargePaths() {
+  updateTag("dashboard");
   revalidatePath("/admin/cobrancas");
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/lotes");
@@ -272,6 +273,29 @@ export async function getSelfChargeQrAction(id: string): Promise<
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(selfError("buscar QR do cliente", error));
+  }
+}
+
+/**
+ * Registro completo de uma cobrança para o admin abrir o QR/detalhes: a
+ * listagem traz colunas magras (sem `qr_code_base64`), então o painel busca
+ * o registro na hora — igual ao fluxo do cliente.
+ */
+export async function getChargeQrAction(
+  id: string,
+): Promise<ActionResult<Charge>> {
+  try {
+    await requireAdmin();
+    const charge = await getChargeById(id);
+    if (!charge) return failure("Cobrança não encontrada.");
+    return { ok: true, data: charge };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    console.error(
+      "[charges] buscar QR do admin:",
+      error instanceof Error ? error.message : error,
+    );
+    return failure("Não foi possível carregar o QR agora. Tente novamente.");
   }
 }
 

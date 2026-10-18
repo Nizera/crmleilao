@@ -28,13 +28,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * webhook não tem sessão.
  */
 
-export const SHIPMENT_COLUMNS = [
+/** Colunas comuns de listagem e detalhe (o detalhe soma o histórico `events`). */
+const SHIPMENT_BASE_COLUMNS = [
   "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
   "price, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
-  "cancelled_at, events, created_by, created_at, updated_at,",
+  "cancelled_at, created_by, created_at, updated_at,",
   "customer:customers(id, name, phone_e164)",
 ].join(" ");
+
+/** Listagem/fila: sem `events` (JSONB de até 50 entradas por linha). */
+export const SHIPMENT_COLUMNS = SHIPMENT_BASE_COLUMNS;
+
+/** Webhook: precisa do `events` para anexar o próximo evento. */
+export const SHIPMENT_DETAIL_COLUMNS = `${SHIPMENT_BASE_COLUMNS}, events`;
 
 export type TransitionResult = { ok: boolean; reason?: string };
 
@@ -119,7 +126,7 @@ export async function getShipmentBySfId(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("shipments")
-    .select(SHIPMENT_COLUMNS)
+    .select(SHIPMENT_DETAIL_COLUMNS)
     .eq("sf_order_id", sfOrderId)
     .maybeSingle();
 
@@ -152,21 +159,16 @@ export async function listEligibleShipmentLots(
   if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
   if (!lots || lots.length === 0) return [];
 
-  const { data: active, error: activeError } = await admin
-    .from("shipments")
-    .select("id")
-    .neq("status", "cancelled");
-  if (activeError) {
-    throw new Error(`Falha ao listar envios: ${activeError.message}`);
-  }
-
+  // Só os vínculos destes lotes: nada de varrer a tabela inteira de envios
+  // (nem um `.in()` com todos os ids ativos, que cresce sem limite). O
+  // `!inner` + filtro qualificado mantém só os envios não cancelados.
   const busy = new Set<string>();
-  const activeIds = (active ?? []).map((row) => row.id);
-  if (activeIds.length > 0) {
+  for (const piece of chunk(lots.map((lot) => lot.id), 200)) {
     const { data: links, error: linksError } = await admin
       .from("shipment_lots")
-      .select("lot_id")
-      .in("shipment_id", activeIds);
+      .select("lot_id, shipment:shipments!inner(id)")
+      .in("lot_id", piece)
+      .neq("shipment.status", "cancelled");
     if (linksError) {
       throw new Error(`Falha ao listar vínculos: ${linksError.message}`);
     }

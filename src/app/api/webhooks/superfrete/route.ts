@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import type { NextRequest } from "next/server";
 
 import { applySuperfreteEvent, getWebhookSecret } from "@/lib/shipments-server";
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   );
 
   if (result.ok) {
+    revalidateTag("dashboard", { expire: 0 });
     revalidatePath("/admin/envios");
     revalidatePath("/painel");
     revalidatePath("/admin/lotes");

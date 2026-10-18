@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/dal";
@@ -53,6 +53,7 @@ export async function adjustStock(
 
     if (error) return failure(`Falha ao ajustar estoque: ${error.message}`);
 
+    updateTag("dashboard");
     revalidatePath("/admin/estoque");
     revalidatePath("/admin/lotes");
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 import { requireAdmin } from "@/lib/dal";
 import { customerFormSchema, normalizePhone } from "@/lib/customers";
@@ -140,6 +140,7 @@ export async function deleteCustomer(
       // Cliente já excluído: nota órfã não derruba a operação.
     }
 
+    updateTag("dashboard");
     revalidatePath("/admin/clientes");
     revalidatePath("/admin/lotes");
     return { ok: true, data: null };
@@ -150,6 +151,7 @@ export async function deleteCustomer(
 }
 
 function revalidateClientPages(id: string) {
+  updateTag("dashboard");
   revalidatePath("/admin/clientes");
   revalidatePath(`/admin/clientes/${id}`);
   revalidatePath("/admin/lotes");

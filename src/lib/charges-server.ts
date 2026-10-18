@@ -21,13 +21,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * os guards (admin/customer) antes de chamar.
  */
 
-export const CHARGE_COLUMNS = [
+/** Colunas comuns de listagem e detalhe (o detalhe soma o QR). */
+const CHARGE_BASE_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
-  "description, qr_code, qr_code_base64, ticket_url, expires_at, paid_at,",
+  "description, ticket_url, expires_at, paid_at,",
   "created_by, created_at, updated_at,",
   "customer:customers(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status, auction_date)",
 ].join(" ");
+
+/** Listagem: sem `qr_code`/`qr_code_base64` (até 4 KB por linha). */
+export const CHARGE_COLUMNS = CHARGE_BASE_COLUMNS;
+
+/** Registro único (detalhe/QR sob demanda): inclui copia-e-cola e base64. */
+export const CHARGE_DETAIL_COLUMNS = `${CHARGE_BASE_COLUMNS}, qr_code, qr_code_base64`;
 
 export type TransitionResult = { ok: boolean; reason?: string };
 
@@ -113,7 +120,7 @@ export async function getChargeById(id: string): Promise<Charge | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("charges")
-    .select(CHARGE_COLUMNS)
+    .select(CHARGE_DETAIL_COLUMNS)
     .eq("id", id)
     .maybeSingle();
 
@@ -127,7 +134,7 @@ export async function getChargeByExternalReference(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("charges")
-    .select(CHARGE_COLUMNS)
+    .select(CHARGE_DETAIL_COLUMNS)
     .eq("external_reference", reference)
     .maybeSingle();
 

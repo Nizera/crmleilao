@@ -1,9 +1,11 @@
 import "server-only";
 
-import { listStock } from "@/lib/dal";
+import { unstable_cache } from "next/cache";
+
+import { listStockAdmin } from "@/lib/dal";
 import { isChargeActive, type ChargeStatus } from "@/lib/charges";
 import { LOT_STATUS_LABELS, type LotStatus } from "@/lib/lots";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Estatísticas agregadas do dashboard (F5).
@@ -91,40 +93,81 @@ export type DashboardStats = {
   nextBatch: { shippingDate: string; count: number } | null;
 };
 
-export async function getDashboardStats(): Promise<DashboardStats> {
-  const supabase = await createClient();
+/**
+ * Núcleo da estatística (sem cache). Só service role: roda fora do escopo da
+ * requisição, condção para entrar em `unstable_cache`.
+ *
+ * Cobranças vêm de um recorte (abertas ∪ últimos 30 dias) e clientes/envios
+ * vêm de contagens `head` — nada de varrer tabela inteira a cada visita.
+ */
+async function computeDashboardStats(): Promise<DashboardStats> {
+  const supabase = createAdminClient();
   const now = new Date();
 
-  const [lotsRes, chargesRes, customersRes, shipmentsRes, stock] =
-    await Promise.all([
-      supabase.from("lots").select(LOT_SELECT),
-      supabase
-        .from("charges")
-        .select("status, amount, expires_at, paid_at, created_at"),
-      supabase.from("customers").select("id, email, created_at"),
-      supabase.from("shipments").select("status"),
-      listStock()
-        .then((items) => ({ ok: true as const, items }))
-        .catch(() => ({ ok: false as const, items: [] })),
-    ]);
+  const firstOfMonthIso = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+  const cutoff30Iso = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+
+  const [
+    lotsRes,
+    chargesRes,
+    customersTotalRes,
+    customersMonthRes,
+    customersNoEmailRes,
+    shipmentsOpenRes,
+    shipmentsPostedRes,
+    shipmentsDeliveredRes,
+    stock,
+  ] = await Promise.all([
+    supabase.from("lots").select(LOT_SELECT),
+    // Abertas (qualquer data) + criadas nos últimos 30 dias: é tudo o que a
+    // página calcula (open*, recent*, approvalRate).
+    supabase
+      .from("charges")
+      .select("status, amount, expires_at, paid_at, created_at")
+      .or(`status.in.(pending,in_process),created_at.gte.${cutoff30Iso}`),
+    supabase.from("customers").select("id", { count: "exact", head: true }),
+    supabase
+      .from("customers")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", firstOfMonthIso),
+    supabase
+      .from("customers")
+      .select("id", { count: "exact", head: true })
+      .or("email.is.null,email.eq."),
+    supabase
+      .from("shipments")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "released"]),
+    supabase
+      .from("shipments")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "posted"),
+    supabase
+      .from("shipments")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "delivered"),
+    listStockAdmin()
+      .then((items) => ({ ok: true as const, items }))
+      .catch(() => ({ ok: false as const, items: [] })),
+  ]);
 
   for (const [name, res] of [
     ["lots", lotsRes],
     ["charges", chargesRes],
-    ["customers", customersRes],
-    ["shipments", shipmentsRes],
+    ["customers", customersTotalRes],
+    ["customers-mes", customersMonthRes],
+    ["customers-email", customersNoEmailRes],
+    ["envios-abertos", shipmentsOpenRes],
+    ["envios-postados", shipmentsPostedRes],
+    ["envios-entregues", shipmentsDeliveredRes],
   ] as const) {
     if (res.error) console.error(`[dashboard] falha em ${name}: ${res.error.message}`);
   }
 
   const lots = (lotsRes.data ?? []) as unknown as LotRow[];
   const chargeRows = (chargesRes.data ?? []) as unknown as ChargeRow[];
-  const customerRows = (customersRes.data ?? []) as {
-    id: string;
-    email: string | null;
-    created_at: string;
-  }[];
-  const shipmentRows = (shipmentsRes.data ?? []) as { status: string }[];
 
   /* ------------------------------ receita ------------------------------- */
 
@@ -176,26 +219,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   /* ------------------------------ clientes ------------------------------ */
 
-  const currentKey = now.toISOString().slice(0, 7);
-  const newInMonth = customerRows.filter((c) =>
-    c.created_at.startsWith(currentKey),
-  ).length;
-  const withoutEmail = customerRows.filter(
-    (c) => !c.email?.trim(),
-  ).length;
+  const newInMonth = customersMonthRes.count ?? 0;
+  const withoutEmail = customersNoEmailRes.count ?? 0;
 
   /* ------------------------------- envios ------------------------------- */
 
-  const shipments = { toShip: 0, posted: 0, delivered: 0 };
-  for (const row of shipmentRows) {
-    if (row.status === "pending" || row.status === "released") {
-      shipments.toShip += 1;
-    } else if (row.status === "posted") {
-      shipments.posted += 1;
-    } else if (row.status === "delivered") {
-      shipments.delivered += 1;
-    }
-  }
+  const shipments = {
+    toShip: shipmentsOpenRes.count ?? 0,
+    posted: shipmentsPostedRes.count ?? 0,
+    delivered: shipmentsDeliveredRes.count ?? 0,
+  };
 
   /* -------------------------------- estoque ----------------------------- */
 
@@ -284,8 +317,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     ready: {
       lots: lotsRes.error === null,
       charges: chargesRes.error === null,
-      customers: customersRes.error === null,
-      shipments: shipmentsRes.error === null,
+      customers:
+        customersTotalRes.error === null &&
+        customersMonthRes.error === null &&
+        customersNoEmailRes.error === null,
+      shipments:
+        shipmentsOpenRes.error === null &&
+        shipmentsPostedRes.error === null &&
+        shipmentsDeliveredRes.error === null,
       stock: stock.ok,
     },
     revenue: {
@@ -306,7 +345,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       recentApproved,
     },
     customers: {
-      total: customerRows.length,
+      total: customersTotalRes.count ?? 0,
       newInMonth,
       withoutEmail,
     },
@@ -322,3 +361,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     nextBatch,
   };
 }
+
+/**
+ * Estatísticas do dashboard com cache de 30 s (tag `dashboard`): são
+ * varreduras de várias tabelas e o custo cresce com o histórico. As actions
+ * chamam `updateTag("dashboard")` e os webhooks
+ * `revalidateTag("dashboard", { expire: 0 })` junto do `revalidatePath`,
+ * para os números voltarem frescos logo após uma mutação.
+ */
+export const getDashboardStats = unstable_cache(
+  computeDashboardStats,
+  ["dashboard-stats"],
+  { tags: ["dashboard"], revalidate: 30 },
+);

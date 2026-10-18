@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import {
   cancelChargeAction,
+  getChargeQrAction,
   markChargePaidAction,
   syncChargeAction,
   syncPendingChargesAction,
@@ -144,6 +145,16 @@ export function ChargesView({
     startTransition(async () => {
       const result = await syncChargeAction(charge.id);
       if (result.ok) toast.success(`Cobrança ${charge.code} sincronizada com o Mercado Pago.`);
+      else toast.error(result.error);
+      setBusyId(null);
+    });
+  };
+
+  const openQr = (charge: Charge) => {
+    setBusyId(charge.id);
+    startTransition(async () => {
+      const result = await getChargeQrAction(charge.id);
+      if (result.ok) setQrCharge(result.data);
       else toast.error(result.error);
       setBusyId(null);
     });
@@ -370,7 +381,7 @@ export function ChargesView({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setQrCharge(charge)}>
+                        <DropdownMenuItem onClick={() => openQr(charge)}>
                           <QrCode />
                           {active ? "Ver QR / WhatsApp" : "Ver detalhes"}
                         </DropdownMenuItem>

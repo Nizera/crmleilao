@@ -378,9 +378,9 @@ export const listPlayers = cache(async (): Promise<Player[]> => {
 const STOCK_ITEM_COLUMNS =
   "id, player_id, color, qty_on_hand, updated_at, player:players(id, name, country, sort_order)";
 
-/** Os 80 SKUs com o saldo atual. Só a equipe (RLS). */
-export const listStock = cache(async (): Promise<StockItem[]> => {
-  const supabase = await createClient();
+async function loadStock(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<StockItem[]> {
   const { data, error } = await supabase
     .from("stock_items")
     .select(STOCK_ITEM_COLUMNS)
@@ -391,12 +391,24 @@ export const listStock = cache(async (): Promise<StockItem[]> => {
   // Ordena pelo catálogo: sort_order do jogador, depois ordem das cores.
   const colorOrder = STICKER_COLORS;
   return ((data ?? []) as unknown as StockItem[]).sort((a, b) => {
-    const playerDiff =
-      (a.player?.sort_order ?? 0) - (b.player?.sort_order ?? 0);
+    const playerDiff = (a.player?.sort_order ?? 0) - (b.player?.sort_order ?? 0);
     if (playerDiff !== 0) return playerDiff;
     return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
   });
-});
+}
+
+/** Os 80 SKUs com o saldo atual. Só a equipe (RLS). */
+export const listStock = cache(async (): Promise<StockItem[]> =>
+  loadStock(await createClient()),
+);
+
+/**
+ * Mesmo estoque com service role: a agregação cacheada do dashboard roda
+ * fora do escopo da requisição (sem cookies), então não pode usar sessão.
+ */
+export async function listStockAdmin(): Promise<StockItem[]> {
+  return loadStock(createAdminClient());
+}
 
 /** Itens de um lote. O cliente do painel só enxerga os próprios (RLS). */
 export const listLotItems = cache(
@@ -688,10 +700,10 @@ export const getInvitePreview = cache(
 /*  Cobranças (F3)                                                             */
 /* -------------------------------------------------------------------------- */
 
-/** Mesmas colunas de CHARGE_COLUMNS, com o cliente `!inner` p/ busca por nome. */
+/** Mesmas colunas magras de CHARGE_COLUMNS (sem QR), cliente `!inner` p/ busca. */
 const CHARGE_LIST_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
-  "description, qr_code, qr_code_base64, ticket_url, expires_at, paid_at,",
+  "description, ticket_url, expires_at, paid_at,",
   "created_by, created_at, updated_at,",
   "customer:customers!inner(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status)",

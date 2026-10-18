@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 import { logWaMessage } from "@/app/actions/lots";
 import { requireAdmin, searchCustomers, type Customer } from "@/lib/dal";
@@ -38,6 +38,7 @@ import { waMessageLink } from "@/lib/lots";
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
 function revalidateShipmentPaths() {
+  updateTag("dashboard");
   revalidatePath("/admin/envios");
   revalidatePath("/painel");
   revalidatePath("/admin/lotes");

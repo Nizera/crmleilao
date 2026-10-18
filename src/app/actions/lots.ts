@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import {
   getLotById,
@@ -284,6 +284,7 @@ export async function saveLot(
       if (invite.ok) inviteUrl = invite.url;
     }
 
+    updateTag("dashboard");
     revalidatePath("/admin/lotes");
     revalidatePath("/admin/estoque");
     revalidatePath("/admin/clientes");
@@ -358,6 +359,7 @@ export async function setLotStatus(
     const { error } = await supabase.from("lots").update(patch).eq("id", id);
     if (error) return failure(`Falha ao atualizar status: ${error.message}`);
 
+    updateTag("dashboard");
     revalidatePath("/admin/lotes");
     revalidatePath("/admin/estoque");
     revalidatePath(`/painel/lotes/${lot.code}`);

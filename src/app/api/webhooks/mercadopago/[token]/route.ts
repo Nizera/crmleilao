@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import type { NextRequest } from "next/server";
 
 import { settleChargeByReference } from "@/lib/charges-server";
@@ -294,6 +294,7 @@ async function handle(
   );
 
   if (result.ok) {
+    revalidateTag("dashboard", { expire: 0 });
     revalidatePath("/admin/cobrancas");
     revalidatePath("/admin/dashboard");
     revalidatePath("/admin/lotes");
