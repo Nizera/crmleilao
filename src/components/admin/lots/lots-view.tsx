@@ -1,7 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  ChevronLeft,
+  ChevronRight,
   KeyRound,
   MessageCircle,
   MoreHorizontal,
@@ -59,39 +63,52 @@ const formatQty = (qty: number | undefined) => (qty ? `${qty} un.` : "—");
 
 export function LotsView({
   lots,
+  total,
+  page,
+  pageSize,
+  q,
+  status,
   players,
   stock,
   settings,
   qtyByLot,
 }: {
   lots: Lot[];
+  total: number;
+  page: number;
+  pageSize: number;
+  q: string;
+  status: string;
   players: Player[];
   stock: StockItem[];
   settings: AppSettings;
   qtyByLot: Map<string, number>;
 }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<string>(ALL);
+  const router = useRouter();
+  const [query, setQuery] = useState(q);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return lots.filter((lot) => {
-      if (status !== ALL && lot.status !== status) return false;
-      if (!term) return true;
-      const haystack = [
-        lot.code,
-        lot.title,
-        lot.customer?.name ?? "",
-        lot.customer?.phone_e164 ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(term);
-    });
-  }, [lots, query, status]);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number) => {
+    const params = new URLSearchParams();
+    if (nextQuery.trim()) params.set("q", nextQuery.trim());
+    if (nextStatus !== ALL) params.set("status", nextStatus);
+    if (nextPage > 1) params.set("p", String(nextPage));
+    const search = params.toString();
+    return `/admin/lotes${search ? `?${search}` : ""}`;
+  };
+
+  const search = (event: FormEvent) => {
+    event.preventDefault();
+    router.replace(buildHref(query, status, 1));
+  };
+
+  const changeFilter = (value: string) => {
+    router.replace(buildHref(query, value, 1));
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -175,9 +192,9 @@ export function LotsView({
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Lotes</h2>
           <p className="text-sm text-muted-foreground">
-            {lots.length === 0
+            {total === 0
               ? "Nenhum arremate registrado ainda."
-              : `${lots.length} ${lots.length === 1 ? "lote registrado" : "lotes registrados"} no leilão.`}
+              : `${total} ${total === 1 ? "lote registrado" : "lotes registrados"} no leilão.`}
           </p>
         </div>
         <Button onClick={openNew}>
@@ -187,16 +204,34 @@ export function LotsView({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-56 flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar por lote, código, cliente ou telefone"
-            className="pl-9"
-          />
-        </div>
-        <Select value={status} onValueChange={setStatus}>
+        <form onSubmit={search} className="flex min-w-56 flex-1 items-center gap-2">
+          <div className="relative min-w-56 flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar por lote, código, cliente ou telefone"
+              className="pl-9"
+            />
+          </div>
+          <Button type="submit" variant="outline">
+            Buscar
+          </Button>
+          {q && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setQuery("");
+                router.replace(buildHref("", status, 1));
+              }}
+            >
+              Limpar
+            </Button>
+          )}
+        </form>
+
+        <Select value={status} onValueChange={changeFilter}>
           <SelectTrigger className="w-56">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -228,7 +263,7 @@ export function LotsView({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((lot) => (
+            {lots.map((lot) => (
               <TableRow key={lot.id}>
                 <TableCell className="font-mono text-xs">{lot.code}</TableCell>
                 <TableCell>
@@ -309,11 +344,11 @@ export function LotsView({
               </TableRow>
             ))}
 
-            {filtered.length === 0 && (
+            {lots.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="h-32 text-center">
                   <span className="text-muted-foreground">
-                    {lots.length === 0
+                    {total === 0 && !q && status === ALL
                       ? "Cadastre o primeiro arremate com o botão “Novo lote”."
                       : "Nenhum lote corresponde à busca."}
                   </span>
@@ -323,6 +358,42 @@ export function LotsView({
           </TableBody>
         </Table>
       </div>
+
+      {total > pageSize && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Página {page} de {pages} · {total} lotes
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={buildHref(q, status, page - 1)}>
+                  <ChevronLeft />
+                  Anterior
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                <ChevronLeft />
+                Anterior
+              </Button>
+            )}
+            {page < pages ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={buildHref(q, status, page + 1)}>
+                  Próxima
+                  <ChevronRight />
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                Próxima
+                <ChevronRight />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <LotFormSheet
         lot={editing}

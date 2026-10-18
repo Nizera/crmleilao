@@ -206,16 +206,21 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Teto de lotes lidos por período na fila: o agrupamento é em memória e o
+ *  período sem limite faria a tela crescer junto com o histórico. */
+const QUEUE_LOTS_CAP = 1000;
+
 /**
  * Fila de trabalho da tela Envios: uma linha por cliente que arrematou no
  * período, com lotes pagos e não pagos, e o envio ainda não concluído (se
  * houver). O período é por `shipping_date` — a data em que o lote deve sair.
+ * `truncated` avisa quando o período passou do teto de lotes lidos.
  */
 export async function listShipmentQueue(params: {
   periodFrom?: string | null;
   periodTo?: string | null;
   q?: string;
-}): Promise<ShipmentQueueRow[]> {
+}): Promise<{ rows: ShipmentQueueRow[]; truncated: boolean }> {
   const admin = createAdminClient();
 
   let query = admin
@@ -230,7 +235,7 @@ export async function listShipmentQueue(params: {
   if (params.periodFrom) query = query.gte("shipping_date", params.periodFrom);
   if (params.periodTo) query = query.lte("shipping_date", params.periodTo);
 
-  const { data: lots, error } = await query;
+  const { data: lots, error } = await query.limit(QUEUE_LOTS_CAP + 1);
   if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
 
   const rows = (lots ?? []) as unknown as {
@@ -248,7 +253,10 @@ export async function listShipmentQueue(params: {
     } | null;
   }[];
 
-  if (rows.length === 0) return [];
+  const truncated = rows.length > QUEUE_LOTS_CAP;
+  if (truncated) rows.length = QUEUE_LOTS_CAP;
+
+  if (rows.length === 0) return { rows: [], truncated };
 
   // 2) Só os envios ligados A ESTES lotes. Começar pelos vínculos e depois
   //    buscar os envios envolvidos evita varrer todos os envios ativos do
@@ -358,13 +366,16 @@ export async function listShipmentQueue(params: {
   }
 
   const needle = params.q?.trim().toLowerCase() ?? "";
-  if (!needle) return queue;
+  if (!needle) return { rows: queue, truncated };
 
   const digits = needle.replace(/\D/g, "");
-  return queue.filter((row) => {
-    const name = row.name?.toLowerCase() ?? "";
-    return name.includes(needle) || (digits.length >= 4 && row.phone_e164.includes(digits));
-  });
+  return {
+    rows: queue.filter((row) => {
+      const name = row.name?.toLowerCase() ?? "";
+      return name.includes(needle) || (digits.length >= 4 && row.phone_e164.includes(digits));
+    }),
+    truncated,
+  };
 }
 
 /* -------------------------------------------------------------------------- */

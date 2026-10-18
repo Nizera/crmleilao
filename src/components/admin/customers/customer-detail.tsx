@@ -1,9 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, KeyRound, MessageCircle, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  MessageCircle,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { deleteCustomer } from "@/app/actions/customers";
@@ -27,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { CustomerDetail, InviteStatus } from "@/lib/dal";
+import type { CustomerDetail, CustomerLotStats, InviteStatus } from "@/lib/dal";
 import { formatPhoneBR } from "@/lib/customers";
 import {
   formatBRL,
@@ -39,29 +47,29 @@ import {
 type Props = {
   customer: CustomerDetail;
   lots: Lot[];
+  total: number;
+  page: number;
+  pageSize: number;
+  stats: CustomerLotStats;
   invite: InviteStatus;
 };
 
-export function CustomerDetailView({ customer, lots, invite }: Props) {
+export function CustomerDetailView({
+  customer,
+  lots,
+  total,
+  page,
+  pageSize,
+  stats,
+  invite,
+}: Props) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [armed, setArmed] = useState(false);
   const [pending, startTransition] = useTransition();
   const [invitePending, startInviteTransition] = useTransition();
 
-  const stats = useMemo(() => {
-    const active = lots.filter((lot) => lot.status !== "cancelled");
-    const total = active.reduce((sum, lot) => sum + lot.arremate_value, 0);
-    return {
-      total: lots.length,
-      active: active.length,
-      totalValue: total,
-      paid: lots.filter((lot) => lot.status === "paid").length,
-      shipped: lots.filter(
-        (lot) => lot.status === "shipped" || lot.status === "delivered",
-      ).length,
-    };
-  }, [lots]);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
 
   const remove = () => {
     if (!armed) {
@@ -257,7 +265,9 @@ export function CustomerDetailView({ customer, lots, invite }: Props) {
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center">
                     <span className="text-muted-foreground">
-                      Este cliente ainda não arrematou nada.
+                      {total === 0
+                        ? "Este cliente ainda não arrematou nada."
+                        : "Nenhum lote nesta página — use “Anterior” para voltar."}
                     </span>
                   </TableCell>
                 </TableRow>
@@ -265,6 +275,42 @@ export function CustomerDetailView({ customer, lots, invite }: Props) {
             </TableBody>
           </Table>
         </div>
+
+        {total > pageSize && (
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              Página {page} de {pages} · {total} lotes
+            </span>
+            <div className="flex gap-2">
+              {page > 1 ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`?lp=${page - 1}`}>
+                    <ChevronLeft />
+                    Anterior
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
+                  <ChevronLeft />
+                  Anterior
+                </Button>
+              )}
+              {page < pages ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`?lp=${page + 1}`}>
+                    Próxima
+                    <ChevronRight />
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
+                  Próxima
+                  <ChevronRight />
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <CustomerFormSheet

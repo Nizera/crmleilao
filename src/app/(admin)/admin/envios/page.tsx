@@ -68,11 +68,14 @@ export default async function EnviosPage({
   const periodTo = ISO.test(rawTo) ? rawTo : fallback.to;
 
   let queue: ShipmentQueueRow[] = [];
+  let queueTruncated = false;
   let data: ShipmentPage = { rows: [], total: 0, page, pageSize: 10 };
   let migrationReady = true;
   try {
     if (useQueue) {
-      queue = await listShipmentQueue({ periodFrom, periodTo, q });
+      const result = await listShipmentQueue({ periodFrom, periodTo, q });
+      queue = result.rows;
+      queueTruncated = result.truncated;
     } else {
       data = await listShipments({
         q,
@@ -99,6 +102,7 @@ export default async function EnviosPage({
     <ShipmentsView
       {...data}
       queue={useQueue ? queue : null}
+      queueTruncated={useQueue && queueTruncated}
       periodFrom={periodFrom}
       periodTo={periodTo}
       q={q}

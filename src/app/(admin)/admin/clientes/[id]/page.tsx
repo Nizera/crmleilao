@@ -4,14 +4,19 @@ import { CustomerDetailView } from "@/components/admin/customers/customer-detail
 import {
   getCustomer,
   getCustomerInvite,
-  listCustomerLots,
+  getCustomerLotStats,
+  listCustomerLotsPage,
   requireAdmin,
 } from "@/lib/dal";
 
 export const metadata = { title: "Cliente" };
 
+const first = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+
 export default async function ClienteDetalhePage({
   params,
+  searchParams,
 }: PageProps<"/admin/clientes/[id]">) {
   await requireAdmin();
 
@@ -19,8 +24,24 @@ export default async function ClienteDetalhePage({
   const customer = await getCustomer(id);
   if (!customer) notFound();
 
-  const lots = await listCustomerLots(id);
-  const invite = await getCustomerInvite(id);
+  const sp = await searchParams;
+  const page = Math.max(1, Number(first(sp.lp)) || 1);
 
-  return <CustomerDetailView customer={customer} lots={lots} invite={invite} />;
+  const [lotsPage, stats, invite] = await Promise.all([
+    listCustomerLotsPage(id, page),
+    getCustomerLotStats(id),
+    getCustomerInvite(id),
+  ]);
+
+  return (
+    <CustomerDetailView
+      customer={customer}
+      lots={lotsPage.rows}
+      total={lotsPage.total}
+      page={lotsPage.page}
+      pageSize={lotsPage.pageSize}
+      stats={stats}
+      invite={invite}
+    />
+  );
 }

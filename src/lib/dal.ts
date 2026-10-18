@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Lot } from "@/lib/lots";
+import type { Lot, LotStatus } from "@/lib/lots";
 import type { ShippingProfile } from "@/lib/customers";
 import type { AdminRole } from "@/lib/roles";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/lib/settings";
@@ -176,6 +176,80 @@ export const listLots = cache(
   },
 );
 
+export type LotPage = {
+  rows: Lot[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * Página da listagem admin de lotes. A busca cobre código/título (OR de
+ * colunas do próprio lote) e cliente (lookup separado, mesmo teto da busca
+ * de cobranças) — tudo coluna top-level de `lots`, então cabe num único OR.
+ * A home e o histórico continuam em `listLots`.
+ */
+export async function listLotsPage(params: {
+  q?: string;
+  status?: LotStatus | "all";
+  page?: number;
+  pageSize?: number;
+  notes?: boolean;
+}): Promise<LotPage> {
+  const supabase = await createClient();
+  const pageSize = Math.min(Math.max(params.pageSize ?? 25, 1), 100);
+  const page = Math.max(1, params.page ?? 1);
+
+  let query = supabase.from("lots").select(lotColumns(), { count: "exact" });
+
+  const status = params.status && params.status !== "all" ? params.status : null;
+  if (status) query = query.eq("status", status);
+
+  const raw = params.q?.trim().replace(/[,'"%()\\]/g, " ").trim() ?? "";
+  if (raw.length >= 2) {
+    const digits = raw.replace(/\D/g, "").slice(0, 20);
+    const name = raw.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
+
+    const filters = [`code.ilike.%${raw}%`, `title.ilike.%${raw}%`];
+
+    const customerFilters: string[] = [];
+    if (digits.length >= 4) customerFilters.push(`phone_e164.ilike.%${digits}%`);
+    if (name.length >= 2) customerFilters.push(`name.ilike.%${name}%`);
+    if (customerFilters.length > 0) {
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("id")
+        .or(customerFilters.join(","))
+        .limit(CUSTOMER_MATCH_CAP + 1);
+      const ids = (customers ?? [])
+        .slice(0, CUSTOMER_MATCH_CAP)
+        .map((row) => row.id as string);
+      if (ids.length > 0) filters.push(`customer_id.in.(${ids.join(",")})`);
+    }
+
+    query = query.or(filters.join(","));
+  }
+
+  const from = (page - 1) * pageSize;
+  const { data, count, error } = await query
+    .order("auction_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(from, from + pageSize - 1);
+
+  if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Lot[];
+  if (!params.notes) return { rows, total: count ?? 0, page, pageSize };
+
+  const notes = await loadNotes("lot", rows.map((lot) => lot.id));
+  return {
+    rows: rows.map((lot) => ({ ...lot, notes: notes.get(lot.id) ?? null })),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
+}
+
 export const getLotById = cache(
   async (id: string): Promise<Lot | null> => {
     const supabase = await createClient();
@@ -339,24 +413,114 @@ export const listCustomerLots = cache(async (customerId: string): Promise<Lot[]>
   return (data ?? []) as unknown as Lot[];
 });
 
+export type CustomerLotPage = {
+  rows: Lot[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** Página do histórico de lotes no detalhe do cliente (admin). */
+export const listCustomerLotsPage = cache(
+  async (customerId: string, page = 1): Promise<CustomerLotPage> => {
+    const supabase = await createClient();
+    const pageSize = 25;
+    const current = Math.max(1, page);
+    const from = (current - 1) * pageSize;
+
+    const { data, count, error } = await supabase
+      .from("lots")
+      .select(LOT_BASE_COLUMNS, { count: "exact" })
+      .eq("customer_id", customerId)
+      .order("auction_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(`Falha ao listar lotes do cliente: ${error.message}`);
+    return {
+      rows: (data ?? []) as unknown as Lot[],
+      total: count ?? 0,
+      page: current,
+      pageSize,
+    };
+  },
+);
+
+export type CustomerLotStats = {
+  total: number;
+  active: number;
+  totalValue: number;
+  paid: number;
+  shipped: number;
+};
+
+/**
+ * Resumo do cliente para os cartões de estatística: só `status` e
+ * `arremate_value` (duas colunas leves, sem embed), somado em memória — a
+ * lista paginada não enxerga o histórico inteiro e o PostgREST do projeto
+ * não tem agregados ligados.
+ */
+export const getCustomerLotStats = cache(
+  async (customerId: string): Promise<CustomerLotStats> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("lots")
+      .select("status, arremate_value")
+      .eq("customer_id", customerId);
+
+    if (error) throw new Error(`Falha ao resumir lotes do cliente: ${error.message}`);
+
+    const stats: CustomerLotStats = {
+      total: 0,
+      active: 0,
+      totalValue: 0,
+      paid: 0,
+      shipped: 0,
+    };
+    for (const row of (data ?? []) as {
+      status: LotStatus;
+      arremate_value: number | string;
+    }[]) {
+      stats.total += 1;
+      if (row.status !== "cancelled") {
+        stats.active += 1;
+        stats.totalValue += Number(row.arremate_value);
+      }
+      if (row.status === "paid") stats.paid += 1;
+      if (row.status === "shipped" || row.status === "delivered") stats.shipped += 1;
+    }
+    return stats;
+  },
+);
+
 /**
  * Total de unidades por lote, para a coluna "Figurinhas" da listagem admin.
  * Vem `lot_id, qty` (uma linha por item, ~60 B) em vez do embed inteiro com
- * join de players — e sem travar o formulário de edição, que busca o lote
- * completo na hora de abrir.
+ * join de players — e só dos lotes pedidos: a paginação manda a página da
+ * vez, em pedaços de 200 para a URL do `.in()` não estourar.
  */
-export const listLotItemQty = cache(async (): Promise<Map<string, number>> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("lot_items").select("lot_id, qty");
+export const listLotItemQty = cache(
+  async (lotIds: string[]): Promise<Map<string, number>> => {
+    const qty = new Map<string, number>();
+    const unique = [...new Set(lotIds.filter(Boolean))];
+    if (unique.length === 0) return qty;
 
-  if (error) throw new Error(`Falha ao totalizar itens dos lotes: ${error.message}`);
+    const supabase = await createClient();
+    for (let i = 0; i < unique.length; i += 200) {
+      const { data, error } = await supabase
+        .from("lot_items")
+        .select("lot_id, qty")
+        .in("lot_id", unique.slice(i, i + 200));
 
-  const qty = new Map<string, number>();
-  for (const row of (data ?? []) as { lot_id: string; qty: number | null }[]) {
-    qty.set(row.lot_id, (qty.get(row.lot_id) ?? 0) + Number(row.qty ?? 0));
-  }
-  return qty;
-});
+      if (error) throw new Error(`Falha ao totalizar itens dos lotes: ${error.message}`);
+
+      for (const row of (data ?? []) as { lot_id: string; qty: number | null }[]) {
+        qty.set(row.lot_id, (qty.get(row.lot_id) ?? 0) + Number(row.qty ?? 0));
+      }
+    }
+    return qty;
+  },
+);
 
 /* -------------------------------------------------------------------------- */
 /*  Estoque (F2)                                                              */

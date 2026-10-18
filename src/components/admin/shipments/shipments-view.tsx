@@ -81,6 +81,8 @@ type Props = {
   status: string;
   /** Busca por cliente no histórico atingiu o teto de ids. */
   qTruncated?: boolean;
+  /** Fila leu mais lotes no período do que o teto permite. */
+  queueTruncated?: boolean;
   /** Fila por cliente (período ligado) ou histórico de envios (null). */
   queue: ShipmentQueueRow[] | null;
   periodFrom: string;
@@ -100,6 +102,7 @@ export function ShipmentsView({
   q,
   status,
   qTruncated,
+  queueTruncated,
   queue,
   periodFrom,
   periodTo,
@@ -303,6 +306,12 @@ export function ShipmentsView({
             <p className="text-sm text-amber-600 dark:text-amber-400">
               A busca por cliente passou de 300 correspondências — refine o
               termo para enxergar todas.
+            </p>
+          )}
+          {queueTruncated && isQueue && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              Período muito movimentado: mostramos só os primeiros 1.000
+              lotes — estreite as datas para ver o resto.
             </p>
           )}
         </div>
