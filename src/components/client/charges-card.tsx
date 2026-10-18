@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Ban, Loader2, QrCode, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ import {
   syncSelfChargeAction,
 } from "@/app/actions/charges";
 import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badge";
+import { useChargeQr } from "@/components/client/charge-qr-sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateBR } from "@/components/ui/date-br";
@@ -50,6 +52,7 @@ export function ClientChargesCard({ lots, charges }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const qr = useChargeQr();
 
   const active = charges.find((charge) => isChargeActive(charge)) ?? null;
   const activeId = active?.id ?? null;
@@ -106,8 +109,8 @@ export function ClientChargesCard({ lots, charges }: Props) {
         return;
       }
       toast.success(`Cobrança ${result.data.charge.code} criada.`);
-      const link = result.data.charge.ticket_url;
-      if (link) window.open(link, "_blank", "noopener");
+      // O QR abre aqui no painel — sem aba nova (que o navegador bloquearia).
+      qr.open(result.data.charge.id);
       setSelected(new Set());
       router.refresh();
     });
@@ -191,16 +194,29 @@ export function ClientChargesCard({ lots, charges }: Props) {
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <ChargeStatusBadge status={shownStatus} />
-                  {isActive && charge.ticket_url && (
-                    <Button asChild size="sm">
-                      <a href={charge.ticket_url} target="_blank" rel="noopener noreferrer">
-                        <QrCode />
-                        Pagar
-                      </a>
+                  {isActive && (
+                    <Button size="sm" onClick={() => qr.open(charge.id)} disabled={pending}>
+                      <QrCode />
+                      Pagar
                     </Button>
                   )}
                 </span>
               </div>
+
+              {charge.lots && charge.lots.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {charge.lots.map((lot) => (
+                    <Link
+                      key={lot.id}
+                      href={`/painel/lotes/${lot.code}`}
+                      className="inline-block max-w-44 truncate rounded border px-2 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      title={`${lot.code} · ${lot.title}`}
+                    >
+                      {lot.code} · {lot.title}
+                    </Link>
+                  ))}
+                </div>
+              )}
 
               {isActive && (
                 <div className="flex flex-wrap gap-2">
@@ -294,6 +310,8 @@ export function ClientChargesCard({ lots, charges }: Props) {
             {serverError}
           </p>
         )}
+
+        {qr.sheet}
       </CardContent>
     </Card>
   );

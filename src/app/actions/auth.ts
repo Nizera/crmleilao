@@ -23,6 +23,12 @@ function dbError(scope: string, error: { message: string }): string {
   return "Não foi possível concluir agora. Tente novamente em instantes.";
 }
 
+/** Migração pendente: detalhe no log do servidor, mensagem limpa no link. */
+function migrationMissing(file: string): string {
+  console.error(`[auth] migração não aplicada: ${file}`);
+  return "Convites indisponíveis no momento. Fale com o leilão para liberar o acesso.";
+}
+
 export type AuthFormState = {
   error?: string;
   notice?: string;
@@ -193,11 +199,9 @@ export async function acceptCustomerInvite(
     .maybeSingle();
 
   if (inviteError) {
+    // Migração 0007 ausente: o nome do arquivo fica no log, não no link do cliente.
     if (inviteError.message.includes("customer_invites")) {
-      return {
-        error:
-          "Convites indisponíveis: aplique a migração 0007_customer_invites.sql no SQL Editor.",
-      };
+      return { error: migrationMissing("0007_customer_invites.sql") };
     }
     return { error: dbError("ler convite", inviteError) };
   }

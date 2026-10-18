@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExternalLink, Truck } from "lucide-react";
 
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
@@ -26,9 +27,9 @@ export function ClientShipmentsCard({ shipments }: { shipments: Shipment[] }) {
         {shipments.map((shipment) => (
           <div
             key={shipment.id}
-            className="flex items-center justify-between gap-3 rounded-md border p-3"
+            className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
           >
-            <span className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 flex-1 flex-col gap-1.5">
               <span className="flex items-center gap-2 truncate font-medium">
                 <Truck className="size-4 shrink-0 text-muted-foreground" />
                 {shipment.carrier ?? shipment.service_name ?? "Envio"} ·{" "}
@@ -39,6 +40,20 @@ export function ClientShipmentsCard({ shipments }: { shipments: Shipment[] }) {
                 envio previsto {formatDateBR(shipment.batch_date)}
                 {shipment.tracking_code ? ` · ${shipment.tracking_code}` : ""}
               </span>
+              {(shipment.lots?.length ?? 0) > 0 && (
+                <span className="flex flex-wrap gap-1.5">
+                  {shipment.lots?.map((lot) => (
+                    <Link
+                      key={lot.id}
+                      href={`/painel/lotes/${lot.code}`}
+                      title={`${lot.code} · ${lot.title}`}
+                      className="inline-block max-w-44 truncate rounded border px-2 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      {lot.code} · {lot.title}
+                    </Link>
+                  ))}
+                </span>
+              )}
             </span>
             <span className="flex shrink-0 items-center gap-2">
               <ShipmentStatusBadge status={shipment.status} />

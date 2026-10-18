@@ -25,6 +25,18 @@ import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
+/**
+ * Erro inesperado numa ação do cliente: o detalhe vai para o log do servidor
+ * e o cliente recebe uma frase genérica (nunca `error.message` cru).
+ */
+function selfError(scope: string, error: unknown): string {
+  console.error(
+    `[charges] ${scope}:`,
+    error instanceof Error ? error.message : error,
+  );
+  return "Não foi possível concluir agora. Tente novamente em instantes.";
+}
+
 function revalidateChargePaths() {
   revalidatePath("/admin/cobrancas");
   revalidatePath("/admin/dashboard");
@@ -167,7 +179,7 @@ export async function createSelfChargeAction(
     return { ok: true, data: { charge } };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+    return failure(selfError("criar Pix do cliente", error));
   }
 }
 
@@ -201,7 +213,7 @@ export async function cancelSelfChargeAction(id: string): Promise<ActionResult> 
     return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+    return failure(selfError("cancelar Pix do cliente", error));
   }
 }
 
@@ -219,7 +231,47 @@ export async function syncSelfChargeAction(id: string): Promise<ActionResult> {
     return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+    return failure(selfError("sincronizar Pix do cliente", error));
+  }
+}
+
+/**
+ * QR do Pix carregado sob demanda: a listagem não precisa trazer o
+ * `qr_code_base64` (pesado) para todo histórico, só quando o cliente abre
+ * o QR de uma cobrança própria.
+ */
+export async function getSelfChargeQrAction(id: string): Promise<
+  ActionResult<{
+    code: string;
+    amount: number;
+    expires_at: string | null;
+    ticket_url: string | null;
+    qr_code: string | null;
+    qr_code_base64: string | null;
+    lots: { code: string; title: string }[];
+  }>
+> {
+  try {
+    const { customer } = await requireCustomer();
+    const own = await requireOwnCharge(id, customer.id);
+    if (!own.ok) return own;
+
+    const charge = own.data;
+    return {
+      ok: true,
+      data: {
+        code: charge.code,
+        amount: Number(charge.amount),
+        expires_at: charge.expires_at,
+        ticket_url: charge.ticket_url,
+        qr_code: charge.qr_code,
+        qr_code_base64: charge.qr_code_base64,
+        lots: (charge.lots ?? []).map((lot) => ({ code: lot.code, title: lot.title })),
+      },
+    };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure(selfError("buscar QR do cliente", error));
   }
 }
 

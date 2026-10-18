@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 
+import { PasswordForm } from "@/components/client/password-form";
 import { ShippingForm } from "@/components/client/shipping-form";
 import { getCustomerShipping, requireCustomer } from "@/lib/dal";
 
-export const metadata = { title: "Dados para envio" };
+export const metadata = { title: "Meus dados" };
 
 /**
  * Primeiro login (endereço obrigatório) e "Meus dados".
@@ -20,15 +21,14 @@ export default async function CadastroPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">
-          Dados para envio
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight">Meus dados</h1>
         <p className="text-sm text-muted-foreground">
-          Falta pouco: o endereço completo é usado na etiqueta e no rastreio
-          dos seus pacotes.
+          Endereço usado na etiqueta e no rastreio dos seus pacotes, e a senha
+          de acesso ao painel.
         </p>
       </div>
       <ShippingForm initial={shipping} />
+      <PasswordForm />
     </div>
   );
 }

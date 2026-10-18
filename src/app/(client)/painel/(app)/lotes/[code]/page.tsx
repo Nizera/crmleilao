@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
@@ -10,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { LotGallery } from "@/components/client/lot-gallery";
 import { getLotByCode, listLotItems, requireCustomer } from "@/lib/dal";
+import { getChargeById } from "@/lib/charges-server";
+import { isChargeActive } from "@/lib/charges";
 import {
   formatBRL,
   formatDateBR,
@@ -35,6 +38,10 @@ export default async function CustomerLotPage({
   const items = await listLotItems(lot.id);
   const itemsTotal = items.reduce((sum, row) => sum + row.qty, 0);
 
+  // Lote dentro de um Pix: diz qual cobrança o pagou (ou está pendente).
+  const charge = lot.charge_id ? await getChargeById(lot.charge_id) : null;
+  const ownedCharge = charge && charge.customer_id === customer.id ? charge : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -44,6 +51,43 @@ export default async function CustomerLotPage({
         </div>
         <LotStatusBadge status={lot.status} />
       </div>
+
+      {ownedCharge && (
+        <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+          {ownedCharge.status === "approved" ? (
+            <>
+              Pago pelo Pix {ownedCharge.code}
+              {ownedCharge.paid_at ? ` em ${formatDateBR(ownedCharge.paid_at.slice(0, 10))}` : ""} ·{" "}
+              <Link
+                href="/painel/historico"
+                className="underline underline-offset-2 transition hover:text-foreground"
+              >
+                ver histórico
+              </Link>
+            </>
+          ) : isChargeActive(ownedCharge) ? (
+            <>
+              Lote dentro do Pix {ownedCharge.code}, aguardando pagamento ·{" "}
+              <Link
+                href="/painel"
+                className="underline underline-offset-2 transition hover:text-foreground"
+              >
+                ir para pagamentos
+              </Link>
+            </>
+          ) : (
+            <>
+              Pix {ownedCharge.code} não foi concluído ·{" "}
+              <Link
+                href="/painel"
+                className="underline underline-offset-2 transition hover:text-foreground"
+              >
+                gere outro
+              </Link>
+            </>
+          )}
+        </p>
+      )}
 
       {images.length > 0 && <LotGallery images={images} title={lot.title} />}
 

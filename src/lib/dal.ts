@@ -716,7 +716,9 @@ export const listCustomerCharges = cache(
     if (error) {
       // Migração 0005 ainda não aplicada: painel continua funcionando.
       if (error.code === "42P01" || /relation .*charges/i.test(error.message)) return [];
-      throw new Error(`Falha ao listar cobranças: ${error.message}`);
+      // Estouro cai no error boundary do painel: detalhe no log, texto limpo no cliente.
+      console.error(`[dal] listar cobranças do cliente: ${error.message}`);
+      throw new Error("Não foi possível carregar seus pagamentos. Atualize a página.");
     }
     return (data ?? []) as unknown as Charge[];
   },
@@ -862,7 +864,8 @@ export const listCustomerShipments = cache(
 
     if (error) {
       if (error.code === "42P01" || /shipments/i.test(error.message)) return [];
-      throw new Error(`Falha ao listar envios: ${error.message}`);
+      console.error(`[dal] listar envios do cliente: ${error.message}`);
+      throw new Error("Não foi possível carregar seus envios. Atualize a página.");
     }
 
     return attachLots((data ?? []) as unknown as Shipment[]);

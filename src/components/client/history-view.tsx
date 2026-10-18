@@ -7,6 +7,7 @@ import { ExternalLink, History, QrCode, Truck } from "lucide-react";
 import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badge";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
+import { useChargeQr } from "@/components/client/charge-qr-sheet";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
 import { effectiveChargeStatus, isChargeActive, type Charge } from "@/lib/charges";
@@ -82,14 +83,38 @@ function LotRow({ lot }: { lot: Lot }) {
   );
 }
 
+/** Chips clicáveis dos lotes de um Pix ou de um envio. */
+function LotChips({
+  lots,
+}: {
+  lots: readonly { id: string; code: string; title: string }[];
+}) {
+  if (lots.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {lots.map((lot) => (
+        <Link
+          key={lot.id}
+          href={`/painel/lotes/${lot.code}`}
+          title={`${lot.code} · ${lot.title}`}
+          className="inline-block max-w-44 truncate rounded border px-2 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          {lot.code} · {lot.title}
+        </Link>
+      ))}
+    </span>
+  );
+}
+
 function ChargeRow({ charge }: { charge: Charge }) {
   const status = effectiveChargeStatus(charge);
   const active = isChargeActive(charge);
   const lots = charge.lots ?? [];
+  const qr = useChargeQr();
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-      <span className="flex min-w-0 flex-col">
+    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between">
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="truncate font-medium">
           {lots.length > 0 ? `${lots.length} ${lots.length === 1 ? "lote" : "lotes"} · ${charge.code}` : charge.code}
         </span>
@@ -102,28 +127,29 @@ function ChargeRow({ charge }: { charge: Charge }) {
             </>
           ) : null}
         </span>
+        <LotChips lots={lots} />
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <ChargeStatusBadge status={status} />
-        {active && charge.ticket_url && (
-          <Button asChild size="sm">
-            <a href={charge.ticket_url} target="_blank" rel="noopener noreferrer">
-              <QrCode />
-              Pagar
-            </a>
+        {active && (
+          <Button size="sm" onClick={() => qr.open(charge.id)}>
+            <QrCode />
+            Pagar
           </Button>
         )}
       </span>
+      {qr.sheet}
     </div>
   );
 }
 
 function ShipmentRow({ shipment }: { shipment: Shipment }) {
-  const lotCount = shipment.lots?.length ?? 0;
+  const lots = shipment.lots ?? [];
+  const lotCount = lots.length;
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-      <span className="flex min-w-0 flex-col">
+    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between">
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="flex items-center gap-2 truncate font-medium">
           <Truck className="size-4 shrink-0 text-muted-foreground" />
           {shipment.carrier ?? shipment.service_name ?? "Envio"} ·{" "}
@@ -132,6 +158,7 @@ function ShipmentRow({ shipment }: { shipment: Shipment }) {
         <span className="text-xs text-muted-foreground">
           {shipment.tracking_code ?? `postado em ${formatDateBR(dayOf(shipment.created_at))}`}
         </span>
+        <LotChips lots={lots} />
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <ShipmentStatusBadge status={shipment.status} />

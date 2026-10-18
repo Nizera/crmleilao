@@ -3,10 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { requireCustomer } from "@/lib/dal";
 import { shippingFormSchema } from "@/lib/customers";
+import { allow } from "@/lib/ratelimit";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createClient } from "@/lib/supabase/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
+
+const RATE_MSG = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
+
+/**
+ * Migração pendente no servidor: o detalhe (nome do arquivo) fica no log —
+ * em produção o cliente não precisa saber o nome do SQL que falta.
+ */
+function migrationMissing(file: string): string {
+  console.error(`[profile] migração não aplicada: ${file}`);
+  return "Recurso indisponível no momento. Avise o leilão para atualizar o cadastro.";
+}
 
 /**
  * Endereço para envio — o próprio cliente grava (RLS self-update).
@@ -62,12 +74,10 @@ export async function saveShippingData(
         (error.message.includes("does not exist") ||
           error.message.includes("not found in the schema cache") ||
           error.message.includes("Could not find"));
-      if (missingColumn) {
-        return failure(
-          "Cadastro de endereço indisponível: aplique a migração 0004_settings.sql no SQL Editor.",
-        );
-      }
-      return failure(`Falha ao salvar endereço: ${error.message}`);
+      // Migração 0004 ausente: detalhe no log do servidor, não no toast.
+      if (missingColumn) return failure(migrationMissing("0004_settings.sql"));
+      console.error(`[profile] salvar endereço: ${error.message}`);
+      return failure("Não foi possível salvar seus dados. Tente novamente.");
     }
     if (!data) return failure("Não foi possível salvar os dados.");
 
@@ -76,6 +86,64 @@ export async function saveShippingData(
     return { ok: true, data: { id: data.id } };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(error instanceof Error ? error.message : "Erro inesperado.");
+    console.error("[profile] salvar endereço:", error);
+    return failure("Erro inesperado. Tente novamente.");
+  }
+}
+
+/**
+ * Troca de senha pelo próprio cliente.
+ *
+ * O Supabase não confere a senha atual em `updateUser`, então a volta é
+ * confirmada com um `signInWithPassword` antes de gravar a nova. O rate limit
+ * é por conta: é isso que segura quem tentaria chutar a senha atual.
+ */
+export async function changeOwnPasswordAction(
+  formData: FormData,
+): Promise<ActionResult<null>> {
+  try {
+    const current = String(formData.get("current") ?? "");
+    const next = String(formData.get("next") ?? "");
+    const confirm = String(formData.get("confirm") ?? "");
+
+    if (!current) return failure("Informe sua senha atual.");
+    if (next.length < 8) return failure("A nova senha precisa de pelo menos 8 caracteres.");
+    if (next === current) return failure("A nova senha precisa ser diferente da atual.");
+    if (next !== confirm) return failure("As senhas não conferem.");
+
+    const { customer } = await requireCustomer();
+    if (!(await allow("customer-password", customer.phone_e164))) {
+      return failure(RATE_MSG);
+    }
+
+    const supabase = await createClient();
+
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      phone: customer.phone_e164,
+      password: current,
+    });
+    if (verifyError) {
+      console.error(`[profile] senha atual incorreta: ${verifyError.message}`);
+      return failure("Senha atual incorreta.");
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: next });
+    if (error) {
+      console.error(`[profile] trocar senha: ${error.message}`);
+      if (error.message.includes("different")) {
+        return failure("A nova senha precisa ser diferente da atual.");
+      }
+      if (error.message.includes("at least")) {
+        return failure("A nova senha precisa de pelo menos 8 caracteres.");
+      }
+      return failure("Não foi possível alterar a senha. Tente novamente.");
+    }
+
+    revalidatePath("/painel/cadastro");
+    return { ok: true, data: null };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    console.error("[profile] trocar senha:", error);
+    return failure("Erro inesperado. Tente novamente.");
   }
 }
