@@ -704,14 +704,14 @@ export async function listCharges(params: {
 
 /** Cobranças de um cliente (painel). RLS já garante que é o próprio. */
 export const listCustomerCharges = cache(
-  async (customerId: string): Promise<Charge[]> => {
+  async (customerId: string, limit = 20): Promise<Charge[]> => {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("charges")
       .select(CHARGE_COLUMNS)
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(limit);
 
     if (error) {
       // Migração 0005 ainda não aplicada: painel continua funcionando.
@@ -850,7 +850,7 @@ export async function listShipments(params: {
  * 0006 ausente vira lista vazia para o painel não quebrar.
  */
 export const listCustomerShipments = cache(
-  async (customerId: string): Promise<Shipment[]> => {
+  async (customerId: string, limit = 20): Promise<Shipment[]> => {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("shipments")
@@ -858,7 +858,7 @@ export const listCustomerShipments = cache(
       .eq("customer_id", customerId)
       .order("batch_date", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(limit);
 
     if (error) {
       if (error.code === "42P01" || /shipments/i.test(error.message)) return [];

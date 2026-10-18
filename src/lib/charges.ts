@@ -34,6 +34,8 @@ export type ChargeLotRef = {
   title: string;
   arremate_value: number;
   status: LotStatus;
+  /** Data do leilão — chave de agrupamento do histórico no painel. */
+  auction_date: string;
 };
 
 export type Charge = {

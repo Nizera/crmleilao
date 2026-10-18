@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, Trophy, UserRound } from "lucide-react";
+import { History, LogOut, Trophy, UserRound } from "lucide-react";
 
 import { customerSignOut } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,12 @@ export function ClientHeader({ name, phone }: Props) {
             <div className="text-sm font-medium">{name ?? "Cliente"}</div>
             <div className="text-xs text-muted-foreground">{phone}</div>
           </div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/painel/historico">
+              <History />
+              <span className="hidden sm:inline">Histórico</span>
+            </Link>
+          </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link href="/painel/cadastro">
               <UserRound />
