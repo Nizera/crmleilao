@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Coins,
   Boxes,
+  FileText,
   LayoutDashboard,
   Package,
   Settings,
@@ -33,6 +34,7 @@ const groups = [
       { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
       { title: "Lotes", url: "/admin/lotes", icon: Package },
       { title: "Envios", url: "/admin/envios", icon: CalendarClock },
+      { title: "Relatórios", url: "/admin/relatorios", icon: FileText },
     ],
   },
   {

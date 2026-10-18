@@ -25,6 +25,7 @@ const labels: Record<string, string> = {
   "/admin/cobrancas": "Cobranças",
   "/admin/estoque": "Estoque",
   "/admin/envios": "Envios",
+  "/admin/relatorios": "Relatórios",
   "/admin/configuracao": "Configuração",
 };
 
@@ -48,7 +49,7 @@ export function AdminHeader({ name, role }: Props) {
     .join("");
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-2 border-b">
+    <header className="flex h-16 shrink-0 items-center gap-2 border-b print:hidden">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 h-4" />

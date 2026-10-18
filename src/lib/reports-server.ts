@@ -1,0 +1,176 @@
+import "server-only";
+
+import { type LotStatus } from "@/lib/lots";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { StickerColor } from "@/lib/stock";
+
+/** Teto de lotes lidos por relatório — igual à fila de envios. */
+const REPORT_LOTS_CAP = 1000;
+
+export type SeparationItem = {
+  playerName: string;
+  color: StickerColor;
+  qty: number;
+};
+
+export type SeparationLot = {
+  id: string;
+  code: string;
+  title: string;
+  status: LotStatus;
+  items: SeparationItem[];
+  totalItems: number;
+};
+
+export type SeparationAddress = {
+  cep: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+};
+
+export type SeparationCustomer = {
+  customerId: string;
+  name: string | null;
+  phone_e164: string;
+  address: SeparationAddress;
+  lots: SeparationLot[];
+  totalItems: number;
+};
+
+export type SeparationReport = {
+  shippingDate: string;
+  customers: SeparationCustomer[];
+  totals: {
+    customers: number;
+    lots: number;
+    items: number;
+  };
+};
+
+type LotRow = {
+  id: string;
+  code: string;
+  title: string;
+  status: LotStatus;
+  created_at: string;
+  customers: {
+    id: string;
+    name: string | null;
+    phone_e164: string;
+    address_cep: string | null;
+    address_street: string | null;
+    address_number: string | null;
+    address_complement: string | null;
+    address_district: string | null;
+    address_city: string | null;
+    address_state: string | null;
+  } | null;
+  lot_items: {
+    qty: number;
+    color: StickerColor;
+    players: { name: string; sort_order: number } | null;
+  }[];
+};
+
+/**
+ * Relatório de separação de um dia de envio: lotes com `shipping_date` na
+ * data (cancelados ficam de fora), agrupados por cliente e com a composição
+ * de figurinhas de cada lote na ordem do catálogo.
+ */
+export async function getSeparationReport(
+  shippingDate: string,
+): Promise<SeparationReport> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("lots")
+    .select(
+      `id, code, title, status, created_at,
+       customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state),
+       lot_items(qty, color, players(name, sort_order))`,
+    )
+    .eq("shipping_date", shippingDate)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: true })
+    .limit(REPORT_LOTS_CAP + 1);
+
+  if (error) throw new Error(`Falha ao montar relatório: ${error.message}`);
+
+  const rows = ((data ?? []) as unknown as LotRow[]).slice(0, REPORT_LOTS_CAP);
+
+  // Agrupa por cliente preservando a ordem de chegada dos lotes.
+  const byCustomer = new Map<string, SeparationCustomer>();
+
+  for (const row of rows) {
+    const customer = row.customers;
+    if (!customer) continue;
+
+    const items: SeparationItem[] = (row.lot_items ?? [])
+      .map((item) => ({
+        playerName: item.players?.name ?? "Figurinha",
+        color: item.color,
+        qty: item.qty,
+        sortOrder: item.players?.sort_order ?? Number.MAX_SAFE_INTEGER,
+      }))
+      .sort((a, b) =>
+        a.sortOrder !== b.sortOrder
+          ? a.sortOrder - b.sortOrder
+          : a.playerName.localeCompare(b.playerName, "pt-BR"),
+      )
+      .map(({ playerName, color, qty }) => ({ playerName, color, qty }));
+
+    const lot: SeparationLot = {
+      id: row.id,
+      code: row.code,
+      title: row.title,
+      status: row.status,
+      items,
+      totalItems: items.reduce((sum, item) => sum + item.qty, 0),
+    };
+
+    const entry = byCustomer.get(customer.id) ?? {
+      customerId: customer.id,
+      name: customer.name,
+      phone_e164: customer.phone_e164,
+      address: {
+        cep: customer.address_cep,
+        street: customer.address_street,
+        number: customer.address_number,
+        complement: customer.address_complement,
+        district: customer.address_district,
+        city: customer.address_city,
+        state: customer.address_state,
+      },
+      lots: [],
+      totalItems: 0,
+    };
+
+    entry.lots.push(lot);
+    entry.totalItems += lot.totalItems;
+    byCustomer.set(customer.id, entry);
+  }
+
+  // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.
+  const customers = [...byCustomer.values()].sort((a, b) => {
+    const left = a.name?.trim() || null;
+    const right = b.name?.trim() || null;
+    if (!left && !right) return 0;
+    if (!left) return 1;
+    if (!right) return -1;
+    return left.localeCompare(right, "pt-BR", { sensitivity: "base" });
+  });
+
+  return {
+    shippingDate,
+    customers,
+    totals: {
+      customers: customers.length,
+      lots: customers.reduce((sum, customer) => sum + customer.lots.length, 0),
+      items: customers.reduce((sum, customer) => sum + customer.totalItems, 0),
+    },
+  };
+}
