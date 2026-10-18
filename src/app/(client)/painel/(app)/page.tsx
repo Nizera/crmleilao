@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-import { listCustomerCharges, listCustomerShipments, listLots, requireCustomer } from "@/lib/dal";
+import {
+  countCustomerCharges,
+  countCustomerShipments,
+  listCustomerCharges,
+  listCustomerShipments,
+  listLots,
+  requireCustomer,
+} from "@/lib/dal";
 import {
   Card,
   CardContent,
@@ -31,12 +38,17 @@ function HistoryLink({ href, count }: { href: string; count?: number }) {
 
 export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
-  const [lots, charges, shipments] = await Promise.all([
-    // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
-    listLots({ images: true }),
-    listCustomerCharges(customer.id),
-    listCustomerShipments(customer.id),
-  ]);
+  // Listas ficam capadas; os contadores são head-count para o badge não
+  // mostrar o teto do fetch como se fosse o total.
+  const [lots, charges, shipments, chargesTotal, shipmentsTotal] =
+    await Promise.all([
+      // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
+      listLots({ images: true }),
+      listCustomerCharges(customer.id),
+      listCustomerShipments(customer.id),
+      countCustomerCharges(customer.id),
+      countCustomerShipments(customer.id),
+    ]);
 
   // A home é de ação: só o último leilão. O resto fica em /painel/historico.
   const latestAuctionDay = lots.reduce<string | null>(
@@ -67,7 +79,7 @@ export default async function ClientHomePage() {
 
       <div className="flex flex-col gap-3">
         <ClientChargesCard lots={lots} charges={homeCharges} />
-        <HistoryLink href={HISTORY_HREF} count={charges.length} />
+        <HistoryLink href={HISTORY_HREF} count={chargesTotal} />
       </div>
 
       <div className="flex flex-col gap-3">
@@ -97,7 +109,7 @@ export default async function ClientHomePage() {
         {olderLotsCount > 0 && <HistoryLink href={HISTORY_HREF} count={lots.length} />}
       </div>
 
-      <ClientShipmentsCard shipments={shipments} />
+      <ClientShipmentsCard shipments={shipments} total={shipmentsTotal} />
     </div>
   );
 }

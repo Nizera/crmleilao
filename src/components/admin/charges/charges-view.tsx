@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -93,6 +93,14 @@ export function ChargesView({
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+
+  // Status e prazo mudam pelo webhook sem ninguém clicar: a tela se atualiza
+  // sozinha (mesmo intervalo de 20 s do Pix ativo no painel do cliente).
+  useEffect(() => {
+    const timer = setInterval(() => router.refresh(), 20_000);
+    return () => clearInterval(timer);
+  }, [router]);
+
   const [query, setQuery] = useState(q);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);

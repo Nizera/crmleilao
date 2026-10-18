@@ -814,6 +814,27 @@ export const listCustomerCharges = cache(
   },
 );
 
+/**
+ * Total de cobranças do cliente: a home lista no máximo 20, mas o badge do
+ * histórico precisa mostrar o número real (head-count, sem trazer linhas).
+ */
+export const countCustomerCharges = cache(
+  async (customerId: string): Promise<number> => {
+    const supabase = await createClient();
+    const { count, error } = await supabase
+      .from("charges")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId);
+
+    if (error) {
+      if (error.code === "42P01" || /relation .*charges/i.test(error.message)) return 0;
+      console.error(`[dal] contar cobranças do cliente: ${error.message}`);
+      throw new Error("Não foi possível carregar seus pagamentos. Atualize a página.");
+    }
+    return count ?? 0;
+  },
+);
+
 export type PaymentKpis = {
   /** Soma dos lotes pagos no mês corrente. */
   monthRevenue: number;
@@ -966,6 +987,24 @@ export const listCustomerShipments = cache(
     }
 
     return attachLots((data ?? []) as unknown as Shipment[]);
+  },
+);
+
+/** Total de envios do cliente — mesmo motivo do countCustomerCharges. */
+export const countCustomerShipments = cache(
+  async (customerId: string): Promise<number> => {
+    const supabase = await createClient();
+    const { count, error } = await supabase
+      .from("shipments")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId);
+
+    if (error) {
+      if (error.code === "42P01" || /shipments/i.test(error.message)) return 0;
+      console.error(`[dal] contar envios do cliente: ${error.message}`);
+      throw new Error("Não foi possível carregar seus envios. Atualize a página.");
+    }
+    return count ?? 0;
   },
 );
 

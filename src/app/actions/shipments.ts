@@ -153,17 +153,25 @@ function parseVolume(raw: unknown): VolumeInput {
   return parsed;
 }
 
+/** Um envio de leilão nunca junta mais que isso de lote; teto contra payload gigante. */
+const MAX_SHIPMENT_LOT_IDS = 500;
+
 function parseLotIds(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === "string") {
+  let ids: string[] | null = null;
+  if (Array.isArray(raw)) ids = raw.map(String);
+  else if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
+      if (Array.isArray(parsed)) ids = parsed.map(String);
     } catch {
       /* cai no erro abaixo */
     }
   }
-  throw new Error("Lista de lotes inválida.");
+  if (!ids) throw new Error("Lista de lotes inválida.");
+  if (ids.length > MAX_SHIPMENT_LOT_IDS) {
+    throw new Error(`Lista de lotes grande demais (máximo ${MAX_SHIPMENT_LOT_IDS}).`);
+  }
+  return ids;
 }
 
 async function insuranceFor(

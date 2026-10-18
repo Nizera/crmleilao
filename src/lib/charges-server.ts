@@ -517,19 +517,30 @@ export async function syncOpenChargesWithMp(limit = 25): Promise<MpSyncSummary> 
 
   const summary: MpSyncSummary = { checked: 0, applied: 0, unchanged: 0, skipped: {} };
 
-  for (const row of (data ?? []) as { id: string }[]) {
-    summary.checked += 1;
-    try {
-      const result = await syncChargeWithMp(row.id);
-      if (result.ok) summary.applied += 1;
-      else {
-        summary.unchanged += 1;
-        summary.skipped[row.id] = result.reason ?? "sem alteração";
+  // Pool de 4: cada sync faz uma ida à API do MP; sequencial, 25 cobranças
+  // virariam 25 idas-e-vindas e estourariam o tempo da serverless.
+  const rows = (data ?? []) as { id: string }[];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const row = rows[cursor];
+      cursor += 1;
+      summary.checked += 1;
+      try {
+        const result = await syncChargeWithMp(row.id);
+        if (result.ok) summary.applied += 1;
+        else {
+          summary.unchanged += 1;
+          summary.skipped[row.id] = result.reason ?? "sem alteração";
+        }
+      } catch (syncError) {
+        summary.skipped[row.id] =
+          syncError instanceof Error ? syncError.message : "erro";
       }
-    } catch (syncError) {
-      summary.skipped[row.id] = syncError instanceof Error ? syncError.message : "erro";
     }
-  }
+  };
+  const poolSize = Math.min(4, rows.length);
+  await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
   return summary;
 }

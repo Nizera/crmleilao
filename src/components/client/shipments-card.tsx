@@ -12,15 +12,23 @@ import {
 import type { Shipment } from "@/lib/shipments";
 import { formatDateBR } from "@/lib/lots";
 
-export function ClientShipmentsCard({ shipments }: { shipments: Shipment[] }) {
+export function ClientShipmentsCard({
+  shipments,
+  total,
+}: {
+  shipments: Shipment[];
+  /** Total real (head-count); a lista pode vir capada em 20. */
+  total?: number;
+}) {
+  const count = total ?? shipments.length;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Seus envios</CardTitle>
         <CardDescription>
-          {shipments.length === 0
+          {count === 0
             ? "Quando seus lotes pagos forem postados (às terças), o código de rastreio aparece aqui."
-            : `${shipments.length} ${shipments.length === 1 ? "envio" : "envios"} em andamento ou entregues.`}
+            : `${count} ${count === 1 ? "envio" : "envios"} em andamento ou entregues.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
