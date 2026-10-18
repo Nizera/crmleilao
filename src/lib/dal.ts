@@ -106,7 +106,7 @@ const LOT_BASE_COLUMNS = [
   "id, code, customer_id, title, arremate_value, status,",
   "charge_id,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
-  "customer:customers(id, name, phone_e164, auth_user_id),",
+  "customer:customers(id, name, phone_e164, auth_user_id)",
 ].join(" ");
 
 /**
@@ -129,7 +129,9 @@ function lotColumns(opts: {
         "player:players(id, name, country))",
     );
   }
-  return extra.length > 0 ? `${LOT_BASE_COLUMNS} ${extra.join(", ")}` : LOT_BASE_COLUMNS;
+  return extra.length > 0
+    ? `${LOT_BASE_COLUMNS}, ${extra.join(", ")}`
+    : LOT_BASE_COLUMNS;
 }
 
 /** Detalhe do lote (admin e cliente): tudo que as telas chegam a usar. */
