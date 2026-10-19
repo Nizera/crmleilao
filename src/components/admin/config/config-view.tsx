@@ -20,20 +20,12 @@ import { formatPhoneBR } from "@/lib/customers";
 import { waMessageLink } from "@/lib/lots";
 import type { AppSettings } from "@/lib/settings";
 
-export type IntegrationInfo = {
-  name: string;
-  /** true = chave configurada; false = pendente; null = não verificável aqui. */
-  configured: boolean | null;
-  detail: string;
-};
-
 type Props = {
   selfId: string;
   canEdit: boolean;
   ready: boolean;
   settings: AppSettings;
   team: TeamMember[] | null;
-  integrations: IntegrationInfo[];
   invites: PendingInvite[];
 };
 
@@ -47,7 +39,6 @@ export function ConfigView({
   ready,
   settings,
   team,
-  integrations,
   invites,
 }: Props) {
   return (
@@ -78,44 +69,6 @@ export function ConfigView({
       )}
 
       <SettingsForm settings={settings} disabled={!canEdit || !ready} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Integrações</CardTitle>
-          <CardDescription>Status das chaves configuradas.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {integrations.map((item) => (
-            <div
-              key={item.name}
-              className="flex items-start justify-between gap-3 rounded-md border p-3"
-            >
-              <div className="min-w-0">
-                <span className="text-sm font-medium">{item.name}</span>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {item.detail}
-                </p>
-              </div>
-              <Badge
-                variant={
-                  item.configured === true
-                    ? "default"
-                    : item.configured === null
-                      ? "secondary"
-                      : "outline"
-                }
-                className="shrink-0"
-              >
-                {item.configured === true
-                  ? "Configurada"
-                  : item.configured === null
-                    ? "No Supabase"
-                    : "Pendente"}
-              </Badge>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
