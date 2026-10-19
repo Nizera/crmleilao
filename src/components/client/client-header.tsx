@@ -5,6 +5,7 @@ import { History, LogOut, UserRound } from "lucide-react";
 
 import { customerSignOut } from "@/app/actions/auth";
 import { Logo } from "@/components/brand/logo";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 
 type Props = {
@@ -21,6 +22,7 @@ export function ClientHeader({ name, phone }: Props) {
         </Link>
 
         <div className="ml-auto flex items-center gap-3">
+          <ThemeSwitcher />
           <div className="hidden text-right leading-tight sm:block">
             <div className="text-sm font-medium">{name ?? "Cliente"}</div>
             <div className="text-xs text-muted-foreground">{phone}</div>

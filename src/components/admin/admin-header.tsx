@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { adminSignOut } from "@/app/actions/auth";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -56,6 +57,7 @@ export function AdminHeader({ name, role }: Props) {
         <h1 className="text-base font-medium">{current}</h1>
 
         <div className="ml-auto flex items-center gap-3">
+          <ThemeSwitcher />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 px-2">
