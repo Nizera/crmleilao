@@ -77,28 +77,24 @@ export type TemplateKey =
 export const MESSAGE_TEMPLATES: {
   key: TemplateKey;
   title: string;
-  phase: string;
   description: string;
   placeholders: string[];
 }[] = [
   {
     key: "wa_notice_template",
     title: "Aviso de arremate",
-    phase: "Fase 1 · em uso",
     description: "Mensagem aberta pelo botão “Enviar no WhatsApp” em Lotes.",
     placeholders: ["code", "title", "value", "shipping", "link"],
   },
   {
     key: "wa_payment_template",
     title: "Pedido de pagamento",
-    phase: "Fase 3",
     description: "Enviado junto com o QR/link do Pix da cobrança (Mercado Pago).",
     placeholders: ["name", "code", "value", "link"],
   },
   {
     key: "wa_shipping_template",
     title: "Aviso de envio",
-    phase: "Fase 4",
     description: "Enviado quando o pacote é postado, com o código de rastreio.",
     placeholders: ["name", "code", "tracking"],
   },

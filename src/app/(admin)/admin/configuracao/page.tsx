@@ -14,13 +14,11 @@ export const metadata = { title: "Configuração" };
 
 function integrationStatus(
   name: string,
-  phase: string,
   key: string | undefined,
   detail: (key: string) => string,
 ): IntegrationInfo {
   return {
     name,
-    phase,
     configured: key ? true : false,
     detail: key ? detail(key) : "chave não configurada no .env.local",
   };
@@ -41,15 +39,14 @@ export default async function ConfiguracaoPage() {
   const mpWebhookToken = process.env.MP_WEBHOOK_TOKEN?.trim();
   const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET?.trim();
   const superfreteToken = process.env.SUPERFRETE_TOKEN;
-  const whatsappToken = process.env.WHATSAPP_TOKEN;
 
   const integrations: IntegrationInfo[] = [
-    integrationStatus("Mercado Pago (Pix)", "Fase 3", mpKey, () => {
+    integrationStatus("Mercado Pago (Pix)", mpKey, () => {
       const test = mpKey?.trim().startsWith("TEST-");
       const webhook = canEdit ? mpWebhookUrl() : null;
       return `${test ? "token de teste" : "token de produção"}${
         webhook
-          ? ` — cadastre a URL em Suas integrações → Webhooks (evento Order): ${webhook}`
+          ? ` — ${webhook}`
           : canEdit
             ? " — sem MP_WEBHOOK_TOKEN (confirmação manual)"
             : " — URL do webhook visível apenas ao dono"
@@ -57,31 +54,18 @@ export default async function ConfiguracaoPage() {
     }),
     {
       name: "Webhook do Mercado Pago",
-      phase: "Segurança",
       configured: Boolean(mpWebhookToken && mpWebhookSecret),
       detail: !mpWebhookToken
-        ? "sem MP_WEBHOOK_TOKEN: a URL do webhook devolve 503 e nenhuma notificação é aceita"
+        ? "falta MP_WEBHOOK_TOKEN: a URL devolve 503 e nenhuma notificação é aceita"
         : !mpWebhookSecret
-          ? "sem MP_WEBHOOK_SECRET: as notificações são aceitas sem validar a assinatura x-signature — configure para fechar o endpoint"
+          ? "falta MP_WEBHOOK_SECRET: notificações aceitas sem validar a assinatura x-signature"
           : "token de path e assinatura x-signature configurados",
     },
-    integrationStatus("SuperFrete (fretes)", "Fase 4", superfreteToken, () =>
+    integrationStatus("SuperFrete (fretes)", superfreteToken, () =>
       process.env.SUPERFRETE_SANDBOX === "false"
         ? "token em produção"
         : "token em sandbox (testes)",
     ),
-    integrationStatus(
-      "WhatsApp Cloud API",
-      "Opcional",
-      whatsappToken,
-      () => "envio de mídia pelo Meta",
-    ),
-    {
-      name: "Gemini",
-      phase: "Descartado",
-      configured: false,
-      detail: "não usado: catálogo fixo de 80 SKUs",
-    },
   ];
 
   return (

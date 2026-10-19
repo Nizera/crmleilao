@@ -184,8 +184,7 @@ export function SettingsForm({ settings, disabled }: Props) {
         <CardHeader>
           <CardTitle>Endereço de origem (envios)</CardTitle>
           <CardDescription>
-            Remetente das etiquetas SuperFrete (Fase 4). Enquanto estiver
-            incompleto, o botão “Novo envio” fica bloqueado.
+            Remetente das etiquetas SuperFrete.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:grid sm:grid-cols-2">
@@ -282,22 +281,14 @@ export function SettingsForm({ settings, disabled }: Props) {
       <Card>
         <CardHeader>
           <CardTitle>Modelos de mensagem WhatsApp</CardTitle>
-          <CardDescription>
-            Texto aberto no WhatsApp da família. Use as chaves entre chaves
-            {" {"}…{"}"} para puxar dados do lote; a prévia usa um exemplo.
-          </CardDescription>
+          <CardDescription>Mensagens abertas no WhatsApp da família.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           {MESSAGE_TEMPLATES.map((template) => (
             <div key={template.key} className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <FieldLabel htmlFor={template.key} className="font-medium">
-                  {template.title}
-                </FieldLabel>
-                <span className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
-                  {template.phase}
-                </span>
-              </div>
+              <FieldLabel htmlFor={template.key} className="font-medium">
+                {template.title}
+              </FieldLabel>
               <p className="text-xs text-muted-foreground">
                 {template.description}
               </p>

@@ -22,7 +22,6 @@ import type { AppSettings } from "@/lib/settings";
 
 export type IntegrationInfo = {
   name: string;
-  phase: string;
   /** true = chave configurada; false = pendente; null = não verificável aqui. */
   configured: boolean | null;
   detail: string;
@@ -62,9 +61,9 @@ export function ConfigView({
             Parâmetros do leilão, modelos de mensagem, equipe e exportação.
           </p>
         </div>
-        <Badge variant={ready ? "secondary" : "destructive"}>
-          {ready ? "Fase 5 · ativa" : "migração 0004 pendente"}
-        </Badge>
+        {!ready && (
+          <Badge variant="destructive">migração 0004 pendente</Badge>
+        )}
       </div>
 
       {!ready && (
@@ -83,10 +82,7 @@ export function ConfigView({
       <Card>
         <CardHeader>
           <CardTitle>Integrações</CardTitle>
-          <CardDescription>
-            Status das chaves do .env.local e do Supabase. Os valores secretos
-            nunca aparecem nesta tela.
-          </CardDescription>
+          <CardDescription>Status das chaves configuradas.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
           {integrations.map((item) => (
@@ -95,12 +91,7 @@ export function ConfigView({
               className="flex items-start justify-between gap-3 rounded-md border p-3"
             >
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{item.name}</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {item.phase}
-                  </Badge>
-                </div>
+                <span className="text-sm font-medium">{item.name}</span>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {item.detail}
                 </p>
@@ -130,9 +121,7 @@ export function ConfigView({
         <CardHeader>
           <CardTitle>Acessos de clientes</CardTitle>
           <CardDescription>
-            Convites pendentes de quem ainda não entrou no painel — gerados
-            sozinhos quando o lote cadastra um cliente novo. Cada link vale 7
-            dias e uma única vez.
+            Convites de acesso ainda não utilizados.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-2">
@@ -202,7 +191,7 @@ export function ConfigView({
                         window.open(
                           waMessageLink(
                             invite.phone_e164,
-                            `Oi! Seu acesso ao painel do Caras das Legends: ${absoluteUrl()}`,
+                             `Oi! Seu acesso ao painel dos Caras das Legends: ${absoluteUrl()}`,
                           ),
                           "_blank",
                           "noopener",
@@ -225,10 +214,7 @@ export function ConfigView({
       <Card>
         <CardHeader>
           <CardTitle>Exportar dados (LGPD)</CardTitle>
-          <CardDescription>
-            CSV com separador “;” e UTF-8 com BOM (abre direto no Excel).
-            Restrito ao dono.
-          </CardDescription>
+          <CardDescription>Restrito ao dono.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
           {canEdit ? (
