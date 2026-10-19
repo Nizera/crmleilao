@@ -626,9 +626,7 @@ export function ShipmentsView({
                 const lotCodes =
                   shipment.lots?.map((lot) => lot.code).join(", ") ?? "";
                 const finalPrice =
-                  shipment.price != null
-                    ? Number(shipment.price) - Number(shipment.discount ?? 0)
-                    : null;
+                  shipment.price != null ? Number(shipment.price) : null;
 
                 return (
                   <TableRow key={shipment.id}>

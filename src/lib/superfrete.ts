@@ -133,6 +133,12 @@ export type SfQuoteOption = {
   carrier: string;
 };
 
+export type SfQuoteResult = {
+  options: SfQuoteOption[];
+  /** Motivos por serviço de recusas informadas pela SuperFrete (ex.: seguro abaixo do mínimo dos Correios). */
+  errors: string[];
+};
+
 type SfQuoteRaw = {
   id?: number;
   name?: string;
@@ -141,48 +147,91 @@ type SfQuoteRaw = {
   delivery_time?: number;
   company?: { name?: string };
   has_error?: boolean;
+  /** Mensagem de recusa da transportadora (ex.: seguro abaixo do mínimo). */
+  error?: string;
 };
 
 /**
- * Cotação multi-transportadora. Serviços com erro (sem ponto de postagem
- * próximo ao CEP de origem, limite excedido…) já vêm filtrados.
+ * Cotação multi-transportadora.
+ *
+ * - Serviços com `has_error: true` (sem ponto de postagem próximo ao CEP de
+ *   origem, limite excedido…) são simplesmente ignorados, como antes.
+ * - Serviços recusados com mensagem no campo `error` (ex.: "Valor segurado é
+ *   abaixo do limite mínimo de R$ 25,63" dos Correios) são descartados e a
+ *   mensagem é devolvida em `errors` para a UI explicar o motivo.
+ * - A SuperFrete às vezes responde sem erro declarado, porém com `price: 0` e
+ *   `delivery_time: 0` (falha transitória ao acionar a transportadora). Essas
+ *   opções não são cotação real: são descartadas e, se alguma vier assim, a
+ *   chamada é refita uma única vez para tentar recuperá-la.
  */
 export async function quoteFrete(input: {
   fromCep: string;
   toCep: string;
   volume: SfVolume;
   insuranceValue?: number;
-}): Promise<SfQuoteOption[]> {
+}): Promise<SfQuoteResult> {
   const insurance = input.insuranceValue ?? 0;
 
-  const json = (await sfFetch("/api/v0/calculator", {
-    method: "POST",
-    body: {
-      from: { postal_code: input.fromCep },
-      to: { postal_code: input.toCep },
-      services: "1,2,17,3,31,33",
-      options: {
-        own_hand: false,
-        receipt: false,
-        insurance_value: insurance,
-        use_insurance_value: insurance > 0,
+  const request = (): Promise<SfQuoteRaw[]> =>
+    sfFetch("/api/v0/calculator", {
+      method: "POST",
+      body: {
+        from: { postal_code: input.fromCep },
+        to: { postal_code: input.toCep },
+        services: "1,2,17,3,31,33",
+        options: {
+          own_hand: false,
+          receipt: false,
+          insurance_value: insurance,
+          use_insurance_value: insurance > 0,
+        },
+        package: input.volume,
       },
-      package: input.volume,
-    },
-  })) as SfQuoteRaw[];
+    }).then((json) => (Array.isArray(json) ? (json as SfQuoteRaw[]) : []));
 
-  if (!Array.isArray(json)) return [];
+  const isServiceError = (option: SfQuoteRaw): boolean =>
+    typeof option.error === "string" && option.error.trim().length > 0;
 
-  return json
-    .filter((option) => !option.has_error && option.id != null)
-    .map((option) => ({
-      id: Number(option.id),
-      name: option.name ?? `Serviço ${option.id}`,
-      price: Number(option.price ?? 0),
-      discount: Number(option.discount ?? 0),
-      deliveryTime: Number(option.delivery_time ?? 0),
-      carrier: option.company?.name ?? "",
-    }));
+  const toOptions = (raw: SfQuoteRaw[]): SfQuoteOption[] =>
+    raw
+      .filter(
+        (option) => !option.has_error && !isServiceError(option) && option.id != null,
+      )
+      .map((option) => ({
+        id: Number(option.id),
+        name: option.name ?? `Serviço ${option.id}`,
+        price: Number(option.price ?? 0),
+        discount: Number(option.discount ?? 0),
+        deliveryTime: Number(option.delivery_time ?? 0),
+        carrier: option.company?.name ?? "",
+      }))
+      .filter((option) => Number.isFinite(option.price) && option.price > 0);
+
+  const isTransient = (option: SfQuoteRaw): boolean =>
+    !option.has_error &&
+    !isServiceError(option) &&
+    option.id != null &&
+    !(Number(option.price ?? 0) > 0);
+
+  const toErrors = (raw: SfQuoteRaw[]): string[] => [
+    ...new Set(
+      raw
+        .filter((option) => isServiceError(option))
+        .map(
+          (option) =>
+            `${option.company?.name || option.name || `Serviço ${option.id}`}: ${(option.error ?? "").trim()}`,
+        ),
+    ),
+  ];
+
+  const first = await request();
+  let chosen = first;
+  if (first.some(isTransient)) {
+    const retried = await request();
+    if (toOptions(retried).length >= toOptions(first).length) chosen = retried;
+  }
+
+  return { options: toOptions(chosen), errors: toErrors(chosen) };
 }
 
 export type SfProduct = {

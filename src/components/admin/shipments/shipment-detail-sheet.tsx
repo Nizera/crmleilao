@@ -141,9 +141,7 @@ export function ShipmentDetailSheet({
   const address = shipment.address;
   const volume = shipment.volume;
   const finalPrice =
-    shipment.price != null
-      ? Number(shipment.price) - Number(shipment.discount ?? 0)
-      : null;
+    shipment.price != null ? Number(shipment.price) : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -177,7 +175,7 @@ export function ShipmentDetailSheet({
             <Field label="Envio (terça)" value={formatDateBR(shipment.batch_date)} />
             <Field label="Valor" value={finalPrice != null ? formatBRL(finalPrice) : "—"} />
             <Field
-              label="Desconto"
+              label="Desconto já aplicado"
               value={
                 shipment.discount != null && Number(shipment.discount) > 0
                   ? formatBRL(shipment.discount)

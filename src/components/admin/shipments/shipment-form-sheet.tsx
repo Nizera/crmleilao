@@ -108,6 +108,7 @@ function ShipmentForm({
 
   const [step, setStep] = useState<"form" | "quote">("form");
   const [options, setOptions] = useState<SfQuoteOption[] | null>(null);
+  const [quoteNotes, setQuoteNotes] = useState<string[]>([]);
   const [quoting, setQuoting] = useState(false);
   const [serviceId, setServiceId] = useState<number | null>(null);
 
@@ -230,8 +231,9 @@ function ShipmentForm({
     })
       .then((result) => {
         if (result.ok) {
-          setOptions(result.data);
-          setServiceId(result.data[0]?.id ?? null);
+          setOptions(result.data.options);
+          setQuoteNotes(result.data.errors);
+          setServiceId(result.data.options[0]?.id ?? null);
           setStep("quote");
         } else {
           setServerError(result.error);
@@ -265,14 +267,13 @@ function ShipmentForm({
     });
   };
 
-  const optionLabel = (option: SfQuoteOption) => {
-    const final = Math.max(0, option.price - option.discount);
-    return {
-      final,
-      text: `${option.carrier ? `${option.carrier} · ` : ""}${option.name}`,
-      prazo: option.deliveryTime,
-    };
-  };
+  const optionLabel = (option: SfQuoteOption) => ({
+    // `price` já vem com o desconto da SuperFrete aplicado (a doc define
+    // price como "valor total do frete"); `discount` é apenas informativo.
+    final: option.price,
+    text: `${option.carrier ? `${option.carrier} · ` : ""}${option.name}`,
+    prazo: option.deliveryTime,
+  });
 
   return (
     <form
