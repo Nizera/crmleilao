@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/dal";
 import { customerFormSchema, normalizePhone } from "@/lib/customers";
 import { deleteNotes, saveNote } from "@/lib/notes";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -62,7 +63,10 @@ export async function saveCustomer(
     let savedId: string;
 
     if (id) {
-      const { data, error } = await supabase
+      // phone_e164 deixou de ser editavel por sessao (migracao 0014): este
+      // caminho usa o admin client — o guard requireAdmin() acima ja passou.
+      const admin = createAdminClient();
+      const { data, error } = await admin
         .from("customers")
         .update(row)
         .eq("id", id)
