@@ -195,7 +195,7 @@ export async function quoteShipmentAction(input: {
   customerId: string;
   lotIds: unknown;
   volume: unknown;
-}): Promise<ActionResult<SfQuoteOption[]>> {
+}): Promise<ActionResult<{ options: SfQuoteOption[]; errors: string[] }>> {
   try {
     await requireAdmin();
 
@@ -222,7 +222,7 @@ export async function quoteShipmentAction(input: {
       return failure("O cliente ainda não tem CEP preenchido.");
     }
 
-    const options = await quoteFrete({
+    const { options, errors } = await quoteFrete({
       fromCep: origin.postal_code,
       toCep: destinationCep,
       volume,
@@ -231,11 +231,13 @@ export async function quoteShipmentAction(input: {
 
     if (options.length === 0) {
       return failure(
-        "Nenhuma transportadora retornou opção para este CEP (confira a caixa, o peso e se há ponto de postagem próximo).",
+        errors.length > 0
+          ? `Nenhuma transportadora aceitou a cotação: ${errors.join(" · ")}`
+          : "Nenhuma transportadora retornou opção para este CEP (confira a caixa, o peso e se há ponto de postagem próximo).",
       );
     }
 
-    return { ok: true, data: options };
+    return { ok: true, data: { options, errors } };
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");

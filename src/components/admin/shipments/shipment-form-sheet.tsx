@@ -516,6 +516,14 @@ function ShipmentForm({
                 </Button>
               </div>
 
+              {quoteNotes.length > 0 && (
+                <ul className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                  {quoteNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
+
               <ul className="flex flex-col gap-2">
                 {options.map((option) => {
                   const meta = optionLabel(option);
