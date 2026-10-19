@@ -145,7 +145,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         <header className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b pb-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Caras das Legends · Separação
+              Os Caras das Legends · Separação
             </p>
             <h3 className="text-lg font-semibold">
               {formatDateBR(report.shippingDate)}

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Trophy } from "lucide-react";
 
+import { Logo } from "@/components/brand/logo";
 import { InviteAcceptForm } from "@/components/client/invite-accept-form";
 import { formatPhoneBR } from "@/lib/customers";
 import { getInvitePreview } from "@/lib/dal";
@@ -39,11 +39,8 @@ export default async function ConvitePage({
     return (
       <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
         <div className="flex w-full max-w-sm flex-col items-center gap-6 text-center">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Trophy className="size-4" />
-            </span>
-            Caras das Legends
+          <Link href="/">
+            <Logo tileClassName="size-8" />
           </Link>
           <div className="rounded-lg border bg-card p-6">
             <h1 className="text-lg font-semibold">{copy.title}</h1>
@@ -65,11 +62,8 @@ export default async function ConvitePage({
   return (
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Trophy className="size-4" />
-          </span>
-          Caras das Legends
+        <Link href="/">
+          <Logo tileClassName="size-8" />
         </Link>
         <InviteAcceptForm
           token={token}

@@ -1,18 +1,25 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
-  AlbumIcon,
   ArrowRightIcon,
   AtSignIcon,
   CalendarClockIcon,
   CoinsIcon,
-  FrameIcon,
   MessageCircleIcon,
-  ShirtIcon,
-  SparklesIcon,
-  StickerIcon,
-  TrophyIcon,
 } from "lucide-react";
 
+import { Logo } from "@/components/brand/logo";
+import {
+  AlbumIcon,
+  BidPaddleIcon,
+  CrumpleIcon,
+  GroupChatIcon,
+  JerseyIcon,
+  ParcelIcon,
+  PictureFrameIcon,
+  PixQrIcon,
+  StickerStarIcon,
+} from "@/components/icons/collectibles";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,34 +33,34 @@ const GROUP_URL = "https://chat.whatsapp.com/EYD5CmJ0Oer4aeM0zQ9mqu";
 const INSTAGRAM_URL = "https://www.instagram.com/oscarasdaslegends/";
 
 const rarities = [
-  { label: "Roxa", color: "#8b5cf6" },
-  { label: "Bronze", color: "#b45309" },
-  { label: "Prata", color: "#94a3b8" },
-  { label: "Ouro", color: "#eab308" },
+  { label: "Roxa", seal: "/brand/seal-roxa.png" },
+  { label: "Bronze", seal: "/brand/seal-bronze.png" },
+  { label: "Prata", seal: "/brand/seal-prata.png" },
+  { label: "Ouro", seal: "/brand/seal-ouro.png" },
 ];
 
 const items = [
   {
-    icon: SparklesIcon,
+    icon: StickerStarIcon,
     title: "Legends",
     description:
       "As 80 figurinhas Legend da Copa 2026 — 20 jogadores em acabamento roxo, bronze, prata e ouro.",
     rarity: true,
   },
   {
-    icon: StickerIcon,
+    icon: CrumpleIcon,
     title: "Crumple",
     description:
       "Crumple avulsos da Copa 2026 para fechar o álbum sem depender da sorte do pacote.",
   },
   {
-    icon: FrameIcon,
+    icon: PictureFrameIcon,
     title: "Quadros",
     description:
       "Quadros e molduras temáticas para decorar o espaço do colecionador.",
   },
   {
-    icon: ShirtIcon,
+    icon: JerseyIcon,
     title: "Camisetas",
     description:
       "Camisetas do grupo e dos times, tamanhos e modelos variados no leilão.",
@@ -68,21 +75,25 @@ const items = [
 
 const steps = [
   {
+    icon: GroupChatIcon,
     title: "Entre no grupo",
     description:
       "É grátis: clique no link, entre no WhatsApp e já acompanha o leilão de hoje.",
   },
   {
+    icon: BidPaddleIcon,
     title: "Dê seu lance",
     description:
       "Os lotes saem no grupo com foto e descrição. Quem der o último lance leva.",
   },
   {
+    icon: PixQrIcon,
     title: "Pague no Pix",
     description:
       "O QR Code fica no seu painel, com copia e cola. Pagou, confirmou, fim.",
   },
   {
+    icon: ParcelIcon,
     title: "Receba em casa",
     description:
       "Envio fixo terça-feira, com etiqueta e rastreio — você acompanha pelo painel.",
@@ -101,11 +112,8 @@ export default function LandingPage() {
     <div className="flex flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <TrophyIcon className="size-4" />
-            </span>
-            Caras das Legends
+          <Link href="/">
+            <Logo />
           </Link>
           <nav className="ml-auto hidden items-center gap-1 md:flex">
             <Button variant="ghost" size="sm" asChild>
@@ -132,6 +140,13 @@ export default function LandingPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 md:px-6">
         {/* Hero */}
         <section className="flex flex-col items-center gap-6 py-16 text-center md:py-24">
+          <Image
+            src="/brand/hero-variation.png"
+            alt=""
+            width={526}
+            height={708}
+            className="h-40 w-auto dark:invert dark:hue-rotate-180"
+          />
           <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground">
             Leilão diário · Legends da Copa 2026
           </span>
@@ -158,9 +173,12 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
             {rarities.map((rarity) => (
               <span key={rarity.label} className="flex items-center gap-1.5">
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: rarity.color }}
+                <Image
+                  src={rarity.seal}
+                  alt=""
+                  width={16}
+                  height={16}
+                  className="size-4"
                 />
                 {rarity.label}
               </span>
@@ -171,9 +189,9 @@ export default function LandingPage() {
         {/* Faixa de números */}
         <section className="grid gap-4 pb-16 sm:grid-cols-2 lg:grid-cols-4 md:pb-20">
           {[
-            { icon: TrophyIcon, title: "Todo dia", description: "Leilão no grupo" },
+            { icon: BidPaddleIcon, title: "Todo dia", description: "Leilão no grupo" },
             {
-              icon: SparklesIcon,
+              icon: StickerStarIcon,
               title: "80 Legends",
               description: "4 raridades · 20 jogadores",
             },
@@ -219,9 +237,12 @@ export default function LandingPage() {
                         key={rarity.label}
                         className="flex items-center gap-1.5 text-xs text-muted-foreground"
                       >
-                        <span
-                          className="size-2 rounded-full"
-                          style={{ backgroundColor: rarity.color }}
+                        <Image
+                          src={rarity.seal}
+                          alt=""
+                          width={14}
+                          height={14}
+                          className="size-3.5"
                         />
                         {rarity.label}
                       </span>
@@ -247,10 +268,15 @@ export default function LandingPage() {
             {steps.map((step, index) => (
               <Card key={step.title}>
                 <CardHeader className="pb-3">
-                  <span className="flex size-9 items-center justify-center rounded-md border bg-muted text-sm font-semibold tabular-nums">
-                    {String(index + 1).padStart(2, "0")}
+                  <span className="flex size-9 items-center justify-center rounded-md border bg-muted">
+                    <step.icon className="size-4" />
                   </span>
-                  <CardTitle className="text-base">{step.title}</CardTitle>
+                  <CardTitle className="text-base">
+                    <span className="text-muted-foreground tabular-nums">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>{" "}
+                    {step.title}
+                  </CardTitle>
                   <CardDescription>{step.description}</CardDescription>
                 </CardHeader>
               </Card>
@@ -294,7 +320,7 @@ export default function LandingPage() {
                     className="flex items-start gap-3 rounded-md border p-3 text-sm"
                   >
                     <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-muted-foreground">
-                      <SparklesIcon className="size-3" />
+                      <StickerStarIcon className="size-3" />
                     </span>
                     {perk}
                   </li>
@@ -342,7 +368,7 @@ export default function LandingPage() {
 
       <footer className="border-t py-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-muted-foreground sm:flex-row md:px-6">
-          <span>Caras das Legends · Leilão de Legends da Copa 2026</span>
+          <span>Os Caras das Legends · Leilão de Legends da Copa 2026</span>
           <nav className="flex items-center gap-4">
             <a
               href={INSTAGRAM_URL}

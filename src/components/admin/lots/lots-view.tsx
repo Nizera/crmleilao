@@ -166,7 +166,7 @@ export function LotsView({
       }
       const url = result.data.url;
       const first = customer.name?.trim().split(" ")[0];
-      const text = `Oi${first ? `, ${first}` : ""}! Seu acesso ao painel do Caras das Legends: ${url}`;
+      const text = `Oi${first ? `, ${first}` : ""}! Seu acesso ao painel dos Caras das Legends: ${url}`;
       const link = waMessageLink(customer.phone_e164, text);
       window.open(link, "_blank", "noopener,noreferrer");
 

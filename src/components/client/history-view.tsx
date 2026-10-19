@@ -8,6 +8,7 @@ import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badg
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
 import { useChargeQr } from "@/components/client/charge-qr-sheet";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
 import { effectiveChargeStatus, isChargeActive, type Charge } from "@/lib/charges";
@@ -240,6 +241,13 @@ export function ClientHistoryView({ lots, charges, shipments }: Props) {
         ? "Nenhuma cobrança registrada."
         : "Nenhum envio registrado.";
 
+  const emptyImage =
+    tab === "lotes"
+      ? "/brand/empty-lots.png"
+      : tab === "pagamentos"
+        ? "/brand/empty-pix.png"
+        : "/brand/empty-shipments.png";
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex gap-1 overflow-x-auto border-b">
@@ -290,9 +298,7 @@ export function ClientHistoryView({ lots, charges, shipments }: Props) {
       )}
 
       {allGroups.length === 0 && (
-        <p className="rounded-md border bg-muted px-3 py-4 text-sm text-muted-foreground">
-          {emptyCopy}
-        </p>
+        <EmptyState image={emptyImage} title={emptyCopy} />
       )}
 
       {shownGroups.map((group) => (

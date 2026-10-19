@@ -11,9 +11,9 @@ import {
   Package,
   Settings,
   Users,
-  Trophy,
 } from "lucide-react";
 
+import { LogoMark } from "@/components/brand/logo";
 import {
   Sidebar,
   SidebarContent,
@@ -67,14 +67,14 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton size="lg" asChild>
               <Link href="/admin/dashboard">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Trophy className="size-4" />
+                  <LogoMark className="size-4" />
                 </div>
                 <div className="grid flex-1 text-left leading-tight">
                   <span className="truncate font-semibold">
-                    Caras das Legends
+                    Os Caras das Legends
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
-                    CRM de Leilões
+                    Painel ADM
                   </span>
                 </div>
               </Link>

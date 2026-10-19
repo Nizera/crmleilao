@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ImageIcon } from "lucide-react";
 
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
+import { EmptyState } from "@/components/empty-state";
 import { ImageLightbox } from "@/components/client/image-lightbox";
 import { formatBRL, formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
 
@@ -15,6 +16,16 @@ type Props = {
 
 export function ClientLotsList({ lots }: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  if (lots.length === 0) {
+    return (
+      <EmptyState
+        image="/brand/empty-lots.png"
+        title="Nenhum lote ainda"
+        description="Quando você arrematar um lote no leilão, ele aparece aqui com foto e valor."
+      />
+    );
+  }
 
   const rows: { lot: Lot; images: string[]; startIndex: number }[] = [];
   {

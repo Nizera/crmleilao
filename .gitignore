@@ -46,3 +46,6 @@ next-env.d.ts
 
 # supabase cli
 supabase/.temp/
+
+# assets originais de marca (jah tratados em public/brand)
+/images.zip

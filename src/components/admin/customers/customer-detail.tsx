@@ -110,7 +110,7 @@ export function CustomerDetailView({
             window.open(
               waMessageLink(
                 customer.phone_e164,
-                `Oi, ${firstName}! Seu acesso ao painel do Caras das Legends: ${result.data.url}`,
+                `Oi, ${firstName}! Seu acesso ao painel dos Caras das Legends: ${result.data.url}`,
               ),
               "_blank",
               "noopener",

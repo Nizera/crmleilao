@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/charges";
 import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badge";
 import { useChargeQr } from "@/components/client/charge-qr-sheet";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateBR } from "@/components/ui/date-br";
@@ -162,6 +163,14 @@ export function ClientChargesCard({ lots, charges }: Props) {
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        {charges.length === 0 && !showCart && (
+          <EmptyState
+            image="/brand/empty-pix.png"
+            title="Nenhum Pix por aqui"
+            description="Arremate um lote no grupo e gere seu Pix em 1 clique pelo painel."
+          />
+        )}
+
         {charges.map((charge) => {
           const shownStatus = effectiveChargeStatus(charge);
           const isActive = activeId === charge.id;

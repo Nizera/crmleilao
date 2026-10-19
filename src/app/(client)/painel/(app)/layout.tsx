@@ -18,7 +18,7 @@ export default async function ClientLayout({
         {children}
       </main>
       <footer className="border-t bg-background py-4 text-center text-xs text-muted-foreground">
-        Caras das Legends · Leilão de figurinhas Copa 2026
+        Os Caras das Legends · Leilão de figurinhas Copa 2026
       </footer>
     </div>
   );

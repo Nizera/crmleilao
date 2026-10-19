@@ -17,11 +17,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Caras das Legends — CRM de Leilões",
-    template: "%s · Caras das Legends",
+    default: "Os Caras das Legends — Leilão diário de Legends da Copa 2026",
+    template: "%s · Os Caras das Legends",
   },
   description:
-    "CRM para gestão de leilões de figurinhas da Copa 2026: lotes, arremates, estoque, cobranças e envios.",
+    "Leilão diário de figurinhas da Copa 2026: lotes, arremates, estoque, cobranças e envios.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ExternalLink, Truck } from "lucide-react";
 
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
+import { EmptyState } from "@/components/empty-state";
 import {
   Card,
   CardContent,
@@ -32,6 +33,13 @@ export function ClientShipmentsCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        {count === 0 && (
+          <EmptyState
+            image="/brand/empty-shipments.png"
+            title="Nenhum envio ainda"
+            description="Assim que seus lotes pagos forem postados (às terças), o rastreio aparece aqui."
+          />
+        )}
         {shipments.map((shipment) => (
           <div
             key={shipment.id}

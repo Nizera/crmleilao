@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { Loader2, Trophy } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { adminSignIn, type AuthFormState } from "@/app/actions/auth";
+import { LogoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,11 +32,11 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                  <Trophy className="size-5" />
+                  <LogoMark className="size-5" />
                 </span>
                 <h1 className="text-2xl font-bold">Painel interno</h1>
                 <p className="text-balance text-muted-foreground">
-                  Entre com as credenciais da equipe Caras das Legends
+                  Entre com as credenciais da equipe dos Caras das Legends
                 </p>
               </div>
 

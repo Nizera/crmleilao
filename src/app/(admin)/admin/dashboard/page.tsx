@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { ComponentType, ReactNode } from "react";
 import {
   ArrowRightIcon,
@@ -160,13 +161,22 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">
-            Visão geral
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Leilões de figurinhas da Copa 2026 — Caras das Legends
-          </p>
+        <div className="flex items-center gap-3">
+          <Image
+            src="/brand/mark.png"
+            alt=""
+            width={37}
+            height={40}
+            className="size-10 shrink-0 object-contain dark:invert"
+          />
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">
+              Visão geral
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Leilões de figurinhas da Copa 2026 — Os Caras das Legends
+            </p>
+          </div>
         </div>
         <Badge variant="secondary">{todayCap}</Badge>
       </div>

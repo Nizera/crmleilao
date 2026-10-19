@@ -260,7 +260,7 @@ function LotForm({
                     window.open(
                       waMessageLink(
                         phone,
-                        `Oi! Seu acesso ao painel do Caras das Legends: ${url}`,
+                         `Oi! Seu acesso ao painel dos Caras das Legends: ${url}`,
                       ),
                       "_blank",
                       "noopener",
