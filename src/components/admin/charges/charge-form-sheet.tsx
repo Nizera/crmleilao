@@ -20,6 +20,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { Charge, ChargeLotRef } from "@/lib/charges";
+import { WEEKLY_FREIGHT } from "@/lib/freight";
 import type { Customer } from "@/lib/dal";
 import { formatBRL } from "@/lib/lots";
 import { formatPhoneBR } from "@/lib/customers";
@@ -33,6 +34,7 @@ type Props = {
 type Context = {
   active: { id: string; code: string; amount: number; expires_at: string | null } | null;
   lots: ChargeLotRef[];
+  freightDue: boolean;
 };
 
 export function ChargeFormSheet({ open, onOpenChange, onCreated }: Props) {
@@ -66,6 +68,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
   const [context, setContext] = useState<Context | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [withFreight, setWithFreight] = useState(false);
 
   useEffect(() => {
     if (!selected) return;
@@ -111,6 +114,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
     setSelected(customer);
     setContext(null);
     setPicked(new Set());
+    setWithFreight(false);
     setServerError(null);
     setLoadingContext(true);
   };
@@ -125,9 +129,10 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
   };
 
   const total =
-    context?.lots
+    (context?.lots
       .filter((lot) => picked.has(lot.id))
-      .reduce((sum, lot) => sum + Number(lot.arremate_value), 0) ?? 0;
+      .reduce((sum, lot) => sum + Number(lot.arremate_value), 0) ?? 0) +
+    (withFreight ? WEEKLY_FREIGHT : 0);
 
   const generate = () => {
     if (!selected) return;
@@ -136,6 +141,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
     const fd = new FormData();
     fd.append("customer_id", selected.id);
     fd.append("lot_ids", JSON.stringify([...picked]));
+    if (withFreight) fd.append("freight", "true");
 
     startTransition(async () => {
       const result = await createChargeAction(fd);
@@ -293,9 +299,38 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
                 </div>
               )}
 
+              {context.freightDue && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm font-medium">Frete da semana</p>
+                  <div className="flex items-center gap-3 rounded-md border px-3 py-2.5">
+                    <Checkbox
+                      id="charge-freight"
+                      checked={withFreight}
+                      onCheckedChange={(value) => setWithFreight(value === true)}
+                      disabled={pending}
+                    />
+                    <label
+                      htmlFor="charge-freight"
+                      className="flex flex-1 cursor-pointer items-center justify-between gap-3"
+                    >
+                      <span className="text-sm font-medium">
+                        Frete da semana
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          cobrança única do período (terça a terça)
+                        </span>
+                      </span>
+                      <span className="whitespace-nowrap text-sm text-muted-foreground">
+                        {formatBRL(WEEKLY_FREIGHT)}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
                 <span className="text-sm text-muted-foreground">
                   {picked.size} {picked.size === 1 ? "lote selecionado" : "lotes selecionados"}
+                  {withFreight ? " + frete da semana" : ""}
                 </span>
                 <span className="text-lg font-semibold">{formatBRL(total)}</span>
               </div>
@@ -317,7 +352,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
         <div className="mt-auto flex items-center justify-end gap-2 border-t pt-4">
           <Button
             type="button"
-            disabled={pending || picked.size === 0 || !!context.active}
+            disabled={pending || (picked.size === 0 && !withFreight) || !!context.active}
             onClick={generate}
           >
             {pending ? "Gerando…" : <Plus />}

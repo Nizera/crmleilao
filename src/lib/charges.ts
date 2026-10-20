@@ -52,6 +52,10 @@ export type Charge = {
   ticket_url: string | null;
   expires_at: string | null;
   paid_at: string | null;
+  /** Parte do frete semanal embutida nesta cobrança (0 = sem frete). */
+  freight_amount: number;
+  /** Início (terça) do período do frete cobrado por esta cobrança. */
+  freight_period: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -141,9 +145,8 @@ export function buildChargeMessage(
 
 export const chargeCreateSchema = z.object({
   customer_id: z.string().trim().min(1, "Selecione o cliente"),
-  lot_ids: z
-    .array(z.string().trim().min(1))
-    .min(1, "Selecione ao menos um lote"),
+  // Pode vir vazio quando a cobrança é só do frete da semana (1 Pix mínimo).
+  lot_ids: z.array(z.string().trim().min(1)),
 });
 
 /** Lê `lot_ids` de um FormData (JSON no campo), como parseLotItems. */

@@ -24,6 +24,7 @@ type QrData = {
   ticket_url: string | null;
   qr_code: string | null;
   qr_code_base64: string | null;
+  freight_amount: number;
   lots: { code: string; title: string }[];
 };
 
@@ -132,6 +133,11 @@ function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void 
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-2xl font-semibold">{formatBRL(data.amount)}</p>
+          {data.freight_amount > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Inclui frete da semana: {formatBRL(data.freight_amount)}
+            </p>
+          )}
           {data.lots.length > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">
               Lotes: {data.lots.map((lot) => lot.code).join(", ")}

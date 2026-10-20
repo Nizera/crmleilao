@@ -20,7 +20,7 @@ import {
   type ChargeLotRef,
   type ChargeStatus,
 } from "@/lib/charges";
-import { requireAdmin, requireCustomer, searchCustomers, type Customer } from "@/lib/dal";
+import { requireAdmin, requireCustomer, getCustomerFreightState, searchCustomers, type Customer } from "@/lib/dal";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -87,16 +87,17 @@ export async function searchChargeCustomers(
   }
 }
 
-/** Contexto da tela "Nova cobrança": cobrança aberta e lotes elegíveis. */
+/** Contexto da tela "Nova cobrança": cobrança aberta, lotes e frete. */
 export async function loadChargeContext(customerId: string): Promise<
   ActionResult<{
     active: { id: string; code: string; amount: number; expires_at: string | null } | null;
     lots: ChargeLotRef[];
+    freightDue: boolean;
   }>
 > {
   try {
     await requireAdmin();
-    const { activeCharge, eligibleLots } = await getChargeContext(customerId);
+    const { activeCharge, eligibleLots, freightDue } = await getChargeContext(customerId);
     return {
       ok: true,
       data: {
@@ -109,6 +110,7 @@ export async function loadChargeContext(customerId: string): Promise<
             }
           : null,
         lots: eligibleLots,
+        freightDue,
       },
     };
   } catch (error) {
@@ -135,9 +137,17 @@ export async function createChargeAction(
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
 
+    const rawFreight = formData.get("freight");
+    const includeFreight =
+      rawFreight === "true" || rawFreight === "on" || rawFreight === "1";
+    if (parsed.data.lot_ids.length === 0 && !includeFreight) {
+      return failure("Selecione ao menos um lote ou marque o frete da semana.");
+    }
+
     const charge = await createCharge({
       customerId: parsed.data.customer_id,
       lotIds: parsed.data.lot_ids,
+      includeFreight,
       createdBy: profile.id,
     });
 
@@ -150,10 +160,12 @@ export async function createChargeAction(
 }
 
 /**
- * Auto-atendimento no painel: o cliente gera o Pix dos lotes que marcou.
+ * Auto-atendimento no painel: o cliente gera o Pix dos lotes que marcou,
+ * opcionalmente incluindo o frete fixo da semana (sozinho ou com os lotes).
  */
 export async function createSelfChargeAction(
   lotIds: string[],
+  includeFreight = false,
 ): Promise<ActionResult<{ charge: Charge }>> {
   try {
     const { customer } = await requireCustomer();
@@ -164,6 +176,27 @@ export async function createSelfChargeAction(
     if (!parsed.success) {
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
+    if (parsed.data.lot_ids.length === 0 && !includeFreight) {
+      return failure("Selecione ao menos um lote ou o frete da semana.");
+    }
+
+    if (includeFreight) {
+      // Validação amigável antes do createCharge (que também revalida).
+      const freight = await getCustomerFreightState(customer.id);
+      if (freight.status === "paid") {
+        return failure("O frete da semana já foi pago.");
+      }
+      if (freight.status === "awaiting") {
+        return failure(
+          "O frete da semana já está em um Pix aguardando pagamento.",
+        );
+      }
+      if (freight.status !== "due") {
+        return failure(
+          "O frete da semana só aparece depois que um lote seu for cadastrado no período.",
+        );
+      }
+    }
 
     const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
@@ -173,6 +206,7 @@ export async function createSelfChargeAction(
     const charge = await createCharge({
       customerId: customer.id,
       lotIds: parsed.data.lot_ids,
+      includeFreight,
       createdBy: null,
     });
 
@@ -249,6 +283,7 @@ export async function getSelfChargeQrAction(id: string): Promise<
     ticket_url: string | null;
     qr_code: string | null;
     qr_code_base64: string | null;
+    freight_amount: number;
     lots: { code: string; title: string }[];
   }>
 > {
@@ -267,6 +302,7 @@ export async function getSelfChargeQrAction(id: string): Promise<
         ticket_url: charge.ticket_url,
         qr_code: charge.qr_code,
         qr_code_base64: charge.qr_code_base64,
+        freight_amount: Number(charge.freight_amount ?? 0),
         lots: (charge.lots ?? []).map((lot) => ({ code: lot.code, title: lot.title })),
       },
     };

@@ -106,6 +106,11 @@ export function ChargeQrPanel({
             {charge.customer?.name ?? "Cliente"}
             {charge.customer ? ` · ${formatPhoneBR(charge.customer.phone_e164)}` : ""}
           </p>
+          {Number(charge.freight_amount) > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Inclui frete da semana: {formatBRL(Number(charge.freight_amount))}
+            </p>
+          )}
           {lotCodes && (
             <p className="mt-1 text-xs text-muted-foreground">
               Lotes: {lotCodes}

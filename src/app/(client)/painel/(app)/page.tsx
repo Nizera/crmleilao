@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import {
   countCustomerCharges,
   countCustomerShipments,
+  getCustomerFreightState,
   listCustomerCharges,
   listCustomerShipments,
   listLots,
@@ -40,7 +41,7 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, shipments, chargesTotal, shipmentsTotal] =
+  const [lots, charges, shipments, chargesTotal, shipmentsTotal, freight] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ images: true }),
@@ -48,6 +49,7 @@ export default async function ClientHomePage() {
       listCustomerShipments(customer.id),
       countCustomerCharges(customer.id),
       countCustomerShipments(customer.id),
+      getCustomerFreightState(customer.id),
     ]);
 
   // A home é de ação: só o último leilão. O resto fica em /painel/historico.
@@ -92,7 +94,7 @@ export default async function ClientHomePage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <ClientChargesCard lots={lots} charges={homeCharges} />
+        <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
         <HistoryLink href={HISTORY_HREF} count={chargesTotal} />
       </div>
 

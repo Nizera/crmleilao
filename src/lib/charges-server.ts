@@ -14,6 +14,11 @@ import {
   targetChargeStatus,
 } from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  WEEKLY_FREIGHT,
+  freightPeriodEnd,
+  freightPeriodStart,
+} from "@/lib/freight";
 
 /**
  * Núcleo das cobranças Pix (F3) — server-only.
@@ -24,7 +29,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /** Colunas comuns de listagem e detalhe (o detalhe soma o QR). */
 const CHARGE_BASE_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
-  "description, ticket_url, expires_at, paid_at,",
+  "description, ticket_url, expires_at, paid_at, freight_amount, freight_period,",
   "created_by, created_at, updated_at,",
   "customer:customers(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status, auction_date)",
@@ -90,13 +95,38 @@ export async function listEligibleLotRefs(
     }));
 }
 
+type AdminClient = ReturnType<typeof createAdminClient>;
+
 /**
- * Contexto para criar cobrança: cobrança aberta do cliente (se houver) e
- * lotes ainda elegíveis.
+ * O frete do período já está coberto? (pago, ou com Pix em aberto que o
+ * inclui). Cancelada/expirada/recusada não cobre — o cliente pode gerar outro.
+ */
+async function isFreightCovered(
+  admin: AdminClient,
+  customerId: string,
+  periodStart: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("charges")
+    .select("id")
+    .eq("customer_id", customerId)
+    .eq("freight_period", periodStart)
+    .gt("freight_amount", 0)
+    .in("status", ["pending", "in_process", "approved"])
+    .limit(1);
+
+  if (error) throw new Error(`Falha ao verificar o frete da semana: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+/**
+ * Contexto para criar cobrança: cobrança aberta do cliente (se houver),
+ * lotes ainda elegíveis e se o frete da semana ainda está por pagar.
  */
 export async function getChargeContext(customerId: string): Promise<{
   activeCharge: Charge | null;
   eligibleLots: ChargeLotRef[];
+  freightDue: boolean;
 }> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -113,7 +143,23 @@ export async function getChargeContext(customerId: string): Promise<{
   const activeCharge = rows.find((charge) => isChargeActive(charge)) ?? null;
   const eligibleLots = await listEligibleLots(customerId);
 
-  return { activeCharge, eligibleLots };
+  const periodStart = freightPeriodStart();
+  const { count: lotsInPeriod, error: lotsError } = await admin
+    .from("lots")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", customerId)
+    .gte("auction_date", periodStart)
+    .lt("auction_date", freightPeriodEnd(periodStart));
+
+  if (lotsError) {
+    throw new Error(`Falha ao contar lotes do período: ${lotsError.message}`);
+  }
+
+  const freightDue =
+    (lotsInPeriod ?? 0) > 0 &&
+    !(await isFreightCovered(admin, customerId, periodStart));
+
+  return { activeCharge, eligibleLots, freightDue };
 }
 
 export async function getChargeById(id: string): Promise<Charge | null> {
@@ -155,6 +201,8 @@ export async function createCharge(input: {
   customerId: string;
   lotIds: string[];
   createdBy: string | null;
+  /** Embute o frete fixo da semana (R$ 20) na cobrança. */
+  includeFreight?: boolean;
 }): Promise<Charge> {
   const admin = createAdminClient();
 
@@ -171,12 +219,44 @@ export async function createCharge(input: {
 
   const eligible = await listEligibleLotRefs(input.customerId);
   const picked = eligible.filter((lot) => input.lotIds.includes(lot.id));
-  if (picked.length === 0) {
+
+  // Frete da semana: só se o cliente tem lote no período corrente e o
+  // período ainda não foi coberto (índice único em charges reforça isso).
+  let freightAmount = 0;
+  let freightPeriod: string | null = null;
+  if (input.includeFreight) {
+    freightPeriod = freightPeriodStart();
+    freightAmount = WEEKLY_FREIGHT;
+
+    const { count: lotsInPeriod, error: lotsError } = await admin
+      .from("lots")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", input.customerId)
+      .gte("auction_date", freightPeriod)
+      .lt("auction_date", freightPeriodEnd(freightPeriod));
+
+    if (lotsError) {
+      throw new Error(`Falha ao contar lotes do período: ${lotsError.message}`);
+    }
+    if ((lotsInPeriod ?? 0) === 0) {
+      throw new Error(
+        "Este cliente não tem lote no período atual — o frete da semana não é devido.",
+      );
+    }
+    if (await isFreightCovered(admin, input.customerId, freightPeriod)) {
+      throw new Error(
+        "O frete da semana já está pago ou com Pix em aberto para este cliente.",
+      );
+    }
+  }
+
+  if (picked.length === 0 && !input.includeFreight) {
     throw new Error("Nenhum dos lotes selecionados está aguardando pagamento.");
   }
 
   const amount = round2(
-    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
+    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) +
+      freightAmount,
   );
   if (amount <= 0) {
     throw new Error("O valor total da cobrança precisa ser maior que zero.");
@@ -190,9 +270,16 @@ export async function createCharge(input: {
   }
 
   const externalReference = `chg_${crypto.randomUUID()}`;
-  const description = `Leilão Legends — ${
-    picked.length === 1 ? "lote" : "lotes"
-  } ${picked.map((lot) => lot.code).join(", ")}`;
+  const description = [
+    picked.length > 0
+      ? `Leilão Legends — ${picked.length === 1 ? "lote" : "lotes"} ${picked
+          .map((lot) => lot.code)
+          .join(", ")}`
+      : "Leilão Legends",
+    freightAmount > 0 ? "frete da semana" : null,
+  ]
+    .filter(Boolean)
+    .join(" + ");
 
   const [firstName, ...rest] = (customer.name?.trim() || "Cliente").split(/\s+/);
   const digits = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
@@ -208,12 +295,21 @@ export async function createCharge(input: {
       status: "pending",
       external_reference: externalReference,
       description,
+      freight_amount: freightAmount,
+      freight_period: freightPeriod,
       created_by: input.createdBy,
     })
     .select("id")
     .single();
 
   if (insertError) {
+    // 23505 = índice único do frete: outra cobrança do mesmo período entrou
+    // entre a validação e o insert (ou o cliente tentou duas vezes).
+    if (insertError.code === "23505") {
+      throw new Error(
+        "O frete da semana já está pago ou com Pix em aberto para este cliente.",
+      );
+    }
     throw new Error(`Falha ao registrar cobrança: ${insertError.message}`);
   }
 
@@ -234,6 +330,7 @@ export async function createCharge(input: {
 
   // 2) Lotes elegíveis podem apontar para uma cobrança que expirou por tempo
   //    (sem webhook). Libera esses vínculos obsoletos antes de reclamar.
+  //    (Pix só do frete não tem lotes — pula o claim.)
   const staleIds = picked
     .filter((lot) => lot.charge_id)
     .map((lot) => lot.id);
@@ -246,23 +343,25 @@ export async function createCharge(input: {
   }
 
   // 3) Reclame atômico: só vence quem conseguir todas as linhas.
-  const { data: claimed, error: claimError } = await admin
-    .from("lots")
-    .update({ charge_id: chargeId })
-    .in("id", pickedIds)
-    .eq("status", "pending_payment")
-    .is("charge_id", null)
-    .select("id");
+  if (pickedIds.length > 0) {
+    const { data: claimed, error: claimError } = await admin
+      .from("lots")
+      .update({ charge_id: chargeId })
+      .in("id", pickedIds)
+      .eq("status", "pending_payment")
+      .is("charge_id", null)
+      .select("id");
 
-  if (claimError) {
-    await rollback();
-    throw new Error(`Falha ao vincular os lotes à cobrança: ${claimError.message}`);
-  }
-  if ((claimed?.length ?? 0) !== pickedIds.length) {
-    await rollback();
-    throw new Error(
-      "Outra cobrança para estes lotes foi criada agora. Recarregue a tela e confira as cobranças em aberto.",
-    );
+    if (claimError) {
+      await rollback();
+      throw new Error(`Falha ao vincular os lotes à cobrança: ${claimError.message}`);
+    }
+    if ((claimed?.length ?? 0) !== pickedIds.length) {
+      await rollback();
+      throw new Error(
+        "Outra cobrança para estes lotes foi criada agora. Recarregue a tela e confira as cobranças em aberto.",
+      );
+    }
   }
 
   // 4) Só agora emite o Pix — o lote já está reservado para esta cobrança.

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { getDashboardStats } from "@/lib/analytics";
+import { getFreightWeekStats } from "@/lib/freight-server";
 import { PIPELINE_COLORS } from "@/lib/chart-colors";
 import { requireAdmin } from "@/lib/dal";
 import { formatBRL, formatDateBR } from "@/lib/lots";
@@ -29,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FreightWeekCard } from "@/components/admin/dashboard/freight-week-card";
 import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { ClosingCard } from "@/components/admin/dashboard/closing-card";
@@ -91,7 +93,10 @@ const ALERT_COLOR: Record<Alert["tone"], string> = {
 
 export default async function DashboardPage() {
   await requireAdmin();
-  const stats = await getDashboardStats();
+  const [stats, freightStats] = await Promise.all([
+    getDashboardStats(),
+    getFreightWeekStats(),
+  ]);
   const s = stats;
 
   const monthLabel = new Date().toLocaleDateString("pt-BR", { month: "long" });
@@ -303,6 +308,8 @@ export default async function DashboardPage() {
         dateLabel={formatDateBR(new Date().toLocaleDateString("en-CA"))}
       />
 
+      {/* Frete da semana */}
+      <FreightWeekCard stats={freightStats} />
 
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3">

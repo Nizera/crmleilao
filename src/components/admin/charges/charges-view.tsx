@@ -362,6 +362,11 @@ export function ChargesView({
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-medium">
                     {formatBRL(charge.amount)}
+                    {Number(charge.freight_amount) > 0 && (
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        inclui frete {formatBRL(Number(charge.freight_amount))}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <ChargeStatusBadge status={charge.status} />
