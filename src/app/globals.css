@@ -20,6 +20,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-ouro: var(--ouro);
+  --color-ouro-ink: var(--ouro-ink);
+  --color-amarelo: var(--amarelo);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -83,6 +86,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Cores de marca do painel do cliente (preto · amarelo · dourado).
+     Só fazem efeito onde as utilities (text-ouro-ink etc) são usadas —
+     que é apenas em /painel/*. */
+  --ouro: #c9a227;
+  --ouro-ink: #a16207;
+  --amarelo: #facc15;
 }
 
 .dark {
@@ -119,6 +128,41 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* === Tema do painel do cliente: preto · amarelo · dourado ===
+   Escopo por classe no <html> (script pré-paint no layout + ThemeScope):
+   vale em /painel/* inclusive nos portais (sheet/dialog/toast), que
+   renderizam no <body> e herdam do <html>. Admin e landing ficam fora.
+   Relação de cor espelhando o brasão: claro = preto com texto amarelo,
+   escuro = amarelo com texto preto. Declarações depois de :root/.dark
+   para vencer a cascata; o bloco .dark tem especificidade maior. */
+html.tema-painel {
+  --primary: #0a0a0a;
+  --primary-foreground: #facc15;
+  --ring: #a16207;
+  --muted: oklch(0.97 0.008 95);
+  --secondary: oklch(0.965 0.008 95);
+  --accent: oklch(0.965 0.008 95);
+}
+
+html.tema-painel.dark {
+  --background: #0a0a0a;
+  --foreground: oklch(0.985 0 0);
+  --card: #151515;
+  --card-foreground: oklch(0.985 0 0);
+  --popover: #151515;
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: #facc15;
+  --primary-foreground: #0a0a0a;
+  --secondary: oklch(0.25 0.01 95);
+  --muted: oklch(0.25 0.01 95);
+  --accent: oklch(0.25 0.01 95);
+  --border: oklch(0.95 0.02 95 / 12%);
+  --input: oklch(0.95 0.02 95 / 16%);
+  --ring: #facc15;
+  --ouro: #d9b84a;
+  --ouro-ink: #facc15;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -144,9 +188,13 @@
   @page {
     margin: 12mm;
   }
-  /* No papel o app sai em claro mesmo com o tema escuro ativo. */
+  /* No papel o app sai em claro mesmo com o tema escuro ativo.
+     Inclui o escopo do painel: senão o primary amarelo/preto do tema
+     escuro sobreviveria à impressão (especificidade maior que .dark). */
   :root,
-  .dark {
+  .dark,
+  html.tema-painel,
+  html.tema-painel.dark {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);

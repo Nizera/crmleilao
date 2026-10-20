@@ -132,7 +132,7 @@ function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void 
     <div className="flex flex-1 flex-col gap-5 px-6 py-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-2xl font-semibold">{formatBRL(data.amount)}</p>
+          <p className="text-2xl font-semibold text-ouro-ink">{formatBRL(data.amount)}</p>
           {data.freight_amount > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">
               Inclui frete da semana: {formatBRL(data.freight_amount)}

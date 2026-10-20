@@ -15,7 +15,7 @@ type Props = {
 
 export function ClientHeader({ name, phone }: Props) {
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-linear-to-r after:from-transparent after:via-ouro after:to-transparent after:content-['']">
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 md:px-6">
         <Link href="/painel">
           <Logo hideNameOnMobile />

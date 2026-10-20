@@ -99,7 +99,11 @@ export default async function CustomerLotPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
-          <Detail label="Valor" value={formatBRL(lot.arremate_value)} />
+          <Detail
+            label="Valor"
+            value={formatBRL(lot.arremate_value)}
+            className="text-ouro-ink"
+          />
           <Detail label="Data do leilão" value={formatDateBR(lot.auction_date)} />
           <Detail label="Envio previsto" value={formatDateBR(lot.shipping_date)} />
         </CardContent>
@@ -155,13 +159,23 @@ export default async function CustomerLotPage({
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="text-lg font-medium tabular-nums">{value}</span>
+      <span className={`text-lg font-medium tabular-nums${className ? ` ${className}` : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

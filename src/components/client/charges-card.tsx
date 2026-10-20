@@ -217,7 +217,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
           return (
             <div
               key={charge.id}
-              className="flex flex-col gap-3 rounded-md border p-3"
+              className={`flex flex-col gap-3 rounded-md border p-3${isActive ? " border-ouro/40" : ""}`}
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 flex-col">
@@ -370,7 +370,9 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                 {selected.size} {selected.size === 1 ? "lote selecionado" : "lotes selecionados"}
                 {withFreight ? " + frete da semana" : ""}
               </span>
-              <span className="text-lg font-semibold">{formatBRL(total)}</span>
+              <span className="text-lg font-semibold text-ouro-ink">
+                {formatBRL(total)}
+              </span>
             </div>
 
             {selected.size === 0 && !withFreight ? (

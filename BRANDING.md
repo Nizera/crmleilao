@@ -2,7 +2,9 @@
 
 Guia de identidade visual do site e dos painéis. A base é o design
 monocromático do shadcn (preto/branco + cinzas) que o tema `nova` já usa em
-`src/app/globals.css`; as **cores de raridade** são o único acento cromático.
+`src/app/globals.css`; as **cores de raridade** são o acento cromático de
+conteúdo, e o **painel do cliente** tem tema próprio com preto, amarelo e
+dourado (ver §2).
 
 ---
 
@@ -49,6 +51,33 @@ Acentos — **só em badges, chips e detalhes** (nunca na marca):
 
 **Regra de ouro:** a marca é 100% monocromática. Cor entra em *conteúdo*
 (raridade, status), nunca no logotipo.
+
+### Tema do painel do cliente — preto · amarelo · dourado
+
+O painel (`/painel/*`, incluindo login e convite) tem tema próprio que
+espelha o brasão: no **claro** preto com texto amarelo (escudo sobre papel),
+no **escuro** amarelo com texto preto (wordmark sobre o escudo). Admin e
+landing ficam com a paleta neutra de sempre.
+
+| Papel | Valor | Uso |
+| --- | --- | --- |
+| Preto | `#0A0A0A` | `--primary` no claro; fundo no escuro |
+| Amarelo | `#FACC15` | `--primary` no escuro; texto dos CTAs no claro |
+| Dourado | `#C9A227` | filete do header, borda do Pix ativo (`ouro/40`) |
+| Ouro-ink | `#A16207` | números hero sobre papel (≥4.5:1); vira amarelo no escuro |
+
+- **Mecanismo:** classe `tema-painel` no `<html>` (script pré-paint no
+  `layout.tsx` + `ThemeScope` na navegação SPA) — assim os portais
+  (sheet/dialog/toast), que nascem no `<body>`, também herdam. Tokens em
+  `globals.css` (`html.tema-painel` / `html.tema-painel.dark`) + utilities
+  `text-ouro-ink`, `border-ouro/40`, `via-ouro`.
+- **Onde a cor aparece:** CTA/botão default, tab ativa (via `border-primary`),
+  tile da logo (preto+marca amarela no claro / amarelo+marca preta no
+  escuro), filete dourado no header, e 3 números hero (total do Pix, valor
+  no QR sheet, valor do lote).
+- **Onde NÃO aparece:** status badges (continuam semânticos — são
+  `variant="outline"`), linhas pequenas de lista, empty states, e nada
+  fora de `/painel/*`.
 
 ## 3. Tipografia
 

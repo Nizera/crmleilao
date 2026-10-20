@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { ThemeScope } from "@/components/theme-scope";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -31,8 +32,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Tema do painel: roda durante o parse, antes do primeiro paint
+            (cobre o carregamento duro). A navegação SPA é coberta pelo
+            ThemeScope. suppressHydrationWarning no <html> aceita a classe. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{document.documentElement.classList.toggle("tema-painel",location.pathname.startsWith("/painel"))}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <ThemeScope />
           {children}
         </ThemeProvider>
         <Toaster richColors position="top-right" />
