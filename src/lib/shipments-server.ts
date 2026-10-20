@@ -13,6 +13,7 @@ import {
   tagPrintUrl,
   type SfOrderInfo,
   type SfParty,
+  type SfProduct,
   type SfVolume,
 } from "@/lib/superfrete";
 import type {
@@ -725,11 +726,16 @@ export async function emitShipment(input: {
           picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) * 100,
         ) / 100;
 
-  const products = picked.map((lot) => ({
-    name: `Lote ${lot.code} — ${lot.title}`.slice(0, 60),
-    quantity: 1,
-    unitary_value: Number(lot.arremate_value),
-  }));
+  // Declaração de conteúdo da etiqueta: sempre um único item "Documento",
+  // com o valor total dos lotes. Não vai o nome dos lotes — expõe a
+  // mercadoria e convida o roubo no transporte.
+  const products: SfProduct[] = [
+    {
+      name: "Documento",
+      quantity: 1,
+      unitary_value: insuranceValue,
+    },
+  ];
 
   // 1) Etiqueta na SuperFrete (status pending).
   const cart = await createCart({
