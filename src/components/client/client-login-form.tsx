@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useActionState } from "react";
-import Link from "next/link";
 import { Loader2, LogIn } from "lucide-react";
 
 import { customerSignIn } from "@/app/actions/auth";
@@ -103,16 +102,6 @@ export function ClientLoginForm({
           </form>
         </CardContent>
       </Card>
-
-      <FieldDescription className="px-6 text-center">
-        É da equipe?{" "}
-        <Link
-          href="/login"
-          className="underline underline-offset-2 hover:text-foreground"
-        >
-          Painel interno
-        </Link>
-      </FieldDescription>
     </div>
   );
 }
