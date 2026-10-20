@@ -105,6 +105,8 @@ function ShipmentForm({
     weight: 0.3,
   });
   const [volumeTouched, setVolumeTouched] = useState(false);
+  /** Vazio = seguro padrão (soma dos lotes). Editável; "0" = sem seguro. */
+  const [insurance, setInsurance] = useState("");
 
   const [step, setStep] = useState<"form" | "quote">("form");
   const [options, setOptions] = useState<SfQuoteOption[] | null>(null);
@@ -204,6 +206,14 @@ function ShipmentForm({
     0,
   );
 
+  const insuranceValue = (() => {
+    if (insurance.trim() === "") return total;
+    const parsed = Number(insurance.replace(",", "."));
+    return Number.isFinite(parsed) && parsed >= 0
+      ? Math.round(parsed * 100) / 100
+      : 0;
+  })();
+
   const blockedReason = (() => {
     if (!context) return null;
     if (!context.superfreteReady) {
@@ -228,6 +238,7 @@ function ShipmentForm({
       customerId: selected.id,
       lotIds: [...picked],
       volume,
+      insuranceValue,
     })
       .then((result) => {
         if (result.ok) {
@@ -254,6 +265,7 @@ function ShipmentForm({
         serviceId,
         volume,
         batchDate: batchDate || null,
+        insuranceValue,
       });
 
       if (!result.ok) {
@@ -497,6 +509,35 @@ function ShipmentForm({
                   SuperFrete exige consistência.
                 </p>
               </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Seguro declarado</p>
+                  {insurance.trim() !== "" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setInsurance("")}
+                    >
+                      Padrão
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  id="shipment-insurance"
+                  inputMode="decimal"
+                  value={insurance}
+                  placeholder={`Padrão: ${formatBRL(total)}`}
+                  onChange={(event) => setInsurance(event.target.value)}
+                  disabled={pending}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Valor declarado da encomenda, sem frete. Os Correios só cotam
+                  com seguro ≥ R$ 25,63 — informe 0 para emitir sem seguro.
+                </p>
+              </div>
             </>
           )}
 
@@ -581,7 +622,7 @@ function ShipmentForm({
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {picked.size > 0
-                  ? `Seguro declarado: ${formatBRL(total)}`
+                  ? `Seguro declarado: ${formatBRL(insuranceValue)}`
                   : "Selecione os lotes para cotar."}
               </p>
               <Button

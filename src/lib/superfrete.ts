@@ -259,8 +259,12 @@ export async function createCart(input: {
       volumes: input.volume,
       options: {
         // Declaração de conteúdo (sem nota fiscal) + valor declarado.
+        // Sem seguro, a doc pede `insurance_value: null`.
         non_commercial: true,
-        insurance_value: input.insuranceValue ?? 0,
+        insurance_value:
+          input.insuranceValue != null && input.insuranceValue > 0
+            ? input.insuranceValue
+            : null,
       },
       platform: "CarasLegendsCRM",
     },

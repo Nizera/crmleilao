@@ -174,6 +174,17 @@ function parseLotIds(raw: unknown): string[] {
   return ids;
 }
 
+/** Seguro vindo do form: vazio/nulo = usar a soma dos lotes. Aceita "25,63". */
+function parseInsurance(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const value =
+    typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Seguro declarado inválido (use números, ex.: 25,63).");
+  }
+  return Math.round(value * 100) / 100;
+}
+
 async function insuranceFor(
   customerId: string,
   lotIds: string[],
@@ -195,13 +206,15 @@ export async function quoteShipmentAction(input: {
   customerId: string;
   lotIds: unknown;
   volume: unknown;
+  insuranceValue?: unknown;
 }): Promise<ActionResult<{ options: SfQuoteOption[]; errors: string[] }>> {
   try {
     await requireAdmin();
 
     const lotIds = parseLotIds(input.lotIds);
     const volume = parseVolume(input.volume);
-    const insuranceValue = await insuranceFor(input.customerId, lotIds);
+    const lotsInsurance = await insuranceFor(input.customerId, lotIds);
+    const insuranceValue = parseInsurance(input.insuranceValue) ?? lotsInsurance;
 
     const origin = await getOrigin();
     if (!origin) {
@@ -251,6 +264,7 @@ export async function emitShipmentAction(input: {
   serviceId: number;
   volume: unknown;
   batchDate?: string | null;
+  insuranceValue?: unknown;
 }): Promise<ActionResult<{ shipment: Shipment; warning?: string }>> {
   try {
     const { profile } = await requireAdmin();
@@ -263,6 +277,7 @@ export async function emitShipmentAction(input: {
 
     const lotIds = parseLotIds(input.lotIds);
     const volume = parseVolume(input.volume);
+    const insuranceOverride = parseInsurance(input.insuranceValue);
     const batchDate =
       typeof input.batchDate === "string" &&
       /^\d{4}-\d{2}-\d{2}$/.test(input.batchDate)
@@ -275,6 +290,7 @@ export async function emitShipmentAction(input: {
       serviceId: service.id,
       volume,
       batchDate,
+      insuranceValue: insuranceOverride,
       createdBy: profile.id,
     });
 

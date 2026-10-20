@@ -689,6 +689,8 @@ export async function emitShipment(input: {
   serviceId: number;
   volume: ShipmentVolume;
   batchDate?: string | null;
+  /** Seguro editável no form; null = soma dos lotes. */
+  insuranceValue?: number | null;
   createdBy: string | null;
 }): Promise<{ shipment: Shipment; warning?: string }> {
   const admin = createAdminClient();
@@ -716,9 +718,12 @@ export async function emitShipment(input: {
     );
   }
 
-  const insuranceValue = Math.round(
-    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) * 100,
-  ) / 100;
+  const insuranceValue =
+    input.insuranceValue != null
+      ? input.insuranceValue
+      : Math.round(
+          picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) * 100,
+        ) / 100;
 
   const products = picked.map((lot) => ({
     name: `Lote ${lot.code} — ${lot.title}`.slice(0, 60),
