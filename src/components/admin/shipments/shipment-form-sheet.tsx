@@ -105,8 +105,8 @@ function ShipmentForm({
     weight: 0.3,
   });
   const [volumeTouched, setVolumeTouched] = useState(false);
-  /** Vazio = seguro padrão (soma dos lotes). Editável; "0" = sem seguro. */
-  const [insurance, setInsurance] = useState("");
+  /** Editável; "0" (padrão) = sem seguro; a soma dos lotes é só a sugestão. */
+  const [insurance, setInsurance] = useState("0");
 
   const [step, setStep] = useState<"form" | "quote">("form");
   const [options, setOptions] = useState<SfQuoteOption[] | null>(null);
@@ -207,7 +207,6 @@ function ShipmentForm({
   );
 
   const insuranceValue = (() => {
-    if (insurance.trim() === "") return total;
     const parsed = Number(insurance.replace(",", "."));
     return Number.isFinite(parsed) && parsed >= 0
       ? Math.round(parsed * 100) / 100
@@ -513,13 +512,13 @@ function ShipmentForm({
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">Seguro declarado</p>
-                  {insurance.trim() !== "" && (
+                  {insuranceValue !== 0 && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="h-6 px-2 text-xs"
-                      onClick={() => setInsurance("")}
+                      onClick={() => setInsurance("0")}
                     >
                       Padrão
                     </Button>
@@ -529,13 +528,13 @@ function ShipmentForm({
                   id="shipment-insurance"
                   inputMode="decimal"
                   value={insurance}
-                  placeholder={`Padrão: ${formatBRL(total)}`}
+                  placeholder="0,00"
                   onChange={(event) => setInsurance(event.target.value)}
                   disabled={pending}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Valor declarado da encomenda, sem frete. Os Correios só cotam
-                  com seguro ≥ R$ 25,63 — informe 0 para emitir sem seguro.
+                  Valor declarado da encomenda, sem frete. Padrão: 0 (sem
+                  seguro). Os Correios só cotam com seguro ≥ R$ 25,63.
                 </p>
               </div>
             </>
