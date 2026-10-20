@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/card";
 import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
+import { ClosingCard } from "@/components/admin/dashboard/closing-card";
 
 export const metadata = { title: "Dashboard" };
 
@@ -294,6 +295,14 @@ export default async function DashboardPage() {
           }
         />
       </div>
+
+      {/* Fechamento do dia */}
+      <ClosingCard
+        closing={s.closing}
+        ready={s.ready.closing}
+        dateLabel={formatDateBR(new Date().toLocaleDateString("en-CA"))}
+      />
+
 
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3">

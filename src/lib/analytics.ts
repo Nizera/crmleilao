@@ -60,6 +60,7 @@ export type DashboardStats = {
     customers: boolean;
     shipments: boolean;
     stock: boolean;
+    closing: boolean;
   };
   revenue: {
     month: number;
@@ -81,6 +82,12 @@ export type DashboardStats = {
   customers: { total: number; newInMonth: number; withoutEmail: number };
   shipments: { toShip: number; posted: number; delivered: number };
   stock: { units: number; skus: number; negatives: number };
+  closing: {
+    receivedToday: number;
+    paidLotsToday: number;
+    staffPaid: number;
+    staffTotal: number;
+  };
   pipeline: { status: LotStatus; label: string; count: number; value: number }[];
   ranking: { id: string; name: string; lots: number; total: number }[];
   recentPayments: {
@@ -108,6 +115,7 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
   ).toISOString();
   const cutoff30Iso = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+  const today = now.toLocaleDateString("en-CA");
 
   const [
     lotsRes,
@@ -118,6 +126,8 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     shipmentsOpenRes,
     shipmentsPostedRes,
     shipmentsDeliveredRes,
+    staffTotalRes,
+    staffPaidTodayRes,
     stock,
   ] = await Promise.all([
     supabase.from("lots").select(LOT_SELECT),
@@ -148,6 +158,13 @@ async function computeDashboardStats(): Promise<DashboardStats> {
       .from("shipments")
       .select("id", { count: "exact", head: true })
       .eq("status", "delivered"),
+    supabase
+      .from("admin_profiles")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("staff_payments")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_date", today),
     listStockAdmin()
       .then((items) => ({ ok: true as const, items }))
       .catch(() => ({ ok: false as const, items: [] })),
@@ -162,6 +179,8 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     ["envios-abertos", shipmentsOpenRes],
     ["envios-postados", shipmentsPostedRes],
     ["envios-entregues", shipmentsDeliveredRes],
+    ["equipe", staffTotalRes],
+    ["pagamentos-hoje", staffPaidTodayRes],
   ] as const) {
     if (res.error) console.error(`[dashboard] falha em ${name}: ${res.error.message}`);
   }
@@ -185,6 +204,8 @@ async function computeDashboardStats(): Promise<DashboardStats> {
   }
   let totalRevenue = 0;
   let paidLots = 0;
+  let receivedToday = 0;
+  let paidLotsToday = 0;
   for (const lot of lots) {
     if (!REVENUE_STATUSES.has(lot.status)) continue;
     const value = Number(lot.arremate_value);
@@ -193,6 +214,10 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     if (lot.paid_at) {
       const bucket = monthIndex.get(lot.paid_at.slice(0, 7));
       if (bucket) bucket.value += value;
+      if (lot.paid_at.slice(0, 10) === today) {
+        receivedToday += value;
+        paidLotsToday += 1;
+      }
     }
   }
 
@@ -294,7 +319,6 @@ async function computeDashboardStats(): Promise<DashboardStats> {
 
   /* ------------------------- próximo lote de envio ---------------------- */
 
-  const today = now.toLocaleDateString("en-CA");
   const awaiting = lots.filter(
     (lot) =>
       lot.status === "paid" &&
@@ -326,6 +350,7 @@ async function computeDashboardStats(): Promise<DashboardStats> {
         shipmentsPostedRes.error === null &&
         shipmentsDeliveredRes.error === null,
       stock: stock.ok,
+      closing: staffTotalRes.error === null && staffPaidTodayRes.error === null,
     },
     revenue: {
       month: monthRevenue,
@@ -354,6 +379,12 @@ async function computeDashboardStats(): Promise<DashboardStats> {
       units,
       skus: stockItems.length,
       negatives,
+    },
+    closing: {
+      receivedToday,
+      paidLotsToday,
+      staffPaid: staffPaidTodayRes.count ?? 0,
+      staffTotal: staffTotalRes.count ?? 0,
     },
     pipeline,
     ranking,

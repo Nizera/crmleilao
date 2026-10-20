@@ -120,6 +120,11 @@ export function waMessageLink(phoneE164: string, text: string): string {
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 
+/** Texto pronto no WhatsApp sem destino fixo — abre o seletor de contato. */
+export function waShareLink(text: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+
 export function buildLotMessage(lot: Lot, template?: string): string {
   return renderTemplate(template ?? DEFAULT_SETTINGS.wa_notice_template, {
     code: lot.code,
