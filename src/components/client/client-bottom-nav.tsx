@@ -67,13 +67,14 @@ export function ClientBottomNav() {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Voltar ao grupo no WhatsApp"
-          className="flex min-w-[56px] flex-col items-center justify-center gap-0.5 text-ouro-ink transition-colors hover:text-foreground"
+          className="group flex -translate-y-3.5 flex-col items-center"
         >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-amarelo text-[#0a0a0a] shadow-sm">
-            <MessageCircle className="size-5" />
-          </span>
-          <span className="w-14 text-center text-[9px] font-bold uppercase leading-tight tracking-wider">
-            Voltar ao Grupo
+          {/* Lombada: tile amarelo que se ergue acima da nav. */}
+          <span className="flex size-16 flex-col items-center justify-center gap-0.5 rounded-t-[32px] rounded-b-2xl bg-amarelo text-[#0a0a0a] shadow-[0_-6px_16px_rgba(0,0,0,0.35)] ring-1 ring-ouro/40 transition-transform group-active:scale-95">
+            <MessageCircle className="size-6" />
+            <span className="w-12 text-center text-[8px] font-bold uppercase leading-tight tracking-wider">
+              Voltar ao Grupo
+            </span>
           </span>
         </a>
 
