@@ -2,8 +2,18 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Ban, Loader2, QrCode, RefreshCw } from "lucide-react";
+import {
+  Ban,
+  Bolt,
+  ChevronRight,
+  ImageIcon,
+  Loader2,
+  QrCode,
+  RefreshCw,
+  Truck,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -18,20 +28,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateBR } from "@/components/ui/date-br";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   chargeExpiryDeltaMs,
   effectiveChargeStatus,
   isChargeActive,
   type Charge,
 } from "@/lib/charges";
 import type { CustomerFreightState } from "@/lib/freight";
-import { formatBRL, type Lot } from "@/lib/lots";
+import { formatBRL, lotImageUrl, type Lot } from "@/lib/lots";
 
 type Props = {
   lots: Lot[];
@@ -47,6 +50,26 @@ function expiryText(charge: Charge, now: Date): string | null {
   const hours = Math.round(delta / 3_600_000);
   if (hours < 48) return `Vence em ${hours}h`;
   return `Vence em ${Math.round(hours / 24)} dias`;
+}
+
+function LotThumb({ lot }: { lot: Lot }) {
+  const cover = lot.images
+    .map((path) => lotImageUrl(path))
+    .find((url): url is string => Boolean(url));
+
+  if (!cover) {
+    return (
+      <span className="flex h-10 w-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+        <ImageIcon className="size-4" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="relative h-10 w-8 shrink-0 overflow-hidden rounded bg-muted">
+      <Image src={cover} alt={lot.title} fill sizes="32px" className="object-cover" />
+    </span>
+  );
 }
 
 export function ClientChargesCard({ lots, charges, freight }: Props) {
@@ -169,15 +192,30 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
         ? "Histórico das suas cobranças Pix."
         : "Assim que você arrematar um lote, o Pix para pagamento aparece aqui.";
 
+  const pendingCount = eligibleLots.length + (canAddFreight ? 1 : 0);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Pagamentos</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <section className="rounded-xl bg-card p-4 shadow-md ring-1 ring-foreground/10">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amarelo/15 text-ouro-ink">
+            <QrCode className="size-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold leading-tight">Pagamentos</h2>
+            <p className="truncate text-xs text-muted-foreground">{description}</p>
+          </div>
+        </div>
+        {pendingCount > 0 && (
+          <span className="shrink-0 rounded-full bg-amarelo/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ouro-ink">
+            {pendingCount} {pendingCount === 1 ? "Pendente" : "Pendentes"}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3">
         {freight.status === "due" && (
-          <div className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+          <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <p className="font-medium">
               Frete da semana — {formatBRL(freight.amount)} pendente
             </p>
@@ -189,13 +227,13 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
           </div>
         )}
         {freight.status === "awaiting" && freight.chargeCode && (
-          <div className="rounded-md border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
+          <div className="rounded-lg border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
             Frete da semana incluso no Pix {freight.chargeCode} — aguardando
             confirmação.
           </div>
         )}
         {freight.status === "paid" && (
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-600 dark:text-emerald-400">
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-600 dark:text-emerald-400">
             Frete da semana pago.
           </div>
         )}
@@ -217,7 +255,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
           return (
             <div
               key={charge.id}
-              className={`flex flex-col gap-3 rounded-md border p-3${isActive ? " border-ouro/40" : ""}`}
+              className={`flex flex-col gap-3 rounded-lg border p-3${isActive ? " border-ouro/40" : ""}`}
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 flex-col">
@@ -309,8 +347,8 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
         {showCart && (
           <>
             {canAddFreight && (
-              <ul className="flex flex-col divide-y rounded-md border">
-                <li className="flex items-center gap-3 px-3 py-2.5">
+              <ul className="flex flex-col divide-y rounded-lg bg-muted/60">
+                <li className="flex items-center gap-2.5 px-3 py-2.5">
                   <Checkbox
                     id="freight-week"
                     checked={withFreight}
@@ -321,15 +359,20 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                     htmlFor="freight-week"
                     className="flex flex-1 cursor-pointer items-center justify-between gap-3"
                   >
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">
-                        Frete da semana
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background text-ouro-ink">
+                        <Truck className="size-[18px]" />
                       </span>
-                      <span className="block text-xs text-muted-foreground">
-                        cobrança única do período (terça a terça)
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">
+                          Frete da semana
+                        </span>
+                        <span className="block text-[10px] text-muted-foreground">
+                          cobrança única do período (terça a terça)
+                        </span>
                       </span>
                     </span>
-                    <span className="whitespace-nowrap text-sm text-muted-foreground">
+                    <span className="ml-2 shrink-0 text-sm font-semibold">
                       {formatBRL(freight.amount)}
                     </span>
                   </label>
@@ -338,51 +381,72 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
             )}
 
             {eligibleLots.length > 0 && (
-              <ul className="flex flex-col divide-y rounded-md border">
-              {eligibleLots.map((lot) => (
-                <li key={lot.id} className="flex items-center gap-3 px-3 py-2.5">
-                  <Checkbox
-                    id={`lot-${lot.id}`}
-                    checked={selected.has(lot.id)}
-                    onCheckedChange={() => toggle(lot.id)}
-                    disabled={pending}
-                  />
-                  <label
-                    htmlFor={`lot-${lot.id}`}
-                    className="flex flex-1 cursor-pointer items-center justify-between gap-3"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {lot.code} · {lot.title}
+              <ul className="flex flex-col divide-y rounded-lg bg-muted/60">
+                {eligibleLots.map((lot) => (
+                  <li key={lot.id} className="flex items-center gap-2.5 px-3 py-2.5">
+                    <Checkbox
+                      id={`lot-${lot.id}`}
+                      checked={selected.has(lot.id)}
+                      onCheckedChange={() => toggle(lot.id)}
+                      disabled={pending}
+                    />
+                    <label
+                      htmlFor={`lot-${lot.id}`}
+                      className="flex flex-1 cursor-pointer items-center justify-between gap-3"
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <LotThumb lot={lot} />
+                        <span className="min-w-0">
+                          <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {lot.code}
+                          </span>
+                          <span className="block truncate text-sm font-semibold leading-tight">
+                            {lot.title}
+                          </span>
+                        </span>
                       </span>
-                    </span>
-                    <span className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatBRL(lot.arremate_value)}
-                    </span>
-                  </label>
-                </li>
-              ))}
+                      <span className="ml-2 shrink-0 text-sm font-bold text-ouro-ink">
+                        {formatBRL(lot.arremate_value)}
+                      </span>
+                    </label>
+                  </li>
+                ))}
               </ul>
             )}
 
-            <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
-              <span className="text-sm text-muted-foreground">
-                {selected.size} {selected.size === 1 ? "lote selecionado" : "lotes selecionados"}
-                {withFreight ? " + frete da semana" : ""}
+            <div className="flex items-center justify-between rounded-lg bg-muted/80 px-3 py-2.5">
+              <span className="flex flex-col">
+                <span className="text-xs text-muted-foreground">
+                  {selected.size}{" "}
+                  {selected.size === 1
+                    ? "lote selecionado"
+                    : "lotes selecionados"}
+                  {withFreight ? " + frete da semana" : ""}
+                </span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-ouro-ink">
+                  Pagamento via Pix
+                </span>
               </span>
-              <span className="text-lg font-semibold text-ouro-ink">
-                {formatBRL(total)}
+              <span className="text-right">
+                <span className="mr-1 text-xs text-muted-foreground">Total</span>
+                <span className="text-lg font-bold text-foreground">
+                  {formatBRL(total)}
+                </span>
               </span>
             </div>
 
             {selected.size === 0 && !withFreight ? (
-              <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              <p className="rounded-lg border bg-muted px-3 py-2 text-sm text-muted-foreground">
                 Selecione os lotes e/ou o frete da semana para gerar o Pix.
               </p>
             ) : (
-              <Button onClick={generate} disabled={pending}>
-                {pending ? <Loader2 className="animate-spin" /> : <QrCode />}
-                {pending ? "Gerando…" : "Gerar Pix"}
+              <Button
+                onClick={generate}
+                disabled={pending}
+                className="w-full rounded-xl py-6 text-sm font-bold uppercase tracking-wider"
+              >
+                {pending ? <Loader2 className="animate-spin" /> : <Bolt />}
+                {pending ? "Gerando…" : "Gerar Pix Copia e Cola"}
               </Button>
             )}
           </>
@@ -391,14 +455,24 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
         {serverError && (
           <p
             role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             {serverError}
           </p>
         )}
 
+        {!active && charges.length > 0 && (
+          <Link
+            href="/painel/historico"
+            className="flex items-center justify-center gap-1 py-1 text-center text-xs text-muted-foreground transition hover:text-foreground"
+          >
+            Ver histórico completo
+            <ChevronRight className="size-4" />
+          </Link>
+        )}
+
         {qr.sheet}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

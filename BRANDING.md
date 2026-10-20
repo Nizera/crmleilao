@@ -70,14 +70,20 @@ landing ficam com a paleta neutra de sempre.
   `layout.tsx` + `ThemeScope` na navegação SPA) — assim os portais
   (sheet/dialog/toast), que nascem no `<body>`, também herdam. Tokens em
   `globals.css` (`html.tema-painel` / `html.tema-painel.dark`) + utilities
-  `text-ouro-ink`, `border-ouro/40`, `via-ouro`.
-- **Onde a cor aparece:** CTA/botão default, tab ativa (via `border-primary`),
-  tile da logo (preto+marca amarela no claro / amarelo+marca preta no
-  escuro), filete dourado no header, e 3 números hero (total do Pix, valor
-  no QR sheet, valor do lote).
+  `text-ouro-ink`, `bg-amarelo`, `border-ouro/*`, `via-ouro`.
+- **Shell (redesign "Stitch + paleta da marca"):** top bar com lockup
+  (tile `bg-amarelo` 36px + mark preto, "LEGENDS" + sublinha "LEILÕES &
+  CARDS" em `text-ouro-ink`), pill de saldo placeholder, sino com ponto
+  pulsante `bg-amarelo`, avatar → dropdown (Meus dados/Histórico/Tema/Sair);
+  bottom nav fixa de 5 abas (aba ativa `text-ouro-ink`; tab "Ao Vivo" com
+  badge pulsante); filete dourado no topo permanece.
+- **Onde a cor aparece:** CTA/botão default (`bg-primary`), KPI "A Pagar"
+  (`text-ouro-ink` + pulse), tiles de ícone das seções (`bg-amarelo/15`
+  + `text-ouro-ink`), chips (Ouro NV.4, pendentes), stepper de envios
+  (feito `bg-ouro`, etapa atual `bg-amarelo` pulse), preços em destaque,
+  faixa de código no thumb do lote (`text-amarelo` sobre preto).
 - **Onde NÃO aparece:** status badges (continuam semânticos — são
-  `variant="outline"`), linhas pequenas de lista, empty states, e nada
-  fora de `/painel/*`.
+  `variant="outline"`), empty states, e nada fora de `/painel/*`.
 
 ## 3. Tipografia
 
@@ -95,7 +101,8 @@ landing ficam com a paleta neutra de sempre.
 | Login cliente | `src/app/(client)/painel/login/page.tsx` | lockup (tile 32px) |
 | Convite | `src/app/(client)/painel/convite/page.tsx` | lockup (tile 32px) |
 | Form de login admin | `src/components/login-form.tsx` | tile 40px, sem nome |
-| Header do painel cliente | `src/components/client/client-header.tsx` | lockup (tile 28px) |
+| Header do painel cliente | `src/components/client/client-header.tsx` | lockup Stitch (tile amarelo 36px + 2 linhas) |
+| Bottom nav do painel | `src/components/client/client-bottom-nav.tsx` | ícone + label (5 abas) |
 | Sidebar do admin | `src/components/admin/admin-sidebar.tsx` | tile 32px + duas linhas |
 | Favicon | `src/app/icon.svg` | mark só, Ink sobre transparente |
 | Ícone iOS | `src/app/apple-icon.tsx` | mark branco em tile Ink 180×180 |

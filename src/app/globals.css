@@ -53,6 +53,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Chips de status que rolam na horizontal sem barra (hero do painel). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

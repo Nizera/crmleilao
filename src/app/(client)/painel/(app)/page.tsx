@@ -1,8 +1,14 @@
+import {
+  Archive,
+  Award,
+  BadgeCheck,
+  Bolt,
+  Medal,
+  Truck,
+} from "lucide-react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 
 import {
-  countCustomerCharges,
   countCustomerShipments,
   getCustomerFreightState,
   listCustomerCharges,
@@ -10,30 +16,72 @@ import {
   listLots,
   requireCustomer,
 } from "@/lib/dal";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { ClientChargesCard } from "@/components/client/charges-card";
 import { ClientShipmentsCard } from "@/components/client/shipments-card";
 import { ClientLotsList } from "@/components/client/client-lots-list";
-import { isChargeActive } from "@/lib/charges";
-import { formatDateBR } from "@/lib/lots";
+import { LiveBanner } from "@/components/client/live-banner";
+import { VaultCard } from "@/components/client/vault-card";
+import {
+  chargeExpiryDeltaMs,
+  isChargeActive,
+  type Charge,
+} from "@/lib/charges";
+import { formatBRL, formatDateBR, type LotStatus } from "@/lib/lots";
+import { cn } from "@/lib/utils";
 
-const HISTORY_HREF = "/painel/historico";
+const PAID_LOT_STATUSES: LotStatus[] = ["paid", "shipped", "delivered"];
 
-function HistoryLink({ href, count }: { href: string; count?: number }) {
+/** "Expira 2h" / "Expira 3 dias" / "Prazo vencido" — espelho do card de cobrança. */
+function kpiExpiry(charge: Pick<Charge, "status" | "expires_at">) {
+  const delta = chargeExpiryDeltaMs(charge, new Date());
+  if (delta == null) return null;
+  if (delta <= 0) return "Prazo vencido";
+  const hours = Math.round(delta / 3_600_000);
+  if (hours < 48) return `Expira ${hours}h`;
+  return `Expira ${Math.round(hours / 24)} dias`;
+}
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  icon,
+  pulse,
+  subClassName,
+}: {
+  label: string;
+  value: string;
+  sub: string | null;
+  icon: React.ReactNode;
+  pulse?: boolean;
+  subClassName?: string;
+}) {
   return (
-    <Link
-      href={href}
-      className="flex w-fit items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
-    >
-      Ver histórico completo{typeof count === "number" ? ` (${count})` : ""}
-      <ChevronRight className="size-4" />
-    </Link>
+    <div className="flex flex-col rounded-xl bg-card p-2.5 shadow-sm ring-1 ring-foreground/10">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-medium uppercase text-muted-foreground">
+          {label}
+        </span>
+        {pulse ? (
+          <span className="size-1.5 animate-pulse rounded-full bg-amarelo" />
+        ) : (
+          icon
+        )}
+      </div>
+      <span className="mt-1 truncate text-lg font-bold tracking-tight">
+        {value}
+      </span>
+      {sub && (
+        <span
+          className={cn(
+            "truncate text-[9px] font-medium uppercase tracking-tight text-muted-foreground",
+            subClassName,
+          )}
+        >
+          {sub}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -41,13 +89,12 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, shipments, chargesTotal, shipmentsTotal, freight] =
+  const [lots, charges, shipments, shipmentsTotal, freight] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ images: true }),
       listCustomerCharges(customer.id),
       listCustomerShipments(customer.id),
-      countCustomerCharges(customer.id),
       countCustomerShipments(customer.id),
       getCustomerFreightState(customer.id),
     ]);
@@ -82,50 +129,114 @@ export default async function ClientHomePage() {
     homeCharges.push(activeCharge);
   }
 
+  // KPIs do topo (dados reais; saldo/sino são placeholders do header).
+  const paidLotsCount = lots.filter((lot) =>
+    PAID_LOT_STATUSES.includes(lot.status),
+  ).length;
+  const upcomingShipments = shipments.filter(
+    (shipment) => shipment.status !== "cancelled" && shipment.status !== "delivered",
+  );
+  const nextBatchDate = upcomingShipments.reduce<string | null>(
+    (acc, shipment) =>
+      acc === null || shipment.batch_date < acc ? shipment.batch_date : acc,
+    null,
+  );
+  const lotsSubtitle =
+    lots.length === 0
+      ? null
+      : latestAuctionDay
+        ? `${recentLots.length} ${recentLots.length === 1 ? "lote arrematado" : "lotes arrematados"} no leilão de ${formatDateBR(latestAuctionDay)}.`
+        : `${lots.length} ${lots.length === 1 ? "lote arrematado" : "lotes arrematados"} por você.`;
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Olá{customer.name ? `, ${customer.name.split(" ")[0]}` : ""} 👋
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Acompanhe seus lotes, pagamentos e envios do leilão.
+    <div className="flex flex-col gap-4">
+      {/* Hero: saudação + chips de status + chip de raridade (placeholder). */}
+      <section className="flex flex-col gap-2 pt-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-col">
+            <h1 className="flex truncate items-center gap-1.5 text-xl font-semibold tracking-tight">
+              Olá{customer.name ? `, ${customer.name.split(" ")[0]}` : ""}{" "}
+              <span className="text-base">👋</span>
+            </h1>
+            <p className="truncate text-xs text-muted-foreground">
+              Acompanhe seus lotes, pagamentos e envios do leilão.
+            </p>
+          </div>
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-amarelo/15 px-2.5 py-1 text-ouro-ink ring-1 ring-ouro/30">
+            <Award className="size-4 text-amarelo" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Ouro NV.4
+            </span>
+          </span>
+        </div>
+
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-0.5">
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+            <Bolt className="size-3.5 text-amarelo" />
+            Copa 2026 Season Drop
+          </span>
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+            <BadgeCheck className="size-3.5 text-emerald-500" />
+            Conta Verificada
+          </span>
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+            <Archive className="size-3.5 text-ouro-ink" />
+            Cofre Ativo
+          </span>
+        </div>
+
+        <div className="mt-1 grid grid-cols-3 gap-2">
+          <KpiCard
+            label="A Pagar"
+            value={activeCharge ? formatBRL(Number(activeCharge.amount)) : "R$ —"}
+            sub={activeCharge ? kpiExpiry(activeCharge) ?? "Pix aberto" : "Tudo em dia"}
+            icon={<Bolt className="size-3.5 text-muted-foreground" />}
+            pulse={Boolean(activeCharge)}
+            subClassName={activeCharge ? "text-ouro-ink" : undefined}
+          />
+          <KpiCard
+            label="Lotes"
+            value={String(lots.length).padStart(2, "0")}
+            sub={
+              paidLotsCount > 0
+                ? `${paidLotsCount} ${paidLotsCount === 1 ? "pago" : "pagos"}`
+                : "Nenhum pago"
+            }
+            icon={<Medal className="size-3.5 text-amarelo" />}
+          />
+          <KpiCard
+            label="Envios"
+            value={String(shipmentsTotal).padStart(2, "0")}
+            sub={nextBatchDate ? `Saída ${formatDateBR(nextBatchDate)}` : "Sem saída"}
+            icon={<Truck className="size-3.5 text-ouro-ink" />}
+          />
+        </div>
+      </section>
+
+      <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
+
+      <LiveBanner />
+
+      <ClientLotsList
+        lots={recentLots.length > 0 ? recentLots : lots}
+        subtitle={lotsSubtitle ?? undefined}
+      />
+      {olderLotsCount > 0 && (
+        <p className="-mt-2 text-center text-xs text-muted-foreground">
+          Lotes de leilões anteriores ficam no{" "}
+          <Link
+            href="/painel/historico"
+            className="underline transition hover:text-foreground"
+          >
+            histórico ({lots.length})
+          </Link>
+          .
         </p>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
-        <HistoryLink href={HISTORY_HREF} count={chargesTotal} />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Seus lotes</CardTitle>
-            <CardDescription>
-              {lots.length === 0
-                ? "Ainda não há lotes vinculados a este número. Assim que você arrematar um lote, ele aparece aqui com foto, valor e link de pagamento."
-                : latestAuctionDay
-                  ? `${recentLots.length} ${recentLots.length === 1 ? "lote arrematado" : "lotes arrematados"} no leilão de ${formatDateBR(latestAuctionDay)}.`
-                  : `${lots.length} ${lots.length === 1 ? "lote arrematado" : "lotes arrematados"} por você.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentLots.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Ainda não há lotes vinculados a este número. Assim que você
-                arrematar um lote, ele aparece aqui com foto, valor e link de
-                pagamento.
-              </p>
-            ) : (
-              <ClientLotsList lots={recentLots} />
-            )}
-          </CardContent>
-        </Card>
-        {olderLotsCount > 0 && <HistoryLink href={HISTORY_HREF} count={lots.length} />}
-      </div>
+      )}
 
       <ClientShipmentsCard shipments={shipments} total={shipmentsTotal} />
+
+      <VaultCard />
     </div>
   );
 }

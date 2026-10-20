@@ -3,27 +3,44 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
-import { ImageIcon } from "lucide-react";
+import { CalendarDays, ImageIcon } from "lucide-react";
 
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { ImageLightbox } from "@/components/client/image-lightbox";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatBRL, formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
 
 type Props = {
   lots: Lot[];
+  /** Subtítulo do cabeçalho (ex.: "2 lotes arrematados em 18/10/2026"). */
+  subtitle?: string;
 };
 
-export function ClientLotsList({ lots }: Props) {
+export function ClientLotsList({ lots, subtitle }: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [filter, setFilter] = useState<"all" | "pending">("all");
 
   if (lots.length === 0) {
     return (
-      <EmptyState
-        image="/brand/empty-lots.png"
-        title="Nenhum lote ainda"
-        description="Quando você arrematar um lote no leilão, ele aparece aqui com foto e valor."
-      />
+      <section className="flex flex-col gap-2">
+        <div className="flex items-end justify-between gap-2">
+          <div className="flex min-w-0 flex-col">
+            <h2 className="text-base font-bold tracking-tight">Seus Lotes</h2>
+            {subtitle && (
+              <span className="truncate text-xs text-muted-foreground">
+                {subtitle}
+              </span>
+            )}
+          </div>
+        </div>
+        <EmptyState
+          image="/brand/empty-lots.png"
+          title="Nenhum lote ainda"
+          description="Quando você arrematar um lote no leilão, ele aparece aqui com foto e valor."
+        />
+      </section>
     );
   }
 
@@ -43,55 +60,147 @@ export function ClientLotsList({ lots }: Props) {
     images.map((src) => ({ src, alt: lot.title })),
   );
 
+  const visibleRows = rows.filter(({ lot }) =>
+    filter === "all" ? true : lot.status === "pending_payment",
+  );
+  const pendingCount = rows.filter(
+    ({ lot }) => lot.status === "pending_payment",
+  ).length;
+
   return (
-    <>
+    <section className="flex flex-col gap-2">
+      <div className="flex items-end justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
+          <h2 className="text-base font-bold tracking-tight">Seus Lotes</h2>
+          {subtitle && (
+            <span className="truncate text-xs text-muted-foreground">
+              {subtitle}
+            </span>
+          )}
+        </div>
+        {pendingCount > 0 && (
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={cn(
+                "rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                filter === "all"
+                  ? "bg-background text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Todos ({rows.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("pending")}
+              className={cn(
+                "rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                filter === "pending"
+                  ? "bg-background text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Pendentes
+            </button>
+          </div>
+        )}
+      </div>
+
       <ul className="flex flex-col gap-2">
-        {rows.map(({ lot, images, startIndex }) => {
+        {visibleRows.map(({ lot, images, startIndex }) => {
           const cover = images[0] ?? null;
+          const pending = lot.status === "pending_payment";
 
           return (
-            <li key={lot.id}>
-              <div className="flex items-center gap-3 rounded-md border p-3 transition hover:bg-muted/50">
-                {cover ? (
-                  <button
-                    type="button"
-                    onClick={() => setOpenIndex(startIndex)}
-                    aria-label={`Ver fotos de ${lot.title}`}
-                    className="relative size-12 shrink-0 overflow-hidden rounded-md border bg-muted"
-                  >
-                    <Image
-                      src={cover}
-                      alt={lot.title}
-                      fill
-                      sizes="48px"
-                      className="object-cover"
-                    />
-                    {images.length > 1 && (
-                      <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded bg-black/60 text-[10px] font-medium text-white">
-                        {images.length}
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  <span className="flex size-12 shrink-0 items-center justify-center rounded-md border bg-muted text-muted-foreground">
-                    <ImageIcon className="size-5" />
+            <li
+              key={lot.id}
+              className="flex gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10"
+            >
+              {cover ? (
+                <button
+                  type="button"
+                  onClick={() => setOpenIndex(startIndex)}
+                  aria-label={`Ver fotos de ${lot.title}`}
+                  className="relative h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-muted shadow-md"
+                >
+                  <Image
+                    src={cover}
+                    alt={lot.title}
+                    fill
+                    sizes="64px"
+                    className="object-cover"
+                  />
+                  {images.length > 1 && (
+                    <span className="absolute right-0.5 bottom-0.5 flex size-4 items-center justify-center rounded bg-black/60 text-[10px] font-medium text-white">
+                      {images.length}
+                    </span>
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 bg-black/70 py-0.5 text-center">
+                    <span className="font-mono text-[8px] font-bold uppercase tracking-widest text-amarelo">
+                      {lot.code}
+                    </span>
                   </span>
-                )}
+                </button>
+              ) : (
+                <span className="flex h-20 w-16 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <ImageIcon className="size-5" />
+                </span>
+              )}
 
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <Link
-                    href={`/painel/lotes/${lot.code}`}
-                    className="truncate font-medium leading-tight hover:underline"
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
+                    Lote #{lot.code}
+                  </span>
+                  <LotStatusBadge status={lot.status} size="sm" />
+                </div>
+                <Link
+                  href={`/painel/lotes/${lot.code}`}
+                  className="mt-0.5 truncate text-sm font-bold leading-tight hover:underline"
+                >
+                  {lot.title}
+                </Link>
+                <div className="mt-1 flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-sm font-bold",
+                      pending ? "text-ouro-ink" : "text-foreground",
+                    )}
                   >
-                    {lot.title}
-                  </Link>
-                  <span className="text-xs text-muted-foreground">
-                    {formatBRL(lot.arremate_value)} · envio{" "}
-                    {formatDateBR(lot.shipping_date)}
+                    {formatBRL(lot.arremate_value)}
                   </span>
-                  <span>
-                    <LotStatusBadge status={lot.status} size="sm" />
+                  <span className="text-xs text-muted-foreground">•</span>
+                  <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                    <CalendarDays className="size-3.5" />
+                    Envio {formatDateBR(lot.shipping_date)}
                   </span>
+                </div>
+                <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                  <span className="truncate text-[10px] font-medium uppercase text-muted-foreground">
+                    Lance vencedor: você
+                  </span>
+                  {pending ? (
+                    <Link href="/painel/pix">
+                      <Button
+                        size="sm"
+                        className="rounded-md px-2.5 text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Pagar Lote
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Link href={`/painel/lotes/${lot.code}`}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-md px-2.5 text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Ver
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </div>
             </li>
@@ -104,6 +213,6 @@ export function ClientLotsList({ lots }: Props) {
         index={openIndex}
         onOpenChange={setOpenIndex}
       />
-    </>
+    </section>
   );
 }
