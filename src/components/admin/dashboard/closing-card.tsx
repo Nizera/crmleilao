@@ -14,8 +14,8 @@ import {
 import { formatBRL } from "@/lib/lots";
 
 type ClosingStats = {
-  receivedToday: number;
-  paidLotsToday: number;
+  receivedOn: number;
+  paidLotsOn: number;
   staffPaid: number;
   staffTotal: number;
 };
@@ -23,10 +23,12 @@ type ClosingStats = {
 type Props = {
   closing: ClosingStats;
   ready: boolean;
+  /** Data civil (SP) do card — abre o sheet já nela. */
+  date: string;
   dateLabel: string;
 };
 
-export function ClosingCard({ closing, ready, dateLabel }: Props) {
+export function ClosingCard({ closing, ready, date, dateLabel }: Props) {
   const [open, setOpen] = useState(false);
 
   const pendingCount = Math.max(closing.staffTotal - closing.staffPaid, 0);
@@ -44,14 +46,14 @@ export function ClosingCard({ closing, ready, dateLabel }: Props) {
         <CardContent className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-2xl font-bold tabular-nums">
-              {ready ? formatBRL(closing.receivedToday) : "—"}
+              {ready ? formatBRL(closing.receivedOn) : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
               {ready
                 ? `recebido em ${dateLabel} · ${
-                    closing.paidLotsToday === 1
+                    closing.paidLotsOn === 1
                       ? "1 lote pago"
-                      : `${closing.paidLotsToday} lotes pagos`
+                      : `${closing.paidLotsOn} lotes pagos`
                   }`
                 : "aplique a migração 0016_staff_payments.sql"}
             </p>
@@ -72,7 +74,7 @@ export function ClosingCard({ closing, ready, dateLabel }: Props) {
         </CardContent>
       </Card>
 
-      <ClosingSheet open={open} onOpenChange={setOpen} />
+      <ClosingSheet open={open} onOpenChange={setOpen} initialDate={date} />
     </>
   );
 }

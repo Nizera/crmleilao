@@ -25,6 +25,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { spTimeOf, spToday } from "@/lib/dates";
 import { formatBRL, formatDateBR, waMessageLink, waShareLink } from "@/lib/lots";
 import {
   moneyToInput,
@@ -35,6 +36,8 @@ import {
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Data civil (SP) com que o painel abre. Padrão: hoje. */
+  initialDate?: string;
 };
 
 function Section({
@@ -57,7 +60,7 @@ function Section({
   );
 }
 
-export function ClosingSheet({ open, onOpenChange }: Props) {
+export function ClosingSheet({ open, onOpenChange, initialDate }: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -70,27 +73,34 @@ export function ClosingSheet({ open, onOpenChange }: Props) {
             Entradas do dia, cobranças em aberto e pagamentos da equipe.
           </SheetDescription>
         </SheetHeader>
-        {open && <ClosingPanel />}
+        {open && <ClosingPanel initialDate={initialDate} />}
       </SheetContent>
     </Sheet>
   );
 }
 
-function ClosingPanel() {
+function ClosingPanel({ initialDate }: { initialDate?: string }) {
+  const today = spToday();
+  const [date, setDate] = useState(initialDate ?? today);
   const [data, setData] = useState<ClosingData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  // "Carregando" é derivado: sem dados da data pedida = pendente. Evita
+  // setState síncrono dentro do effect (regra do lint do repo).
+  const stale = !data || data.date !== date;
+  const loading = busy || stale;
+
   const applyResult = useCallback(
     (result: Awaited<ReturnType<typeof getClosingDataAction>>) => {
       if (!result.ok) {
         setError(result.error);
-        setLoading(false);
         return;
       }
+      setError(null);
       setData(result.data);
       setDrafts(
         Object.fromEntries(
@@ -100,27 +110,29 @@ function ClosingPanel() {
           ]),
         ),
       );
-      setLoading(false);
     },
     [],
   );
 
   useEffect(() => {
     let cancelled = false;
-    getClosingDataAction().then((result) => {
+    getClosingDataAction(date).then((result) => {
       if (cancelled) return;
       applyResult(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [applyResult]);
+  }, [applyResult, date]);
 
   const load = useCallback(() => {
-    setLoading(true);
+    setBusy(true);
     setError(null);
-    getClosingDataAction().then(applyResult);
-  }, [applyResult]);
+    getClosingDataAction(date).then((result) => {
+      setBusy(false);
+      applyResult(result);
+    });
+  }, [applyResult, date]);
 
   const summary = useMemo(() => {
     if (!data) return "";
@@ -130,7 +142,7 @@ function ClosingPanel() {
       .map((member) => member.name?.split(" ")[0] ?? "sem nome");
     return [
       `Fechamento ${formatDateBR(data.date)}`,
-      `Recebido hoje: ${formatBRL(data.receivedToday)} (${data.entries.length} lote(s))`,
+      `Recebido: ${formatBRL(data.receivedOn)} (${data.entries.length} lote(s))`,
       data.pendingCharges.length > 0
         ? `A receber: ${data.pendingCharges.length} cliente(s) — ${formatBRL(data.pendingTotal)}`
         : "A receber: nada em aberto",
@@ -199,10 +211,6 @@ function ClosingPanel() {
 
   const paidCount = data?.staff.filter((member) => member.payment).length ?? 0;
 
-  if (loading && !data) {
-    return <p className="px-6 py-8 text-sm text-muted-foreground">Carregando…</p>;
-  }
-
   if (error) {
     return (
       <div className="m-6 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -211,22 +219,51 @@ function ClosingPanel() {
     );
   }
 
+  if (stale) {
+    return <p className="px-6 py-8 text-sm text-muted-foreground">Carregando…</p>;
+  }
+
   if (!data) return null;
 
   return (
     <>
-      <section className="flex items-center justify-between gap-2 border-b px-6 py-3">
-        <span className="text-sm font-medium">{formatDateBR(data.date)}</span>
+      <section className="flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3">
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            aria-label="Data do fechamento"
+            value={date}
+            max={today}
+            onChange={(event) => {
+              if (!event.target.value) return;
+              setError(null);
+              setDate(event.target.value);
+            }}
+            className="w-[10.5rem]"
+          />
+          {date !== today && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setError(null);
+                setDate(today);
+              }}
+            >
+              Hoje
+            </Button>
+          )}
+        </div>
         <Button size="sm" variant="ghost" disabled={loading} onClick={load}>
           <RefreshCcwIcon className={loading ? "animate-spin" : ""} />
           Atualizar
         </Button>
       </section>
 
-      <Section title="Entradas do dia" hint={formatBRL(data.receivedToday)}>
+      <Section title="Entradas do dia" hint={formatBRL(data.receivedOn)}>
         {data.entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nenhum lote pago hoje ainda.
+            Nenhum lote pago nesta data.
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
@@ -249,7 +286,7 @@ function ClosingPanel() {
                     {formatBRL(entry.value)}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {entry.paidAt.slice(11, 16)}
+                    {spTimeOf(entry.paidAt)}
                   </span>
                 </span>
               </li>
@@ -377,24 +414,30 @@ function ClosingPanel() {
       </Section>
 
       {data.history.length > 0 && (
-        <Section title="Fechamentos anteriores">
+        <Section title="Fechamentos anteriores" hint="clique para abrir">
           <ul className="flex flex-col gap-1 text-sm">
             {data.history
               .filter((day) => day.date !== data.date)
               .map((day) => (
-                <li
-                  key={day.date}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <span className="text-muted-foreground">
-                    {formatDateBR(day.date)}
-                  </span>
-                  <span className="tabular-nums">
-                    {formatBRL(day.amount)}
-                    <Badge variant="secondary" className="ml-2 text-[10px]">
-                      {day.count}
-                    </Badge>
-                  </span>
+                <li key={day.date}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setDate(day.date);
+                    }}
+                    className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1 text-left transition hover:bg-muted/50"
+                  >
+                    <span className="text-muted-foreground">
+                      {formatDateBR(day.date)}
+                    </span>
+                    <span className="tabular-nums">
+                      {formatBRL(day.amount)}
+                      <Badge variant="secondary" className="ml-2 text-[10px]">
+                        {day.count}
+                      </Badge>
+                    </span>
+                  </button>
                 </li>
               ))}
           </ul>

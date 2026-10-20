@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { spToday } from "@/lib/dates";
 import { DEFAULT_SETTINGS, renderTemplate } from "@/lib/settings";
 import type { LotItemRow } from "@/lib/stock";
 
@@ -72,12 +73,7 @@ export function nextShippingDate(isoDate: string, weekday = 2): string {
 }
 
 export function todayISO(): string {
-  const now = new Date();
-  return [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
+  return spToday();
 }
 
 export function formatDateBR(isoDate: string | null): string {

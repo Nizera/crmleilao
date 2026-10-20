@@ -2,8 +2,17 @@ import "server-only";
 
 import { unstable_cache } from "next/cache";
 
-import { listStockAdmin } from "@/lib/dal";
 import { isChargeActive, type ChargeStatus } from "@/lib/charges";
+import {
+  isoDayAdd,
+  isIsoDay,
+  spDayEndUtc,
+  spDayOf,
+  spDayStartUtc,
+  spMonthOf,
+  spMonthStartUtc,
+  spToday,
+} from "@/lib/dates";
 import { LOT_STATUS_LABELS, type LotStatus } from "@/lib/lots";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -11,6 +20,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * Estatísticas agregadas do dashboard (F5).
  * Uma única passada por lote/cobrança/cliente/envio — sem RPC, tudo PostgREST
  * com colunas leves. `ready.*` fala qual migração falta quando algo vier vazio.
+ *
+ * O "dia" é sempre o civil de America/Sao_Paulo (`src/lib/dates.ts`) — nunca o
+ * UTC do servidor. O parâmetro `asOf` (YYYY-MM-DD) desloca o recorte de
+ * dinheiro/histórico, para revisar o dashboard de um dia específico. Pipeline,
+ * envios e cobranças em aberto são estado atual (sem histórico reconstruível).
  */
 
 const MONTH_LABELS = [
@@ -59,10 +73,12 @@ export type DashboardStats = {
     charges: boolean;
     customers: boolean;
     shipments: boolean;
-    stock: boolean;
     closing: boolean;
   };
   revenue: {
+    /** Receita do dia-alvo (SP) — o mesmo número do card de fechamento. */
+    day: number;
+    dayLots: number;
     month: number;
     prevMonth: number;
     deltaPct: number | null;
@@ -81,10 +97,9 @@ export type DashboardStats = {
   };
   customers: { total: number; newInMonth: number; withoutEmail: number };
   shipments: { toShip: number; posted: number; delivered: number };
-  stock: { units: number; skus: number; negatives: number };
   closing: {
-    receivedToday: number;
-    paidLotsToday: number;
+    receivedOn: number;
+    paidLotsOn: number;
     staffPaid: number;
     staffTotal: number;
   };
@@ -102,20 +117,24 @@ export type DashboardStats = {
 
 /**
  * Núcleo da estatística (sem cache). Só service role: roda fora do escopo da
- * requisição, condção para entrar em `unstable_cache`.
+ * requisição, condição para entrar em `unstable_cache`.
  *
- * Cobranças vêm de um recorte (abertas ∪ últimos 30 dias) e clientes/envios
- * vêm de contagens `head` — nada de varrer tabela inteira a cada visita.
+ * Cobranças vêm de um recorte (abertas ∪ 30 dias até o dia-alvo) e clientes/
+ * envios vêm de contagens `head` — nada de varrer tabela inteira a cada visita.
  */
-async function computeDashboardStats(): Promise<DashboardStats> {
+async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
   const supabase = createAdminClient();
   const now = new Date();
+  const today = spToday();
+  const day = isIsoDay(asOf) ? asOf : today;
 
-  const firstOfMonthIso = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  ).toISOString();
-  const cutoff30Iso = new Date(now.getTime() - 30 * 86_400_000).toISOString();
-  const today = now.toLocaleDateString("en-CA");
+  // Limites do dia-alvo em UTC: é tudo o que o recorte de dinheiro enxerga.
+  const dayEndUtc = spDayEndUtc(day);
+  const dayEndMs = Date.parse(dayEndUtc);
+  const month = day.slice(0, 7);
+  const firstOfMonthIso = spMonthStartUtc(month);
+  const cutoff30Iso = spDayStartUtc(isoDayAdd(day, -29));
+  const cutoff30Ms = Date.parse(cutoff30Iso);
 
   const [
     lotsRes,
@@ -127,21 +146,24 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     shipmentsPostedRes,
     shipmentsDeliveredRes,
     staffTotalRes,
-    staffPaidTodayRes,
-    stock,
+    staffPaidOnRes,
   ] = await Promise.all([
     supabase.from("lots").select(LOT_SELECT),
-    // Abertas (qualquer data) + criadas nos últimos 30 dias: é tudo o que a
-    // página calcula (open*, recent*, approvalRate).
+    // Abertas (qualquer data) + criadas na janela de 30 dias até o dia-alvo.
     supabase
       .from("charges")
       .select("status, amount, expires_at, paid_at, created_at")
+      .lt("created_at", dayEndUtc)
       .or(`status.in.(pending,in_process),created_at.gte.${cutoff30Iso}`),
-    supabase.from("customers").select("id", { count: "exact", head: true }),
     supabase
       .from("customers")
       .select("id", { count: "exact", head: true })
-      .gte("created_at", firstOfMonthIso),
+      .lt("created_at", dayEndUtc),
+    supabase
+      .from("customers")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", firstOfMonthIso)
+      .lt("created_at", dayEndUtc),
     supabase
       .from("customers")
       .select("id", { count: "exact", head: true })
@@ -164,10 +186,7 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     supabase
       .from("staff_payments")
       .select("id", { count: "exact", head: true })
-      .eq("payment_date", today),
-    listStockAdmin()
-      .then((items) => ({ ok: true as const, items }))
-      .catch(() => ({ ok: false as const, items: [] })),
+      .eq("payment_date", day),
   ]);
 
   for (const [name, res] of [
@@ -180,7 +199,7 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     ["envios-postados", shipmentsPostedRes],
     ["envios-entregues", shipmentsDeliveredRes],
     ["equipe", staffTotalRes],
-    ["pagamentos-hoje", staffPaidTodayRes],
+    ["pagamentos-dia", staffPaidOnRes],
   ] as const) {
     if (res.error) console.error(`[dashboard] falha em ${name}: ${res.error.message}`);
   }
@@ -190,34 +209,36 @@ async function computeDashboardStats(): Promise<DashboardStats> {
 
   /* ------------------------------ receita ------------------------------- */
 
+  // 6 meses terminando no mês do dia-alvo.
   const months: DashboardStats["revenue"]["months"] = [];
   const monthIndex = new Map<string, { label: string; value: number }>();
-  const firstOfMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  );
+  const [monthYear, monthNumber] = month.split("-").map(Number) as [
+    number,
+    number,
+  ];
   for (let i = 5; i >= 0; i -= 1) {
-    const d = new Date(firstOfMonth);
-    d.setUTCMonth(d.getUTCMonth() - i);
-    const bucket = { label: MONTH_LABELS[d.getUTCMonth()], value: 0 };
+    const bucketDate = new Date(Date.UTC(monthYear, monthNumber - 1 - i, 15));
+    const bucket = { label: MONTH_LABELS[bucketDate.getUTCMonth()], value: 0 };
     months.push(bucket);
-    monthIndex.set(d.toISOString().slice(0, 7), bucket);
+    monthIndex.set(bucketDate.toISOString().slice(0, 7), bucket);
   }
+
   let totalRevenue = 0;
   let paidLots = 0;
-  let receivedToday = 0;
-  let paidLotsToday = 0;
+  let dayRevenue = 0;
+  let dayLots = 0;
   for (const lot of lots) {
-    if (!REVENUE_STATUSES.has(lot.status)) continue;
+    if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
     const value = Number(lot.arremate_value);
+    // Recorte de dinheiro: só o que já tinha acontecido no fim do dia-alvo.
+    if (Date.parse(lot.paid_at) >= dayEndMs) continue;
     totalRevenue += value;
     paidLots += 1;
-    if (lot.paid_at) {
-      const bucket = monthIndex.get(lot.paid_at.slice(0, 7));
-      if (bucket) bucket.value += value;
-      if (lot.paid_at.slice(0, 10) === today) {
-        receivedToday += value;
-        paidLotsToday += 1;
-      }
+    const bucket = monthIndex.get(spMonthOf(lot.paid_at));
+    if (bucket) bucket.value += value;
+    if (spDayOf(lot.paid_at) === day) {
+      dayRevenue += value;
+      dayLots += 1;
     }
   }
 
@@ -230,15 +251,16 @@ async function computeDashboardStats(): Promise<DashboardStats> {
 
   /* ------------------------------ cobranças ----------------------------- */
 
-  const open = chargeRows.filter((charge) => isChargeActive(charge));
+  const open = chargeRows.filter((charge) => isChargeActive(charge, now));
   const openAmount = open.reduce((sum, c) => sum + Number(c.amount), 0);
   const in24h = open.filter((c) => {
     if (!c.expires_at) return false;
     return new Date(c.expires_at).getTime() - now.getTime() < 86_400_000;
   }).length;
-  const cutoff30 = now.getTime() - 30 * 86_400_000;
   const recent = chargeRows.filter(
-    (c) => new Date(c.created_at).getTime() >= cutoff30,
+    (c) =>
+      Date.parse(c.created_at) >= cutoff30Ms &&
+      Date.parse(c.created_at) < dayEndMs,
   );
   const recentApproved = recent.filter((c) => c.status === "approved").length;
 
@@ -254,12 +276,6 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     posted: shipmentsPostedRes.count ?? 0,
     delivered: shipmentsDeliveredRes.count ?? 0,
   };
-
-  /* -------------------------------- estoque ----------------------------- */
-
-  const stockItems = stock.items;
-  const units = stockItems.reduce((sum, item) => sum + item.qty_on_hand, 0);
-  const negatives = stockItems.filter((item) => item.qty_on_hand < 0).length;
 
   /* --------------------------- pipeline de lotes ------------------------ */
 
@@ -286,7 +302,8 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     { id: string; name: string; lots: number; total: number }
   >();
   for (const lot of lots) {
-    if (!REVENUE_STATUSES.has(lot.status)) continue;
+    if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
+    if (Date.parse(lot.paid_at) >= dayEndMs) continue;
     const entry =
       rankMap.get(lot.customer_id) ??
       {
@@ -306,7 +323,12 @@ async function computeDashboardStats(): Promise<DashboardStats> {
   /* --------------------------- últimos pagamentos ----------------------- */
 
   const recentPayments = lots
-    .filter((lot) => REVENUE_STATUSES.has(lot.status) && lot.paid_at)
+    .filter(
+      (lot) =>
+        REVENUE_STATUSES.has(lot.status) &&
+        lot.paid_at &&
+        Date.parse(lot.paid_at) < dayEndMs,
+    )
     .sort((a, b) => (b.paid_at ?? "").localeCompare(a.paid_at ?? ""))
     .slice(0, 5)
     .map((lot) => ({
@@ -318,6 +340,7 @@ async function computeDashboardStats(): Promise<DashboardStats> {
     }));
 
   /* ------------------------- próximo lote de envio ---------------------- */
+  // Operacional: olha o hoje real, não o dia-alvo.
 
   const awaiting = lots.filter(
     (lot) =>
@@ -349,10 +372,11 @@ async function computeDashboardStats(): Promise<DashboardStats> {
         shipmentsOpenRes.error === null &&
         shipmentsPostedRes.error === null &&
         shipmentsDeliveredRes.error === null,
-      stock: stock.ok,
-      closing: staffTotalRes.error === null && staffPaidTodayRes.error === null,
+      closing: staffTotalRes.error === null && staffPaidOnRes.error === null,
     },
     revenue: {
+      day: dayRevenue,
+      dayLots,
       month: monthRevenue,
       prevMonth: prevRevenue,
       deltaPct,
@@ -375,15 +399,10 @@ async function computeDashboardStats(): Promise<DashboardStats> {
       withoutEmail,
     },
     shipments,
-    stock: {
-      units,
-      skus: stockItems.length,
-      negatives,
-    },
     closing: {
-      receivedToday,
-      paidLotsToday,
-      staffPaid: staffPaidTodayRes.count ?? 0,
+      receivedOn: dayRevenue,
+      paidLotsOn: dayLots,
+      staffPaid: staffPaidOnRes.count ?? 0,
       staffTotal: staffTotalRes.count ?? 0,
     },
     pipeline,
@@ -399,6 +418,9 @@ async function computeDashboardStats(): Promise<DashboardStats> {
  * chamam `updateTag("dashboard")` e os webhooks
  * `revalidateTag("dashboard", { expire: 0 })` junto do `revalidatePath`,
  * para os números voltarem frescos logo após uma mutação.
+ *
+ * O `asOf` participa da cache key (argumento da função), então cada dia
+ * consultado tem seu próprio cache.
  */
 export const getDashboardStats = unstable_cache(
   computeDashboardStats,

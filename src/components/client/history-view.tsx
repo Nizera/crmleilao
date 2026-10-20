@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
 import { effectiveChargeStatus, isChargeActive, type Charge } from "@/lib/charges";
+import { spDayOf } from "@/lib/dates";
 import { formatBRL, formatDateBR, type Lot } from "@/lib/lots";
 import type { Shipment } from "@/lib/shipments";
 
@@ -27,7 +28,7 @@ type Props = {
 
 const PAGE_SIZE = 10;
 
-const dayOf = (iso: string | null | undefined): string => (iso ? iso.slice(0, 10) : "");
+const dayOf = (iso: string | null | undefined): string => (iso ? spDayOf(iso) : "");
 
 /** Dia do agrupamento de uma cobrança: último leilão envolvido (pode misturar). */
 function chargeDay(charge: Charge): string {

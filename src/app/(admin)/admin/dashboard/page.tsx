@@ -3,12 +3,12 @@ import Image from "next/image";
 import type { ComponentType, ReactNode } from "react";
 import {
   ArrowRightIcon,
-  BoxesIcon,
   CalendarClockIcon,
   CircleCheckIcon,
   ClockIcon,
   CoinsIcon,
   PercentIcon,
+  SunIcon,
   TruckIcon,
   TrendingDownIcon,
   TrendingUpIcon,
@@ -21,6 +21,14 @@ import { getDashboardStats } from "@/lib/analytics";
 import { getFreightWeekStats } from "@/lib/freight-server";
 import { PIPELINE_COLORS } from "@/lib/chart-colors";
 import { requireAdmin } from "@/lib/dal";
+import {
+  isIsoDay,
+  spDayLongLabel,
+  spDayOf,
+  spMonthLabel,
+  spPrevMonthLabel,
+  spToday,
+} from "@/lib/dates";
 import { formatBRL, formatDateBR } from "@/lib/lots";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,6 +38,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DashboardDatePicker } from "@/components/admin/dashboard/dashboard-date-picker";
 import { FreightWeekCard } from "@/components/admin/dashboard/freight-week-card";
 import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
@@ -91,39 +100,32 @@ const ALERT_COLOR: Record<Alert["tone"], string> = {
   info: "text-muted-foreground",
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ d?: string }>;
+}) {
   await requireAdmin();
+  const { d } = await searchParams;
+  const today = spToday();
+  const day = isIsoDay(d) ? d : today;
+  const isToday = day === today;
+
   const [stats, freightStats] = await Promise.all([
-    getDashboardStats(),
+    getDashboardStats(day),
     getFreightWeekStats(),
   ]);
   const s = stats;
 
-  const monthLabel = new Date().toLocaleDateString("pt-BR", { month: "long" });
-  const prevMonthLabel = new Date(
-    new Date().getFullYear(),
-    new Date().getMonth() - 1,
-    1,
-  ).toLocaleDateString("pt-BR", { month: "long" });
-  const todayLabel = new Date().toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
-  const todayCap = todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1);
+  const monthLabel = spMonthLabel(day);
+  const prevMonthLabel = spPrevMonthLabel(day);
+  const dayCap =
+    spDayLongLabel(day).charAt(0).toUpperCase() + spDayLongLabel(day).slice(1);
 
   const pendingLots =
     s.pipeline.find((row) => row.status === "pending_payment")?.count ?? 0;
 
   const alerts: Alert[] = [];
-  if (s.ready.stock && s.stock.negatives > 0) {
-    alerts.push({
-      tone: "red",
-      text: `${s.stock.negatives} SKU(s) com saldo negativo no estoque.`,
-      href: "/admin/estoque",
-      action: "Corrigir",
-    });
-  }
   if (s.ready.customers && s.customers.withoutEmail > 0) {
     alerts.push({
       tone: "amber",
@@ -184,8 +186,17 @@ export default async function DashboardPage() {
             </p>
           </div>
         </div>
-        <Badge variant="secondary">{todayCap}</Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary">{dayCap}</Badge>
+          <DashboardDatePicker value={day} today={today} />
+        </div>
       </div>
+      {!isToday && (
+        <p className="-mt-3 text-xs text-muted-foreground">
+          Mostrando o dia {formatDateBR(day)}. Dinheiro e histórico seguem a
+          data; pipeline, envios e cobranças em aberto são o estado atual.
+        </p>
+      )}
 
       {/* KPIs financeiros */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -285,18 +296,15 @@ export default async function DashboardPage() {
           }
         />
         <KpiCard
-          label="Figurinhas em estoque"
-          value={s.ready.stock ? String(s.stock.units) : "—"}
-          icon={BoxesIcon}
-          danger={s.ready.stock && s.stock.negatives > 0}
+          label="Faturamento do dia"
+          value={s.ready.lots ? formatBRL(s.revenue.day) : "—"}
+          icon={SunIcon}
           hint={
-            s.ready.stock
-              ? `${s.stock.skus} SKUs${
-                  s.stock.negatives > 0
-                    ? ` · ${s.stock.negatives} negativo(s)`
-                    : ""
-                }`
-              : "aplique a migração 0003_stock.sql"
+            s.ready.lots
+              ? `${s.revenue.dayLots} ${
+                  s.revenue.dayLots === 1 ? "lote pago" : "lotes pagos"
+                } em ${formatDateBR(day)}`
+              : "aplique a migração 0002_lots.sql"
           }
         />
       </div>
@@ -305,7 +313,8 @@ export default async function DashboardPage() {
       <ClosingCard
         closing={s.closing}
         ready={s.ready.closing}
-        dateLabel={formatDateBR(new Date().toLocaleDateString("en-CA"))}
+        date={day}
+        dateLabel={formatDateBR(day)}
       />
 
       {/* Frete da semana */}
@@ -440,7 +449,7 @@ export default async function DashboardPage() {
                     {formatBRL(row.value)}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {formatDateBR(row.paidAt.slice(0, 10))}
+                    {formatDateBR(spDayOf(row.paidAt))}
                   </span>
                 </span>
               </div>

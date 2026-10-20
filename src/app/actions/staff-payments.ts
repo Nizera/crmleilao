@@ -4,6 +4,14 @@ import { revalidatePath, updateTag } from "next/cache";
 
 import { isChargeActive, type ChargeStatus } from "@/lib/charges";
 import { listTeam, requireAdmin } from "@/lib/dal";
+import {
+  isoDayAdd,
+  isIsoDay,
+  spDayEndUtc,
+  spDayOf,
+  spDayStartUtc,
+  spToday,
+} from "@/lib/dates";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import {
   parseMoney,
@@ -29,10 +37,15 @@ function revalidateClosing() {
 }
 
 /**
- * Contexto do fechamento do dia: entradas recebidas, cobranças em aberto,
- * equipe com o que já foi pago hoje e histórico recente. Só o dono.
+ * Contexto do fechamento de um dia: entradas recebidas, cobranças em aberto,
+ * equipe com o que foi pago naquela data e histórico recente. Só o dono.
+ *
+ * `asOf` é a data civil em America/Sao_Paulo (YYYY-MM-DD); sem parâmetro usa
+ * hoje. Datas inválidas caem em hoje.
  */
-export async function getClosingDataAction(): Promise<ActionResult<ClosingData>> {
+export async function getClosingDataAction(
+  asOf?: string,
+): Promise<ActionResult<ClosingData>> {
   try {
     const { profile } = await requireAdmin();
     if (profile.role !== "owner") {
@@ -41,11 +54,11 @@ export async function getClosingDataAction(): Promise<ActionResult<ClosingData>>
 
     const supabase = createAdminClient();
     const now = new Date();
-    const date = now.toLocaleDateString("en-CA");
-    const historyFrom = new Date(
-      now.getTime() - (HISTORY_DAYS - 1) * 86_400_000,
-    ).toLocaleDateString("en-CA");
-    const paidSince = new Date(now.getTime() - 48 * 3_600_000).toISOString();
+    const date = isIsoDay(asOf) ? asOf : spToday();
+    const historyFrom = isoDayAdd(date, -(HISTORY_DAYS - 1));
+    // Janela exata do dia-alvo em UTC (fim do dia 19 em SP = 03:00Z do dia 20).
+    const paidFrom = spDayStartUtc(date);
+    const paidTo = spDayEndUtc(date);
 
     const [lotsRes, chargesRes, paymentsRes, historyRes, team] =
       await Promise.all([
@@ -55,7 +68,8 @@ export async function getClosingDataAction(): Promise<ActionResult<ClosingData>>
             "code, title, arremate_value, paid_at, customer:customers(name)",
           )
           .in("status", [...REVENUE_CHARGE_LOTS])
-          .gte("paid_at", paidSince)
+          .gte("paid_at", paidFrom)
+          .lt("paid_at", paidTo)
           .order("paid_at", { ascending: false })
           .limit(100),
         supabase
@@ -74,6 +88,7 @@ export async function getClosingDataAction(): Promise<ActionResult<ClosingData>>
           .from("staff_payments")
           .select("payment_date, amount")
           .gte("payment_date", historyFrom)
+          .lte("payment_date", date)
           .order("payment_date", { ascending: false })
           .limit(200),
         listTeam().catch(() => null),
@@ -101,10 +116,10 @@ export async function getClosingDataAction(): Promise<ActionResult<ClosingData>>
       customer: { name: string | null; phone_e164: string } | null;
     };
 
-    // `paid_since` é 48h para não perder lotes por causa do fuso; o corte
-    // do dia é o mesmo do dashboard: `paid_at` em UTC no formato en-CA.
+    // O banco já corta o dia exato em UTC (paidFrom/paidTo); o filtro por
+    // fuso aqui é só defesa extra contra qualquer paid_at fora do padrão.
     const entries: ClosingEntry[] = ((lotsRes.data ?? []) as unknown as LotRow[])
-      .filter((lot) => lot.paid_at?.slice(0, 10) === date)
+      .filter((lot) => lot.paid_at && spDayOf(lot.paid_at) === date)
       .map((lot) => ({
         code: lot.code,
         title: lot.title,
@@ -172,7 +187,7 @@ export async function getClosingDataAction(): Promise<ActionResult<ClosingData>>
       ok: true,
       data: {
         date,
-        receivedToday: entries.reduce((sum, entry) => sum + entry.value, 0),
+        receivedOn: entries.reduce((sum, entry) => sum + entry.value, 0),
         entries,
         pendingCharges,
         pendingTotal: pendingCharges.reduce(
@@ -204,8 +219,7 @@ export async function saveStaffPaymentAction(
     }
 
     const date =
-      String(formData.get("payment_date") ?? "").trim() ||
-      new Date().toLocaleDateString("en-CA");
+      String(formData.get("payment_date") ?? "").trim() || spToday();
     const parsed = staffPaymentSchema.safeParse({
       staff_id: String(formData.get("staff_id") ?? ""),
       payment_date: date,
