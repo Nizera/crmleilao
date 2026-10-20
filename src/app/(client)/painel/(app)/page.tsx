@@ -60,8 +60,22 @@ export default async function ClientHomePage() {
     : [];
   const olderLotsCount = lots.length - recentLots.length;
 
+  // A home de pagamentos é do dia: só cobranças do leilão vigente + as que
+  // em aberto (pendentes de qualquer dia, para o cliente poder pagar).
+  // Pagas/canceladas/expiradas de dias anteriores ficam em /painel/historico.
+  // Data "hoje" em São Paulo — o form do lote grava auction_date no fuso do
+  // admin, então comparar com a data local evita errar após as 21h (UTC-3).
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date());
   const activeCharge = charges.find((charge) => isChargeActive(charge)) ?? null;
-  const homeCharges = charges.slice(0, 5);
+  const homeCharges = charges
+    .filter(
+      (charge) =>
+        isChargeActive(charge) ||
+        (charge.lots ?? []).some((lot) => lot.auction_date === today),
+    )
+    .slice(0, 5);
   if (activeCharge && !homeCharges.some((charge) => charge.id === activeCharge.id)) {
     homeCharges.push(activeCharge);
   }
