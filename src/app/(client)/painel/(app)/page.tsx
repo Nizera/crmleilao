@@ -132,6 +132,31 @@ export default async function ClientHomePage() {
       acc === null || shipment.batch_date < acc ? shipment.batch_date : acc,
     null,
   );
+
+  // "A Pagar": vale o Pix aberto; sem Pix, a soma dos lotes aguardando
+  // pagamento + frete da semana em aberto (o cliente deve ver o total
+  // mesmo antes de gerar o cobrança).
+  const pendingLots = lots.filter((lot) => lot.status === "pending_payment");
+  const pendingLotsTotal = pendingLots.reduce(
+    (sum, lot) => sum + Number(lot.arremate_value),
+    0,
+  );
+  const freightDueExtra = freight.status === "due" ? freight.amount : 0;
+  const owedTotal = pendingLotsTotal + freightDueExtra;
+  const owedValue = activeCharge
+    ? formatBRL(Number(activeCharge.amount))
+    : owedTotal > 0
+      ? formatBRL(owedTotal)
+      : "R$ —";
+  const owedSub = activeCharge
+    ? (kpiExpiry(activeCharge) ?? "Pix aberto")
+    : owedTotal > 0
+      ? freightDueExtra > 0 && pendingLots.length === 0
+        ? "Frete da semana"
+        : `${pendingLots.length} ${pendingLots.length === 1 ? "lote aguardando" : "lotes aguardando"}${freightDueExtra > 0 ? " + frete" : ""}`
+      : "Tudo em dia";
+  const owedActive = Boolean(activeCharge) || owedTotal > 0;
+
   const lotsSubtitle =
     lots.length === 0
       ? null
@@ -164,11 +189,11 @@ export default async function ClientHomePage() {
         <div className="mt-1 grid grid-cols-3 gap-2">
           <KpiCard
             label="A Pagar"
-            value={activeCharge ? formatBRL(Number(activeCharge.amount)) : "R$ —"}
-            sub={activeCharge ? kpiExpiry(activeCharge) ?? "Pix aberto" : "Tudo em dia"}
+            value={owedValue}
+            sub={owedSub}
             icon={<Bolt className="size-3.5 text-muted-foreground" />}
-            pulse={Boolean(activeCharge)}
-            subClassName={activeCharge ? "text-ouro-ink" : undefined}
+            pulse={owedActive}
+            subClassName={owedActive ? "text-ouro-ink" : undefined}
           />
           <KpiCard
             label="Lotes"
