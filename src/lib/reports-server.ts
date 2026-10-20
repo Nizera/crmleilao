@@ -2,24 +2,15 @@ import "server-only";
 
 import { type LotStatus } from "@/lib/lots";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { StickerColor } from "@/lib/stock";
 
 /** Teto de lotes lidos por relatório — igual à fila de envios. */
 const REPORT_LOTS_CAP = 1000;
-
-export type SeparationItem = {
-  playerName: string;
-  color: StickerColor;
-  qty: number;
-};
 
 export type SeparationLot = {
   id: string;
   code: string;
   title: string;
   status: LotStatus;
-  items: SeparationItem[];
-  totalItems: number;
 };
 
 export type SeparationAddress = {
@@ -38,7 +29,6 @@ export type SeparationCustomer = {
   phone_e164: string;
   address: SeparationAddress;
   lots: SeparationLot[];
-  totalItems: number;
 };
 
 export type SeparationReport = {
@@ -47,7 +37,6 @@ export type SeparationReport = {
   totals: {
     customers: number;
     lots: number;
-    items: number;
   };
 };
 
@@ -69,17 +58,12 @@ type LotRow = {
     address_city: string | null;
     address_state: string | null;
   } | null;
-  lot_items: {
-    qty: number;
-    color: StickerColor;
-    players: { name: string; sort_order: number } | null;
-  }[];
 };
 
 /**
  * Relatório de separação de um dia de envio: lotes com `shipping_date` na
- * data (cancelados ficam de fora), agrupados por cliente e com a composição
- * de figurinhas de cada lote na ordem do catálogo.
+ * data (cancelados ficam de fora), agrupados por cliente e identificados
+ * pelo nome do lote.
  */
 export async function getSeparationReport(
   shippingDate: string,
@@ -90,8 +74,7 @@ export async function getSeparationReport(
     .from("lots")
     .select(
       `id, code, title, status, created_at,
-       customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state),
-       lot_items(qty, color, players(name, sort_order))`,
+       customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state)`,
     )
     .eq("shipping_date", shippingDate)
     .neq("status", "cancelled")
@@ -109,27 +92,11 @@ export async function getSeparationReport(
     const customer = row.customers;
     if (!customer) continue;
 
-    const items: SeparationItem[] = (row.lot_items ?? [])
-      .map((item) => ({
-        playerName: item.players?.name ?? "Figurinha",
-        color: item.color,
-        qty: item.qty,
-        sortOrder: item.players?.sort_order ?? Number.MAX_SAFE_INTEGER,
-      }))
-      .sort((a, b) =>
-        a.sortOrder !== b.sortOrder
-          ? a.sortOrder - b.sortOrder
-          : a.playerName.localeCompare(b.playerName, "pt-BR"),
-      )
-      .map(({ playerName, color, qty }) => ({ playerName, color, qty }));
-
     const lot: SeparationLot = {
       id: row.id,
       code: row.code,
       title: row.title,
       status: row.status,
-      items,
-      totalItems: items.reduce((sum, item) => sum + item.qty, 0),
     };
 
     const entry = byCustomer.get(customer.id) ?? {
@@ -146,11 +113,9 @@ export async function getSeparationReport(
         state: customer.address_state,
       },
       lots: [],
-      totalItems: 0,
     };
 
     entry.lots.push(lot);
-    entry.totalItems += lot.totalItems;
     byCustomer.set(customer.id, entry);
   }
 
@@ -170,7 +135,6 @@ export async function getSeparationReport(
     totals: {
       customers: customers.length,
       lots: customers.reduce((sum, customer) => sum + customer.lots.length, 0),
-      items: customers.reduce((sum, customer) => sum + customer.totalItems, 0),
     },
   };
 }

@@ -18,7 +18,6 @@ import { formatPhoneBR } from "@/lib/customers";
 import { formatDateBR, LOT_STATUS_LABELS } from "@/lib/lots";
 import type { SeparationAddress, SeparationReport } from "@/lib/reports-server";
 import { WEEKDAY_LABELS_FULL } from "@/lib/settings";
-import { COLOR_DOT, COLOR_LABELS } from "@/lib/stock";
 
 const ALL = "all";
 
@@ -67,7 +66,6 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         );
 
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
-  const itemsCount = customers.reduce((sum, c) => sum + c.totalItems, 0);
 
   const changeDate = (value: string) => {
     if (!value) return;
@@ -156,8 +154,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           </div>
           <p className="text-sm text-muted-foreground">
             {customers.length} {customers.length === 1 ? "cliente" : "clientes"}{" "}
-            · {lotsCount} {lotsCount === 1 ? "lote" : "lotes"} · {itemsCount}{" "}
-            figurinhas
+            · {lotsCount} {lotsCount === 1 ? "lote" : "lotes"}
           </p>
         </header>
 
@@ -192,64 +189,25 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                     key={lot.id}
                     className="mb-3 overflow-hidden rounded-md border break-inside-avoid last:mb-0"
                   >
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b bg-muted/40 px-3 py-1.5 print:bg-transparent">
-                      <p className="text-sm">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-muted/40 px-3 py-1.5 print:bg-transparent">
+                      <p className="flex items-center gap-2 text-sm">
+                        <span className="block size-3.5 shrink-0 border border-foreground/40 print:border-black" />
                         <span className="font-mono font-semibold">
                           {lot.code}
                         </span>
-                        <span className="mx-2 text-muted-foreground/60">·</span>
+                        <span className="text-muted-foreground/60">·</span>
                         {lot.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {LOT_STATUS_LABELS[lot.status]} · {lot.totalItems} un.
+                        {LOT_STATUS_LABELS[lot.status]}
                       </p>
                     </div>
-
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-muted-foreground">
-                          <th className="w-8 px-3 pb-1 font-normal">
-                            <span className="sr-only">Conferido</span>
-                          </th>
-                          <th className="pb-1 font-normal">Figurinha</th>
-                          <th className="pb-1 font-normal">Cor</th>
-                          <th className="pb-1 pr-3 text-right font-normal">
-                            Qtd
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lot.items.map((item) => (
-                          <tr
-                            key={`${item.playerName}-${item.color}`}
-                            className="border-t"
-                          >
-                            <td className="px-3 py-1.5">
-                              <span className="block size-3.5 border border-foreground/40 print:border-black" />
-                            </td>
-                            <td className="py-1.5 pr-3">{item.playerName}</td>
-                            <td className="py-1.5 pr-3">
-                              <span className="flex items-center gap-1.5">
-                                <span
-                                  className={`size-2.5 rounded-full ${COLOR_DOT[item.color]}`}
-                                />
-                                {COLOR_LABELS[item.color]}
-                              </span>
-                            </td>
-                            <td className="py-1.5 pr-3 text-right font-medium tabular-nums">
-                              {item.qty}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
                 ))}
 
                 <p className="text-right text-xs text-muted-foreground">
                   {customer.lots.length}{" "}
-                  {customer.lots.length === 1 ? "lote" : "lotes"} ·{" "}
-                  {customer.totalItems} figurinhas
+                  {customer.lots.length === 1 ? "lote" : "lotes"}
                 </p>
               </section>
             );

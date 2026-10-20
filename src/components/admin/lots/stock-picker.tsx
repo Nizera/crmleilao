@@ -164,10 +164,10 @@ export function StockPicker({
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium">Baixa estoque</p>
+        <p className="text-sm font-medium">Baixa estoque (opcional)</p>
         <span className="text-xs text-muted-foreground">
           {items.length === 0
-            ? "nenhuma figurinha selecionada"
+            ? "nenhum item selecionado"
             : `${items.length} ${items.length === 1 ? "item" : "itens"} · ${total} un.`}
         </span>
       </div>
