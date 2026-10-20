@@ -21,6 +21,8 @@ import type {
   ShipmentStatus,
   ShipmentVolume,
 } from "@/lib/shipments";
+import { spToday } from "@/lib/dates";
+import { nextShippingDate } from "@/lib/lots";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -210,6 +212,29 @@ function round2(value: number): number {
 /** Teto de lotes lidos por período na fila: o agrupamento é em memória e o
  *  período sem limite faria a tela crescer junto com o histórico. */
 const QUEUE_LOTS_CAP = 1000;
+
+/**
+ * Próximo dia de envio: a menor `shipping_date` (>= hoje) entre lotes pagos.
+ * Sem nenhum lote pago aguardando, cai na próxima terça a partir de hoje.
+ * É o padrão do filtro da tela Envios.
+ */
+export async function nextShipmentDate(): Promise<string> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("lots")
+    .select("shipping_date")
+    .eq("status", "paid")
+    .gte("shipping_date", spToday())
+    .order("shipping_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Falha ao buscar o próximo envio: ${error.message}`);
+  }
+  const upcoming = (data as { shipping_date?: string | null } | null)
+    ?.shipping_date;
+  return upcoming || nextShippingDate(spToday());
+}
 
 /**
  * Fila de trabalho da tela Envios: uma linha por cliente que arrematou no

@@ -83,10 +83,10 @@ type Props = {
   qTruncated?: boolean;
   /** Fila leu mais lotes no período do que o teto permite. */
   queueTruncated?: boolean;
-  /** Fila por cliente (período ligado) ou histórico de envios (null). */
+  /** Fila por cliente (dia de envio ligado) ou histórico de envios (null). */
   queue: ShipmentQueueRow[] | null;
-  periodFrom: string;
-  periodTo: string;
+  /** Dia de envio da fila (YYYY-MM-DD, SP). */
+  date: string;
   migrationReady: boolean;
   originReady: boolean;
   superfreteReady: boolean;
@@ -104,8 +104,7 @@ export function ShipmentsView({
   qTruncated,
   queueTruncated,
   queue,
-  periodFrom,
-  periodTo,
+  date,
   migrationReady,
   originReady,
   superfreteReady,
@@ -129,8 +128,7 @@ export function ShipmentsView({
     nextQuery: string,
     nextStatus: string,
     nextPage: number,
-    nextFrom: string,
-    nextTo: string,
+    nextDate: string,
     nextView: "fila" | "historico",
   ) => {
     const params = new URLSearchParams();
@@ -140,8 +138,7 @@ export function ShipmentsView({
       if (nextStatus !== "all") params.set("status", nextStatus);
       if (nextPage > 1) params.set("p", String(nextPage));
     } else {
-      params.set("de", nextFrom);
-      params.set("ate", nextTo);
+      params.set("d", nextDate);
     }
     const search = params.toString();
     return `/admin/envios${search ? `?${search}` : ""}`;
@@ -149,11 +146,11 @@ export function ShipmentsView({
 
   const search = (event: FormEvent) => {
     event.preventDefault();
-    router.replace(buildHref(query, status, 1, periodFrom, periodTo, isQueue ? "fila" : "historico"));
+    router.replace(buildHref(query, status, 1, date, isQueue ? "fila" : "historico"));
   };
 
-  const setPeriod = (from: string, to: string) => {
-    router.replace(buildHref(query, status, 1, from, to, "fila"));
+  const setDay = (nextDate: string) => {
+    router.replace(buildHref(query, status, 1, nextDate, "fila"));
   };
 
   const updateDetail = (shipment: Shipment) => {
@@ -399,7 +396,7 @@ export function ShipmentsView({
               variant="ghost"
               onClick={() => {
                 setQuery("");
-                router.replace(buildHref("", status, 1, periodFrom, periodTo, isQueue ? "fila" : "historico"));
+                router.replace(buildHref("", status, 1, date, isQueue ? "fila" : "historico"));
               }}
             >
               Limpar
@@ -408,36 +405,23 @@ export function ShipmentsView({
         </form>
 
         {isQueue && (
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={periodFrom}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) setPeriod(value, periodTo);
-              }}
-              className="w-40"
-              aria-label="De"
-            />
-            <span className="text-sm text-muted-foreground">até</span>
-            <Input
-              type="date"
-              value={periodTo}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) setPeriod(periodFrom, value);
-              }}
-              className="w-40"
-              aria-label="Até"
-            />
-          </div>
+          <Input
+            type="date"
+            value={date}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(value)) setDay(value);
+            }}
+            className="w-40"
+            aria-label="Dia do envio"
+          />
         )}
 
         {!isQueue && (
           <Select
             value={status}
             onValueChange={(value) =>
-              router.replace(buildHref(query, value, 1, periodFrom, periodTo, "historico"))
+              router.replace(buildHref(query, value, 1, date, "historico"))
             }
           >
             <SelectTrigger className="w-52">
@@ -459,11 +443,11 @@ export function ShipmentsView({
           size="sm"
           onClick={() =>
             router.replace(
-              buildHref(query, isQueue ? status : "all", 1, periodFrom, periodTo, isQueue ? "historico" : "fila"),
+              buildHref(query, isQueue ? status : "all", 1, date, isQueue ? "historico" : "fila"),
             )
           }
         >
-          {isQueue ? "Ver histórico" : "Ver fila do período"}
+          {isQueue ? "Ver histórico" : "Ver fila do dia"}
         </Button>
       </div>
 
@@ -750,7 +734,7 @@ export function ShipmentsView({
           <div className="flex gap-2">
             {page > 1 ? (
               <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page - 1, periodFrom, periodTo, "historico")}>
+                <Link href={buildHref(q, status, page - 1, date, "historico")}>
                   <ChevronLeft />
                   Anterior
                 </Link>
@@ -763,7 +747,7 @@ export function ShipmentsView({
             )}
             {page < pages ? (
               <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page + 1, periodFrom, periodTo, "historico")}>
+                <Link href={buildHref(q, status, page + 1, date, "historico")}>
                   <ChevronRight />
                   Próxima
                 </Link>

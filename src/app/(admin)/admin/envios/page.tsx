@@ -6,6 +6,7 @@ import {
   getOrigin,
   getWebhookSecret,
   listShipmentQueue,
+  nextShipmentDate,
   type ShipmentQueueRow,
 } from "@/lib/shipments-server";
 
@@ -25,29 +26,6 @@ const VALID_STATUSES = [
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-function shiftDays(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + days);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}
-
-/**
- * Semana de leilão corrente: terça a domingo. Sai na terça seguinte.
- * Ex.: terça 13/10 → 06/10 a 12/10. Domingo 18/10 → 12/10 a 18/10.
- * Usa UTC puro para não depender do fuso do servidor.
- */
-function defaultPeriod(): { from: string; to: string } {
-  const now = new Date();
-  const iso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-  const dow = now.getUTCDay();
-  let to: string;
-  if (dow === 0) to = iso;
-  else if (dow === 1) to = shiftDays(iso, 6);
-  else to = shiftDays(iso, -(dow - 1));
-  return { from: shiftDays(to, -6), to };
-}
-
 export default async function EnviosPage({
   searchParams,
 }: PageProps<"/admin/envios">) {
@@ -59,13 +37,11 @@ export default async function EnviosPage({
   const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
 
-  // Fila: filtro de período (manual ou padrão). Histórico: só quando pedir explicitamente.
-  const rawFrom = first(params.de);
-  const rawTo = first(params.ate);
+  // Fila: um único dia de envio (manual ou o próximo). Histórico: só quando
+  // pedir explicitamente.
+  const rawDate = first(params.d);
   const useQueue = first(params.vista) !== "historico";
-  const fallback = defaultPeriod();
-  const periodFrom = ISO.test(rawFrom) ? rawFrom : fallback.from;
-  const periodTo = ISO.test(rawTo) ? rawTo : fallback.to;
+  const date = ISO.test(rawDate) ? rawDate : await nextShipmentDate();
 
   let queue: ShipmentQueueRow[] = [];
   let queueTruncated = false;
@@ -73,7 +49,11 @@ export default async function EnviosPage({
   let migrationReady = true;
   try {
     if (useQueue) {
-      const result = await listShipmentQueue({ periodFrom, periodTo, q });
+      const result = await listShipmentQueue({
+        periodFrom: date,
+        periodTo: date,
+        q,
+      });
       queue = result.rows;
       queueTruncated = result.truncated;
     } else {
@@ -103,8 +83,7 @@ export default async function EnviosPage({
       {...data}
       queue={useQueue ? queue : null}
       queueTruncated={useQueue && queueTruncated}
-      periodFrom={periodFrom}
-      periodTo={periodTo}
+      date={date}
       q={q}
       status={status}
       migrationReady={migrationReady}
