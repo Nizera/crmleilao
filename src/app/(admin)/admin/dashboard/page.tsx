@@ -309,16 +309,16 @@ export default async function DashboardPage({
         />
       </div>
 
-      {/* Fechamento do dia */}
-      <ClosingCard
-        closing={s.closing}
-        ready={s.ready.closing}
-        date={day}
-        dateLabel={formatDateBR(day)}
-      />
-
-      {/* Frete da semana */}
-      <FreightWeekCard stats={freightStats} />
+      {/* Fechamento + frete lado a lado no desktop */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ClosingCard
+          closing={s.closing}
+          ready={s.ready.closing}
+          date={day}
+          dateLabel={formatDateBR(day)}
+        />
+        <FreightWeekCard stats={freightStats} />
+      </div>
 
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3">
