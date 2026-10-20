@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gavel, Layers, LayoutGrid, QrCode, Truck } from "lucide-react";
+import { Layers, LayoutGrid, MessageCircle, QrCode, Truck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+
+// Link do grupo de leilão (mesmo da landing). O botão do meio da bottom nav
+// leva direto para lá — sem página própria dentro do painel.
+const GROUP_URL = "https://chat.whatsapp.com/EYD5CmJ0Oer4aeM0zQ9mqu";
 
 type Tab = {
   href: string;
@@ -12,21 +16,43 @@ type Tab = {
   icon: React.ComponentType<{ className?: string }>;
   /** Só "/painel" casa exato; o resto casa prefixo (/painel/lotes/...). */
   exact?: boolean;
-  /** Tab "Ao Vivo" ganha badge pulsante (placeholder de leilão rodando). */
-  live?: boolean;
 };
 
 const TABS: Tab[] = [
   { href: "/painel", label: "Painel", icon: LayoutGrid, exact: true },
   { href: "/painel/lotes", label: "Lotes", icon: Layers },
-  { href: "/painel/ao-vivo", label: "Ao Vivo", icon: Gavel, live: true },
   { href: "/painel/pix", label: "Pix", icon: QrCode },
   { href: "/painel/envios", label: "Envios", icon: Truck },
 ];
 
-/** Bottom nav fixa do painel (5 abas, igual ao protótipo Stitch). */
+/** Bottom nav do painel: 4 abas internas + botão do meio "Voltar ao Grupo". */
 export function ClientBottomNav() {
   const pathname = usePathname();
+  const [before, after] = [TABS.slice(0, 2), TABS.slice(2)];
+
+  const renderTab = (tab: Tab) => {
+    const active = tab.exact
+      ? pathname === tab.href
+      : pathname.startsWith(tab.href);
+    const Icon = tab.icon;
+
+    return (
+      <Link
+        key={tab.href}
+        href={tab.href}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "flex h-12 min-w-[56px] flex-col items-center justify-center gap-0.5 transition-colors",
+          active
+            ? "font-medium text-ouro-ink"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Icon className="size-[22px]" />
+        <span className="text-[10px] uppercase tracking-wider">{tab.label}</span>
+      </Link>
+    );
+  };
 
   return (
     <nav
@@ -34,41 +60,24 @@ export function ClientBottomNav() {
       className="fixed inset-x-0 bottom-0 z-50 border-t border-ouro/25 bg-background/90 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl shadow-[0_-4px_20px_rgba(0,0,0,0.35)]"
     >
       <div className="mx-auto flex h-16 w-full max-w-2xl items-center justify-around px-1">
-        {TABS.map((tab) => {
-          const active = tab.exact
-            ? pathname === tab.href
-            : pathname.startsWith(tab.href);
-          const Icon = tab.icon;
+        {before.map(renderTab)}
 
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex h-12 min-w-[56px] flex-col items-center justify-center gap-0.5 transition-colors",
-                active
-                  ? "font-medium text-ouro-ink"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab.live ? (
-                <span className="relative flex items-center justify-center">
-                  <Icon className="size-[22px]" />
-                  <span className="absolute -top-1 -right-2.5 flex size-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amarelo opacity-75" />
-                    <span className="relative inline-flex size-2 rounded-full bg-amarelo" />
-                  </span>
-                </span>
-              ) : (
-                <Icon className="size-[22px]" />
-              )}
-              <span className="text-[10px] uppercase tracking-wider">
-                {tab.label}
-              </span>
-            </Link>
-          );
-        })}
+        <a
+          href={GROUP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Voltar ao grupo no WhatsApp"
+          className="flex min-w-[56px] flex-col items-center justify-center gap-0.5 text-ouro-ink transition-colors hover:text-foreground"
+        >
+          <span className="flex size-9 items-center justify-center rounded-xl bg-amarelo text-[#0a0a0a] shadow-sm">
+            <MessageCircle className="size-5" />
+          </span>
+          <span className="w-14 text-center text-[9px] font-bold uppercase leading-tight tracking-wider">
+            Voltar ao Grupo
+          </span>
+        </a>
+
+        {after.map(renderTab)}
       </div>
     </nav>
   );

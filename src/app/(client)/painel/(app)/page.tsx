@@ -1,11 +1,4 @@
-import {
-  Archive,
-  Award,
-  BadgeCheck,
-  Bolt,
-  Medal,
-  Truck,
-} from "lucide-react";
+import { Award, Bolt, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -19,8 +12,6 @@ import {
 import { ClientChargesCard } from "@/components/client/charges-card";
 import { ClientShipmentsCard } from "@/components/client/shipments-card";
 import { ClientLotsList } from "@/components/client/client-lots-list";
-import { LiveBanner } from "@/components/client/live-banner";
-import { VaultCard } from "@/components/client/vault-card";
 import {
   chargeExpiryDeltaMs,
   isChargeActive,
@@ -170,21 +161,6 @@ export default async function ClientHomePage() {
           </span>
         </div>
 
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-0.5">
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
-            <Bolt className="size-3.5 text-amarelo" />
-            Copa 2026 Season Drop
-          </span>
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            <BadgeCheck className="size-3.5 text-emerald-500" />
-            Conta Verificada
-          </span>
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            <Archive className="size-3.5 text-ouro-ink" />
-            Cofre Ativo
-          </span>
-        </div>
-
         <div className="mt-1 grid grid-cols-3 gap-2">
           <KpiCard
             label="A Pagar"
@@ -215,8 +191,6 @@ export default async function ClientHomePage() {
 
       <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
 
-      <LiveBanner />
-
       <ClientLotsList
         lots={recentLots.length > 0 ? recentLots : lots}
         subtitle={lotsSubtitle ?? undefined}
@@ -235,8 +209,6 @@ export default async function ClientHomePage() {
       )}
 
       <ClientShipmentsCard shipments={shipments} total={shipmentsTotal} />
-
-      <VaultCard />
     </div>
   );
 }
