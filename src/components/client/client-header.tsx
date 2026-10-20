@@ -61,10 +61,10 @@ export function ClientHeader({ name, phone }: Props) {
           </span>
           <span className="flex min-w-0 flex-col leading-none">
             <span className="truncate text-[15px] font-semibold uppercase tracking-widest">
-              Legends
+              OCDL
             </span>
             <span className="truncate text-[10px] font-medium uppercase tracking-[0.2em] text-ouro-ink">
-              Leilões &amp; Cards
+              Painel do Cliente
             </span>
           </span>
         </Link>
