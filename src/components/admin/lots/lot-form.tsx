@@ -1,6 +1,13 @@
 "use client";
 
-import { useRef, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ImagePlus, X } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
@@ -158,7 +165,7 @@ function LotForm({
   const remaining = MAX_IMAGES - keptImages.length - uploads.length;
   const statusValue = useWatch({ control: form.control, name: "status" });
 
-  const addFiles = async (list: FileList | null) => {
+  const addFiles = async (list: FileList | File[] | null) => {
     if (!list || remaining <= 0 || compressing) return;
     const picked = Array.from(list)
       .filter((file) => file.size > 0)
@@ -182,6 +189,25 @@ function LotForm({
     URL.revokeObjectURL(url);
     setUploads((current) => current.filter((item) => item.url !== url));
   };
+
+  // Ctrl+V com imagem na área de transferência (WhatsApp, screenshot, etc.)
+  // entra no mesmo pipeline do seletor de arquivos.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter(
+          (file): file is File =>
+            file instanceof File && file.type.startsWith("image/"),
+        );
+      if (files.length === 0) return;
+      event.preventDefault();
+      void addFiles(files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  });
 
   const searchCustomer = async () => {
     const q = customerQuery.trim();
@@ -552,7 +578,8 @@ function LotForm({
         </div>
         <p className="text-xs text-muted-foreground">
           JPG, PNG, WebP ou AVIF até 5 MB. Até {MAX_IMAGES} fotos
-          {compressing ? "" : " — reduzimos para caber no envio"}.
+          {compressing ? "" : " — reduzimos para caber no envio"}. Dica: copie
+          a imagem e cole aqui com Ctrl+V.
         </p>
         <input
           ref={fileInputRef}
