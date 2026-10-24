@@ -118,8 +118,12 @@ export async function adjustLoyaltyPoints(form: FormData) {
 export async function updateLoyaltyRankingVisibility(form: FormData) {
   const { customer } = await requireCustomer();
   const supabase = await createClient();
-  const { error } = await supabase.from("customers").update({ loyalty_rank_visible: form.get("visible") === "on" }).eq("id", customer.id);
-  if (error) redirect(`/painel/ranking?erro=${encodeURIComponent("Não foi possível atualizar a preferência de ranking.")}`);
+  const { data, error } = await supabase.from("customers")
+    .update({ loyalty_rank_visible: form.get("visible") === "on" })
+    .eq("id", customer.id)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) redirect(`/painel/ranking?erro=${encodeURIComponent("Não foi possível atualizar a preferência de ranking.")}`);
   revalidatePath("/painel/ranking");
   redirect("/painel/ranking?salvo=1");
 }
