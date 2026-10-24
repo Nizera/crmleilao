@@ -22,6 +22,7 @@ import {
 import { hashInviteToken } from "@/lib/invites";
 import { loadNotes } from "@/lib/notes";
 import type { Shipment, ShipmentStatus } from "@/lib/shipments";
+import type { CustomerNotification } from "@/lib/notifications";
 import {
   attachLots,
   SHIPMENT_COLUMNS,
@@ -986,6 +987,63 @@ export const listCustomerCharges = cache(
   },
 );
 
+export type CustomerSpendingSummary = {
+  /** Soma das cobranças confirmadas, incluindo o frete cobrado nelas. */
+  paidTotal: number;
+  /** Cobranças pending/in_process ainda dentro do prazo. */
+  openAmount: number;
+};
+
+/**
+ * Resumo financeiro completo do cliente. Busca em páginas para não limitar o
+ * total pago aos 20 itens usados na lista recente de cobranças.
+ */
+export const getCustomerSpendingSummary = cache(
+  async (customerId: string): Promise<CustomerSpendingSummary> => {
+    const supabase = await createClient();
+    const pageSize = 1000;
+    let paidCents = 0;
+    let openCents = 0;
+
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("charges")
+        .select("amount, status, expires_at")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        if (error.code === "42P01" || /relation .*charges/i.test(error.message)) {
+          return { paidTotal: 0, openAmount: 0 };
+        }
+        console.error(`[dal] resumo financeiro do cliente: ${error.message}`);
+        throw new Error("Não foi possível carregar o resumo financeiro do cliente.");
+      }
+
+      const rows = (data ?? []) as {
+        amount: number | string;
+        status: ChargeStatus;
+        expires_at: string | null;
+      }[];
+
+      for (const row of rows) {
+        const cents = Math.round(Number(row.amount) * 100);
+        if (row.status === "approved") paidCents += cents;
+        else if (isChargeActive(row)) openCents += cents;
+      }
+
+      if (rows.length < pageSize) break;
+    }
+
+    return {
+      paidTotal: paidCents / 100,
+      openAmount: openCents / 100,
+    };
+  },
+);
+
 /**
  * Estado do frete semanal do cliente (painel): pago, em aberto (Pix criado),
  * por pagar (tem lote no período) ou sem lote no período.
@@ -1240,6 +1298,86 @@ export const countCustomerShipments = cache(
       throw new Error("Não foi possível carregar seus envios. Atualize a página.");
     }
     return count ?? 0;
+  },
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Notificações do sino (0017)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Defensivo de propósito: a migration pode ainda não ter sido aplicada e as
+ * notificações não podem derrubar o painel.
+ * Tabela ausente → lista vazia / contagem zero.
+ */
+const isMissingTable = (error: { code: string; message: string }, table: string) =>
+  error.code === "42P01" || new RegExp(table, "i").test(error.message);
+
+/** Últimas notificações do cliente (mais recentes primeiro). */
+export const listCustomerNotifications = cache(
+  async (customerId: string, limit = 15): Promise<CustomerNotification[]> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("customer_notifications")
+      .select("id, kind, title, body, href, read_at, created_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      if (isMissingTable(error, "customer_notifications")) return [];
+      console.error(`[dal] listar notificações: ${error.message}`);
+      return [];
+    }
+    return (data ?? []) as CustomerNotification[];
+  },
+);
+
+/** Contagem de não lidas (badge do sino). */
+export const countCustomerUnreadNotifications = cache(
+  async (customerId: string): Promise<number> => {
+    const supabase = await createClient();
+    const { count, error } = await supabase
+      .from("customer_notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .is("read_at", null);
+
+    if (error) {
+      if (isMissingTable(error, "customer_notifications")) return 0;
+      console.error(`[dal] contar não lidas: ${error.message}`);
+      return 0;
+    }
+    return count ?? 0;
+  },
+);
+
+export type CustomerNextShipment = {
+  code: string;
+  batch_date: string;
+  status: Extract<ShipmentStatus, "pending" | "released">;
+};
+
+/** Primeiro envio ainda não postado/cancelado/entregue do cliente. */
+export const getCustomerNextShipment = cache(
+  async (customerId: string): Promise<CustomerNextShipment | null> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("shipments")
+      .select("code, batch_date, status")
+      .eq("customer_id", customerId)
+      .in("status", ["pending", "released"])
+      .order("batch_date", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (isMissingTable(error, "shipments")) return null;
+      console.error(`[dal] próximo envio do cliente: ${error.message}`);
+      throw new Error("Não foi possível carregar o próximo envio do cliente.");
+    }
+    return (data as CustomerNextShipment | null) ?? null;
   },
 );
 

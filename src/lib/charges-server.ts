@@ -19,6 +19,8 @@ import {
   freightPeriodEnd,
   freightPeriodStart,
 } from "@/lib/freight";
+import { formatBRL } from "@/lib/lots";
+import { notifyCustomer } from "@/lib/notifications-server";
 
 /**
  * Núcleo das cobranças Pix (F3) — server-only.
@@ -519,6 +521,40 @@ async function applyTransition(
     if (unlinkError) {
       console.error("[charges] falha ao liberar lotes:", unlinkError);
     }
+  }
+
+  // Sino do cliente — notifyCustomer é fire-and-forget (nunca derruba a
+  // transição) e deduplica por (customer_id, dedupe_key) no webhook reenviado.
+  if (target === "approved") {
+    await notifyCustomer({
+      customerId: charge.customer_id,
+      kind: "charge_paid",
+      title: "Pagamento confirmado",
+      body: `O Pix ${charge.code} foi pago — ${formatBRL(charge.amount)}.`,
+      href: "/painel/lotes",
+      dedupeKey: `charge_paid:${charge.id}`,
+    });
+  } else {
+    const title =
+      target === "expired"
+        ? "Pix expirado"
+        : target === "cancelled"
+          ? "Pix cancelado"
+          : "Pagamento recusado";
+    const body =
+      target === "expired"
+        ? `O Pix ${charge.code} venceu. Gere um novo em Pagamentos.`
+        : target === "cancelled"
+          ? `O Pix ${charge.code} foi cancelado.`
+          : `O pagamento do Pix ${charge.code} foi recusado. Tente novamente.`;
+    await notifyCustomer({
+      customerId: charge.customer_id,
+      kind: `charge_${target}`,
+      title,
+      body,
+      href: "/painel/pix",
+      dedupeKey: `charge_${target}:${charge.id}`,
+    });
   }
 
   return { ok: true };

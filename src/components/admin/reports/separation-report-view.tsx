@@ -202,6 +202,22 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                         {LOT_STATUS_LABELS[lot.status]}
                       </p>
                     </div>
+                    {(lot.description?.trim() || lot.notes?.trim()) && (
+                      <div className="grid gap-1 px-3 py-2 text-xs print:text-black">
+                        {lot.description?.trim() && (
+                          <p className="whitespace-pre-wrap break-words">
+                            <span className="font-semibold">Descrição:</span>{" "}
+                            {lot.description}
+                          </p>
+                        )}
+                        {lot.notes?.trim() && (
+                          <p className="whitespace-pre-wrap break-words">
+                            <span className="font-semibold">Observação:</span>{" "}
+                            {lot.notes}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
 

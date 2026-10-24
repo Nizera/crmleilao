@@ -22,7 +22,8 @@ import type {
   ShipmentVolume,
 } from "@/lib/shipments";
 import { spToday } from "@/lib/dates";
-import { nextShippingDate } from "@/lib/lots";
+import { formatBRL, nextShippingDate } from "@/lib/lots";
+import { notifyCustomer } from "@/lib/notifications-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -616,6 +617,25 @@ async function applyStatusChange(
     await applyLotEffects(shipment.id, target);
   }
 
+  // Sino do cliente nos marcos de rastreio (postado/entregue). O tracking
+  // novo pode estar no patch (webhook) e ainda não no objeto local.
+  if (target === "posted" || target === "delivered") {
+    const tracking =
+      (typeof patch.tracking_code === "string" ? patch.tracking_code : null) ??
+      shipment.tracking_code;
+    await notifyCustomer({
+      customerId: shipment.customer_id,
+      kind: `shipment_${target}`,
+      title: target === "posted" ? "Envio postado" : "Envio entregue",
+      body:
+        target === "posted"
+          ? `Seu envio ${shipment.code} foi postado${tracking ? ` — rastreio ${tracking}.` : "."}`
+          : `O envio ${shipment.code} foi entregue.`,
+      href: "/painel/envios",
+      dedupeKey: `shipment_${target}:${shipment.id}`,
+    });
+  }
+
   return { ok: true };
 }
 
@@ -744,21 +764,28 @@ export async function emitShipment(input: {
     );
   }
 
+  const lotSubtotal = round2(
+    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
+  );
   const insuranceValue =
     input.insuranceValue != null
       ? input.insuranceValue
-      : Math.round(
-          picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) * 100,
-        ) / 100;
+      : lotSubtotal;
+  if (
+    insuranceValue > 0 &&
+    Math.round(insuranceValue * 100) !== Math.round(lotSubtotal * 100)
+  ) {
+    throw new Error(
+      `Com seguro, o valor precisa ser igual ao subtotal dos lotes (${formatBRL(lotSubtotal)}).`,
+    );
+  }
 
-  // Declaração de conteúdo da etiqueta: sempre um único item "Documento",
-  // com o valor total dos lotes. Não vai o nome dos lotes — expõe a
-  // mercadoria e convida o roubo no transporte.
+  // Declaração de conteúdo: um item "Documento" pelo subtotal dos lotes.
   const products: SfProduct[] = [
     {
       name: "Documento",
       quantity: 1,
-      unitary_value: insuranceValue,
+      unitary_value: lotSubtotal,
     },
   ];
 

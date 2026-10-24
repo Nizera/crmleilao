@@ -1,6 +1,7 @@
 import "server-only";
 
 import { type LotStatus } from "@/lib/lots";
+import { loadNotes } from "@/lib/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Teto de lotes lidos por relatório — igual à fila de envios. */
@@ -10,6 +11,8 @@ export type SeparationLot = {
   id: string;
   code: string;
   title: string;
+  description: string | null;
+  notes: string | null;
   status: LotStatus;
 };
 
@@ -44,6 +47,7 @@ type LotRow = {
   id: string;
   code: string;
   title: string;
+  description: string | null;
   status: LotStatus;
   created_at: string;
   customers: {
@@ -63,7 +67,7 @@ type LotRow = {
 /**
  * Relatório de separação de um dia de envio: lotes com `shipping_date` na
  * data (cancelados ficam de fora), agrupados por cliente e identificados
- * pelo nome do lote.
+ * pelo nome/descrição e pelas observações internas do lote.
  */
 export async function getSeparationReport(
   shippingDate: string,
@@ -73,7 +77,7 @@ export async function getSeparationReport(
   const { data, error } = await admin
     .from("lots")
     .select(
-      `id, code, title, status, created_at,
+      `id, code, title, description, status, created_at,
        customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state)`,
     )
     .eq("shipping_date", shippingDate)
@@ -84,6 +88,7 @@ export async function getSeparationReport(
   if (error) throw new Error(`Falha ao montar relatório: ${error.message}`);
 
   const rows = ((data ?? []) as unknown as LotRow[]).slice(0, REPORT_LOTS_CAP);
+  const notes = await loadNotes("lot", rows.map((row) => row.id));
 
   // Agrupa por cliente preservando a ordem de chegada dos lotes.
   const byCustomer = new Map<string, SeparationCustomer>();
@@ -96,6 +101,8 @@ export async function getSeparationReport(
       id: row.id,
       code: row.code,
       title: row.title,
+      description: row.description,
+      notes: notes.get(row.id) ?? null,
       status: row.status,
     };
 

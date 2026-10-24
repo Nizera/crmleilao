@@ -212,6 +212,9 @@ function ShipmentForm({
       ? Math.round(parsed * 100) / 100
       : 0;
   })();
+  const insuranceMismatch =
+    insuranceValue > 0 &&
+    Math.round(insuranceValue * 100) !== Math.round(total * 100);
 
   const blockedReason = (() => {
     if (!context) return null;
@@ -225,6 +228,9 @@ function ShipmentForm({
       return `Faltam dados do destinatário: ${context.missing.join(", ")}.`;
     }
     if (picked.size === 0) return "Selecione ao menos um lote.";
+    if (insuranceMismatch) {
+      return `Com seguro, o valor precisa ser igual ao subtotal da declaração (${formatBRL(total)}).`;
+    }
     return null;
   })();
 
@@ -532,9 +538,11 @@ function ShipmentForm({
                   onChange={(event) => setInsurance(event.target.value)}
                   disabled={pending}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Valor declarado da encomenda, sem frete. Padrão: 0 (sem
-                  seguro). Os Correios só cotam com seguro ≥ R$ 25,63.
+                <p
+                  className={`text-xs ${insuranceMismatch ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  Sem seguro, deixe 0. Com seguro, use o subtotal da declaração
+                  ({formatBRL(total)}). Os Correios só cotam com seguro ≥ R$ 25,63.
                 </p>
               </div>
             </>

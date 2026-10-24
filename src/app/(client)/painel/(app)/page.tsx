@@ -1,8 +1,9 @@
-import { Award, Bolt, Medal, Truck } from "lucide-react";
+import { Award, Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
   countCustomerShipments,
+  getCustomerSpendingSummary,
   getCustomerFreightState,
   listCustomerCharges,
   listCustomerShipments,
@@ -80,7 +81,7 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, shipments, shipmentsTotal, freight] =
+  const [lots, charges, shipments, shipmentsTotal, freight, spending] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ images: true }),
@@ -88,6 +89,7 @@ export default async function ClientHomePage() {
       listCustomerShipments(customer.id),
       countCustomerShipments(customer.id),
       getCustomerFreightState(customer.id),
+      getCustomerSpendingSummary(customer.id),
     ]);
 
   // A home é de ação: só o último leilão. O resto fica em /painel/historico.
@@ -120,7 +122,7 @@ export default async function ClientHomePage() {
     homeCharges.push(activeCharge);
   }
 
-  // KPIs do topo (dados reais; saldo/sino são placeholders do header).
+  // KPIs da home usam valores confirmados e estados atuais do cliente.
   const paidLotsCount = lots.filter((lot) =>
     PAID_LOT_STATUSES.includes(lot.status),
   ).length;
@@ -186,7 +188,7 @@ export default async function ClientHomePage() {
           </span>
         </div>
 
-        <div className="mt-1 grid grid-cols-3 gap-2">
+        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <KpiCard
             label="A Pagar"
             value={owedValue}
@@ -210,6 +212,12 @@ export default async function ClientHomePage() {
             value={String(shipmentsTotal).padStart(2, "0")}
             sub={nextBatchDate ? `Saída ${formatDateBR(nextBatchDate)}` : "Sem saída"}
             icon={<Truck className="size-3.5 text-ouro-ink" />}
+          />
+          <KpiCard
+            label="Total pago"
+            value={formatBRL(spending.paidTotal)}
+            sub="inclui frete"
+            icon={<CircleDollarSign className="size-3.5 text-ouro-ink" />}
           />
         </div>
       </section>

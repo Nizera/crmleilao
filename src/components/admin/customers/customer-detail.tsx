@@ -35,8 +35,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { CustomerDetail, CustomerLotStats, InviteStatus } from "@/lib/dal";
+import type {
+  CustomerDetail,
+  CustomerLotStats,
+  CustomerNextShipment,
+  CustomerSpendingSummary,
+  InviteStatus,
+} from "@/lib/dal";
 import { formatPhoneBR } from "@/lib/customers";
+import { SHIPMENT_STATUS_LABELS } from "@/lib/shipments";
 import {
   formatBRL,
   formatDateBR,
@@ -52,6 +59,8 @@ type Props = {
   pageSize: number;
   stats: CustomerLotStats;
   invite: InviteStatus;
+  spending: CustomerSpendingSummary;
+  nextShipment: CustomerNextShipment | null;
 };
 
 export function CustomerDetailView({
@@ -62,6 +71,8 @@ export function CustomerDetailView({
   pageSize,
   stats,
   invite,
+  spending,
+  nextShipment,
 }: Props) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -183,7 +194,7 @@ export function CustomerDetailView({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Lotes" value={String(stats.total)} />
         <StatCard
           label="Arrematado"
@@ -192,6 +203,25 @@ export function CustomerDetailView({
         />
         <StatCard label="Pagos" value={String(stats.paid)} />
         <StatCard label="Enviados" value={String(stats.shipped)} />
+        <StatCard
+          label="Total pago"
+          value={formatBRL(spending.paidTotal)}
+          hint="Inclui os fretes cobrados"
+        />
+        <StatCard
+          label="Pix em aberto"
+          value={formatBRL(spending.openAmount)}
+          hint="Cobranças ainda válidas"
+        />
+        <StatCard
+          label="Próximo envio"
+          value={nextShipment ? formatDateBR(nextShipment.batch_date) : "—"}
+          hint={
+            nextShipment
+              ? `${SHIPMENT_STATUS_LABELS[nextShipment.status]} · ${nextShipment.code}`
+              : "Sem envio pendente"
+          }
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

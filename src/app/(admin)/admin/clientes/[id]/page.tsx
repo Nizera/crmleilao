@@ -5,6 +5,8 @@ import {
   getCustomer,
   getCustomerInvite,
   getCustomerLotStats,
+  getCustomerNextShipment,
+  getCustomerSpendingSummary,
   listCustomerLotsPage,
   requireAdmin,
 } from "@/lib/dal";
@@ -27,10 +29,12 @@ export default async function ClienteDetalhePage({
   const sp = await searchParams;
   const page = Math.max(1, Number(first(sp.lp)) || 1);
 
-  const [lotsPage, stats, invite] = await Promise.all([
+  const [lotsPage, stats, invite, spending, nextShipment] = await Promise.all([
     listCustomerLotsPage(id, page),
     getCustomerLotStats(id),
     getCustomerInvite(id),
+    getCustomerSpendingSummary(id),
+    getCustomerNextShipment(id),
   ]);
 
   return (
@@ -42,6 +46,8 @@ export default async function ClienteDetalhePage({
       pageSize={lotsPage.pageSize}
       stats={stats}
       invite={invite}
+      spending={spending}
+      nextShipment={nextShipment}
     />
   );
 }

@@ -33,7 +33,7 @@ import {
 } from "@/lib/shipments-server";
 import { renderTemplate } from "@/lib/settings";
 import { createClient } from "@/lib/supabase/server";
-import { waMessageLink } from "@/lib/lots";
+import { formatBRL, waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -215,6 +215,14 @@ export async function quoteShipmentAction(input: {
     const volume = parseVolume(input.volume);
     const lotsInsurance = await insuranceFor(input.customerId, lotIds);
     const insuranceValue = parseInsurance(input.insuranceValue) ?? lotsInsurance;
+    if (
+      insuranceValue > 0 &&
+      Math.round(insuranceValue * 100) !== Math.round(lotsInsurance * 100)
+    ) {
+      return failure(
+        `Com seguro, o valor precisa ser igual ao subtotal dos lotes (${formatBRL(lotsInsurance)}).`,
+      );
+    }
 
     const origin = await getOrigin();
     if (!origin) {
