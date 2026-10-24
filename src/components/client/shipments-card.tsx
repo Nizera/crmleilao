@@ -207,7 +207,7 @@ export function ClientShipmentsCard({
                   </a>
                 )}
                 {shipment.tracking_code && (
-                  <a href="https://rastreamento.superfrete.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground">
+                  <a href={`https://rastreamento.superfrete.com/#${encodeURIComponent(shipment.tracking_code)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground">
                     Rastreio completo <ExternalLink className="size-3.5" />
                   </a>
                 )}
