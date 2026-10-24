@@ -31,6 +31,8 @@ export default async function ClientLayout({
         notifications={notifications}
         unreadCount={unreadCount}
         paidTotal={spending.paidTotal}
+        paidFreightTotal={spending.paidFreightTotal}
+        paidPixTotal={spending.paidPixTotal}
         openAmount={spending.openAmount}
       />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-24 pt-6">

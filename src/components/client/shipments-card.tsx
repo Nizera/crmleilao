@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { Check, ExternalLink, Truck } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, ChevronUp, Copy, ExternalLink, Truck } from "lucide-react";
 
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -90,7 +93,26 @@ export function ClientShipmentsCard({
   /** Total real (head-count); a lista pode vir capada em 20. */
   total?: number;
 }) {
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
   const count = total ?? shipments.length;
+
+  async function copyTracking(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(code);
+      window.setTimeout(() => setCopied((current) => current === code ? null : current), 1600);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  function toggleLots(id: string) {
+    setExpanded((current) => current.includes(id)
+      ? current.filter((item) => item !== id)
+      : [...current, id]);
+  }
+
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-end justify-between gap-2">
@@ -128,16 +150,11 @@ export function ClientShipmentsCard({
                 </span>
                 <div className="min-w-0">
                   <span className="block truncate text-sm font-bold">
-                    {shipment.carrier ?? shipment.service_name ?? "Envio"} •{" "}
-                    {shipment.lots?.length ?? 0}
-                    {(shipment.lots?.length ?? 0) === 1 ? " lote" : " lotes"}
+                    {shipment.carrier ?? shipment.service_name ?? "Envio"}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {shipment.tracking_code ? (
-                      <span className="font-mono">{shipment.tracking_code}</span>
-                    ) : (
-                      <>Previsão: {formatDateBR(shipment.batch_date)}</>
-                    )}
+                    Pacote com {shipment.lots?.length ?? 0} {(shipment.lots?.length ?? 0) === 1 ? "lote" : "lotes"}
+                    {shipment.tracking_code ? ` · Rastreio ${shipment.tracking_code}` : ` · Previsto ${formatDateBR(shipment.batch_date)}`}
                   </span>
                 </div>
               </div>
@@ -146,7 +163,7 @@ export function ClientShipmentsCard({
 
             {(shipment.lots?.length ?? 0) > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {shipment.lots?.map((lot) => (
+                {(expanded.includes(shipment.id) ? shipment.lots : shipment.lots?.slice(0, 3))?.map((lot) => (
                   <Link
                     key={lot.id}
                     href={`/painel/lotes/${lot.code}`}
@@ -156,6 +173,11 @@ export function ClientShipmentsCard({
                     {lot.code} • {lot.title}
                   </Link>
                 ))}
+                {(shipment.lots?.length ?? 0) > 3 && (
+                  <button type="button" onClick={() => toggleLots(shipment.id)} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-ouro-ink hover:text-foreground" aria-expanded={expanded.includes(shipment.id)}>
+                    {expanded.includes(shipment.id) ? <><ChevronUp className="size-3" /> Mostrar menos</> : <><ChevronDown className="size-3" /> +{shipment.lots!.length - 3} lotes</>}
+                  </button>
+                )}
               </div>
             )}
 
@@ -163,9 +185,15 @@ export function ClientShipmentsCard({
 
             {(shipment.tracking_url || shipment.tracking_code) && (
               <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3">
-                <span className="truncate text-[11px] text-muted-foreground">
-                  Envio previsto {formatDateBR(shipment.batch_date)}
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  Referência OCDL <span className="font-mono font-semibold">{shipment.code}</span>
                 </span>
+                <div className="flex shrink-0 items-center gap-3">
+                {shipment.tracking_code && (
+                  <button type="button" onClick={() => void copyTracking(shipment.tracking_code!)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground" aria-label={`Copiar rastreio ${shipment.tracking_code}`}>
+                    <Copy className="size-3.5" /> {copied === shipment.tracking_code ? "Copiado" : "Copiar código"}
+                  </button>
+                )}
                 {shipment.tracking_url && (
                   <a
                     href={shipment.tracking_url}
@@ -178,6 +206,12 @@ export function ClientShipmentsCard({
                     <ExternalLink className="size-3.5" />
                   </a>
                 )}
+                {shipment.tracking_code && (
+                  <a href="https://rastreamento.superfrete.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground">
+                    Rastreio completo <ExternalLink className="size-3.5" />
+                  </a>
+                )}
+                </div>
               </div>
             )}
           </div>

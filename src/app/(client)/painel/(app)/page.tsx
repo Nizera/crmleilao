@@ -216,7 +216,7 @@ export default async function ClientHomePage() {
           <KpiCard
             label="Total pago"
             value={formatBRL(spending.paidTotal)}
-            sub="inclui frete"
+            sub="somente lotes; frete separado"
             icon={<CircleDollarSign className="size-3.5 text-ouro-ink" />}
           />
         </div>

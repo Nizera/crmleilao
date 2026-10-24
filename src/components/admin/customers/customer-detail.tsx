@@ -209,6 +209,11 @@ export function CustomerDetailView({
           hint="Fretes ficam fora"
         />
         <StatCard
+          label="Frete pago"
+          value={formatBRL(spending.paidFreightTotal)}
+          hint={`Total via Pix: ${formatBRL(spending.paidPixTotal)}`}
+        />
+        <StatCard
           label="Pix em aberto"
           value={formatBRL(spending.openAmount)}
           hint="Cobranças ainda válidas"

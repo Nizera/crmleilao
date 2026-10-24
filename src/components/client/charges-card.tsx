@@ -265,11 +265,11 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                       : charge.code}
                   </span>
                   <span className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
-                    <span className="whitespace-nowrap">{formatBRL(charge.amount)}</span>
+                    <span className="whitespace-nowrap">Total Pix {formatBRL(charge.amount)}</span>
                     {Number(charge.freight_amount) > 0 ? (
                       <span className="whitespace-nowrap">
-                        · frete{" "}
-                        {formatBRL(Number(charge.freight_amount))}
+                        · lotes {formatBRL(Math.max(0, Number(charge.amount) - Number(charge.freight_amount)))}
+                        · frete {formatBRL(Number(charge.freight_amount))}
                       </span>
                     ) : null}
                     {charge.paid_at ? (

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
-import { CalendarDays, ImageIcon } from "lucide-react";
+import { CalendarDays, ImageIcon, Search } from "lucide-react";
 
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { ImageLightbox } from "@/components/client/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatBRL, formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
+import { formatBRL, formatDateBR, lotImageUrl, LOT_STATUS_LABELS, LOT_STATUSES, type Lot, type LotStatus } from "@/lib/lots";
 
 type Props = {
   lots: Lot[];
@@ -20,7 +20,8 @@ type Props = {
 
 export function ClientLotsList({ lots, subtitle }: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const [filter, setFilter] = useState<"all" | "pending">("all");
+  const [filter, setFilter] = useState<LotStatus | "all">("all");
+  const [search, setSearch] = useState("");
 
   if (lots.length === 0) {
     return (
@@ -60,13 +61,12 @@ export function ClientLotsList({ lots, subtitle }: Props) {
     images.map((src) => ({ src, alt: lot.title })),
   );
 
-  const visibleRows = rows.filter(({ lot }) =>
-    filter === "all" ? true : lot.status === "pending_payment",
-  );
-  const pendingCount = rows.filter(
-    ({ lot }) => lot.status === "pending_payment",
-  ).length;
-
+  const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
+  const visibleRows = rows.filter(({ lot }) => {
+    const statusMatches = filter === "all" || lot.status === filter;
+    const textMatches = !normalizedSearch || `${lot.code} ${lot.title} ${lot.description ?? ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
+    return statusMatches && textMatches;
+  });
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-end justify-between gap-2">
@@ -78,34 +78,18 @@ export function ClientLotsList({ lots, subtitle }: Props) {
             </span>
           )}
         </div>
-        {pendingCount > 0 && (
-          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
-            <button
-              type="button"
-              onClick={() => setFilter("all")}
-              className={cn(
-                "rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
-                filter === "all"
-                  ? "bg-background text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Todos ({rows.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter("pending")}
-              className={cn(
-                "rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
-                filter === "pending"
-                  ? "bg-background text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Pendentes
-            </button>
-          </div>
-        )}
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-background px-3 py-2">
+          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <span className="sr-only">Buscar lote por código, nome ou descrição</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código, nome ou descrição" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+        </label>
+        <select aria-label="Filtrar lotes por situação" value={filter} onChange={(event) => setFilter(event.target.value as LotStatus | "all")} className="rounded-lg border bg-background px-3 py-2 text-sm">
+          <option value="all">Todas as situações ({rows.length})</option>
+          {LOT_STATUSES.map((status) => <option key={status} value={status}>{LOT_STATUS_LABELS[status]}</option>)}
+        </select>
       </div>
 
       <ul className="flex flex-col gap-2">
@@ -207,6 +191,10 @@ export function ClientLotsList({ lots, subtitle }: Props) {
           );
         })}
       </ul>
+
+      {visibleRows.length === 0 && (
+        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum lote corresponde à busca e ao filtro escolhidos.</p>
+      )}
 
       <ImageLightbox
         images={flat}

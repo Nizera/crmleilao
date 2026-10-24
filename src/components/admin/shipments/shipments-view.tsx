@@ -361,8 +361,9 @@ export function ShipmentsView({
       {migrationReady && superfreteReady && originReady && !webhookActive && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
           <span>
-            Webhook SuperFrete não ativado: sem ele, postagem e entrega só
-            atualizam quando você sincronizar manualmente.
+            Webhook SuperFrete não ativado: sem ele, postagem, entrega e
+            cancelamento feito direto na SuperFrete só aparecem após sincronizar
+            manualmente.
           </span>
           <Button
             size="sm"

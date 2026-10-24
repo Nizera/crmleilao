@@ -990,6 +990,10 @@ export const listCustomerCharges = cache(
 export type CustomerSpendingSummary = {
   /** Soma dos valores dos lotes pagos; o frete fica fora. */
   paidTotal: number;
+  /** Frete das cobranças já pagas, apresentado separadamente dos lotes. */
+  paidFreightTotal: number;
+  /** Valor total de Pix aprovado (lotes + frete). */
+  paidPixTotal: number;
   /** Cobranças pending/in_process ainda dentro do prazo. */
   openAmount: number;
 };
@@ -1003,6 +1007,8 @@ export const getCustomerSpendingSummary = cache(
     const supabase = await createClient();
     const pageSize = 1000;
     let paidCents = 0;
+    let paidFreightCents = 0;
+    let paidPixCents = 0;
     let openCents = 0;
 
     for (let from = 0; ; from += pageSize) {
@@ -1016,7 +1022,7 @@ export const getCustomerSpendingSummary = cache(
 
       if (error) {
         if (error.code === "42P01" || /relation .*charges/i.test(error.message)) {
-          return { paidTotal: 0, openAmount: 0 };
+          return { paidTotal: 0, paidFreightTotal: 0, paidPixTotal: 0, openAmount: 0 };
         }
         console.error(`[dal] resumo financeiro do cliente: ${error.message}`);
         throw new Error("Não foi possível carregar o resumo financeiro do cliente.");
@@ -1034,6 +1040,8 @@ export const getCustomerSpendingSummary = cache(
         const freightCents = Math.round(Number(row.freight_amount ?? 0) * 100);
         if (row.status === "approved") {
           paidCents += Math.max(0, amountCents - freightCents);
+          paidFreightCents += freightCents;
+          paidPixCents += amountCents;
         } else if (isChargeActive(row)) {
           openCents += amountCents;
         }
@@ -1044,6 +1052,8 @@ export const getCustomerSpendingSummary = cache(
 
     return {
       paidTotal: paidCents / 100,
+      paidFreightTotal: paidFreightCents / 100,
+      paidPixTotal: paidPixCents / 100,
       openAmount: openCents / 100,
     };
   },

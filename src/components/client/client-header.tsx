@@ -44,6 +44,8 @@ type Props = {
   notifications: CustomerNotification[];
   unreadCount: number;
   paidTotal: number;
+  paidFreightTotal: number;
+  paidPixTotal: number;
   openAmount: number;
 };
 
@@ -76,6 +78,8 @@ export function ClientHeader({
   notifications,
   unreadCount,
   paidTotal,
+  paidFreightTotal,
+  paidPixTotal,
   openAmount,
 }: Props) {
   const router = useRouter();
@@ -138,6 +142,15 @@ export function ClientHeader({
               <p className="px-3 pb-2 text-xs text-muted-foreground">
                 Soma dos lotes com pagamento confirmado. Fretes ficam fora deste total.
               </p>
+              <DropdownMenuSeparator />
+              <div className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Fretes pagos</span>
+                <span className="font-semibold">{formatBRL(paidFreightTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Total pago via Pix</span>
+                <span className="font-semibold">{formatBRL(paidPixTotal)}</span>
+              </div>
               <DropdownMenuSeparator />
               <div className="flex items-center justify-between px-3 py-2 text-sm">
                 <span className="text-muted-foreground">Pix em aberto</span>
