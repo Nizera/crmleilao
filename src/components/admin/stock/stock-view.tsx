@@ -24,7 +24,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import type { StockMovementPage } from "@/lib/dal";
+import type { MovedLotBoxPage, StockMovementPage } from "@/lib/dal";
 import {
   COLOR_DOT,
   COLOR_LABELS,
@@ -36,6 +36,7 @@ import {
 type Props = {
   stock: StockItem[];
   movements: StockMovementPage;
+  movedLots: MovedLotBoxPage;
   /** Aba inicial, vinda da URL (?t=) para a paginação não voltar ao topo. */
   tab?: string;
 };
@@ -47,7 +48,7 @@ type MatrixRow = {
   cells: Partial<Record<string, StockItem>>;
 };
 
-export function StockView({ stock, movements, tab = "saldo" }: Props) {
+export function StockView({ stock, movements, movedLots, tab = "saldo" }: Props) {
   const [selected, setSelected] = useState<StockItem | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -95,7 +96,7 @@ export function StockView({ stock, movements, tab = "saldo" }: Props) {
     });
   };
 
-  const activeTab = tab === "movimentos" ? "movimentos" : "saldo";
+  const activeTab = ["movimentos", "caixas"].includes(tab) ? tab : "saldo";
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
@@ -103,7 +104,7 @@ export function StockView({ stock, movements, tab = "saldo" }: Props) {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Estoque</h2>
           <p className="text-sm text-muted-foreground">
-            20 jogadores × 4 cores. A baixa acontece ao salvar o lote.
+            20 jogadores × 4 cores. A baixa acontece quando o lote é movimentado para a caixa do cliente.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -127,6 +128,7 @@ export function StockView({ stock, movements, tab = "saldo" }: Props) {
           <TabsTrigger value="movimentos">
             Movimentações ({movements.total})
           </TabsTrigger>
+          <TabsTrigger value="caixas">Caixas ({movedLots.total})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="saldo" className="flex flex-col gap-4 pt-4">
@@ -372,6 +374,49 @@ export function StockView({ stock, movements, tab = "saldo" }: Props) {
                     Próxima
                     <ChevronRight />
                   </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="caixas" className="pt-4">
+          <p className="mb-3 text-sm text-muted-foreground">Lotes já separados, com a baixa de estoque concluída, aguardando envio.</p>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead>Movimentado</TableHead><TableHead>Cliente</TableHead><TableHead>Lote</TableHead><TableHead>Itens na caixa</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {movedLots.rows.map((lot) => (
+                  <TableRow key={lot.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground"><DateBR time value={lot.moved_at} /></TableCell>
+                    <TableCell>{lot.customer?.name ?? "Sem nome"}<span className="block text-xs text-muted-foreground">{lot.customer?.phone_e164}</span></TableCell>
+                    <TableCell><span className="font-mono font-semibold">{lot.code}</span><span className="block text-xs text-muted-foreground">{lot.title}</span></TableCell>
+                    <TableCell>{lot.items.filter((item) => item.applied).length ? lot.items.filter((item) => item.applied).map((item, i) => <span key={`${lot.id}-${i}`} className="mr-1 inline-block rounded border px-2 py-1 text-xs">{item.qty} × {item.player?.name ?? "Item"} · {item.color}</span>) : <span className="text-muted-foreground">Sem itens de estoque</span>}</TableCell>
+                  </TableRow>
+                ))}
+                {movedLots.rows.length === 0 && <TableRow><TableCell colSpan={4} className="h-28 text-center text-muted-foreground">Nenhum lote movimentado aguardando envio.</TableCell></TableRow>}
+              </TableBody>
+            </Table>
+          </div>
+          {movedLots.total > movedLots.pageSize && (
+            <div className="flex items-center justify-between pt-3 text-sm text-muted-foreground">
+              <span>
+                Página {movedLots.page} de {Math.ceil(movedLots.total / movedLots.pageSize)}
+              </span>
+              <div className="flex gap-2">
+                {movedLots.page > 1 ? (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`?t=caixas&bp=${movedLots.page - 1}`}><ChevronLeft />Anterior</Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled><ChevronLeft />Anterior</Button>
+                )}
+                {movedLots.page * movedLots.pageSize < movedLots.total ? (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`?t=caixas&bp=${movedLots.page + 1}`}>Próxima<ChevronRight /></Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>Próxima<ChevronRight /></Button>
                 )}
               </div>
             </div>

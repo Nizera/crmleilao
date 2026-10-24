@@ -5,7 +5,11 @@ import { todayISO } from "@/lib/lots";
 /** Escapa campo CSV (separador “;”, aspas duplas, UTF-8 com BOM no arquivo). */
 function cell(value: unknown): string {
   if (value === null || value === undefined) return "";
-  const text = String(value);
+  const raw = String(value);
+  // CSV quoting prevents delimiter/quote injection, not spreadsheet formulas.
+  // Prefix a literal apostrophe when a cell can be interpreted as a formula,
+  // including values with leading whitespace/control characters.
+  const text = /^[\s\u0000-\u001f]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
   return `"${text.replace(/"/g, '""')}"`;
 }
 

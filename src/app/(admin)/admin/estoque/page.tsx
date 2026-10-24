@@ -1,4 +1,4 @@
-import { listMovements, listStock, requireAdmin } from "@/lib/dal";
+import { listLotsInCustomerBoxes, listMovements, listStock, requireAdmin } from "@/lib/dal";
 import { StockView } from "@/components/admin/stock/stock-view";
 
 export const metadata = { title: "Estoque" };
@@ -13,12 +13,16 @@ export default async function EstoquePage({
 
   const params = await searchParams;
   const page = Math.max(1, Number(first(params.p)) || 1);
-  const tab = first(params.t) === "movimentos" ? "movimentos" : "saldo";
+  const boxesPage = Math.max(1, Number(first(params.bp)) || 1);
+  const tab = ["movimentos", "caixas"].includes(first(params.t)) ? first(params.t) : "saldo";
 
-  const [stock, movements] = await Promise.all([
+  const [stock, movements, movedLots] = await Promise.all([
     listStock(),
     listMovements({ page }),
+    tab === "caixas"
+      ? listLotsInCustomerBoxes(boxesPage)
+      : Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }),
   ]);
 
-  return <StockView stock={stock} movements={movements} tab={tab} />;
+  return <StockView stock={stock} movements={movements} movedLots={movedLots} tab={tab} />;
 }

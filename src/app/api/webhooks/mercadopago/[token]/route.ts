@@ -94,14 +94,7 @@ function verifySignature(
 ): string | null {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   if (!secret) {
-    // Sem secret configurado não há o que validar — deixa passar e avisa.
-    // As camadas de token de path + reconsulta da order + checagem de valor
-    // já impedem marcar como pago algo que não foi pago.
-    console.warn(
-      "[mercadopago-webhook] MP_WEBHOOK_SECRET não definido — assinatura x-signature " +
-        "NÃO está sendo validada. Configure em Suas integrações > Webhooks.",
-    );
-    return null;
+    return "secret não configurado";
   }
 
   const header = request.headers.get("x-signature");
@@ -225,6 +218,13 @@ async function handle(
     signatureIdCandidates(body, request.nextUrl.searchParams),
   );
   if (signatureError) {
+    if (signatureError === "secret não configurado") {
+      console.error("[mercadopago-webhook] MP_WEBHOOK_SECRET não configurado");
+      return new Response(JSON.stringify({ error: "webhook não configurado" }), {
+        status: 503,
+        headers: JSON_HEADERS,
+      });
+    }
     console.warn(
       `[mercadopago-webhook] assinatura rejeitada: ${signatureError}`,
     );

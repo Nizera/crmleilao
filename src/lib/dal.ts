@@ -607,6 +607,42 @@ export type StockMovementPage = {
   pageSize: number;
 };
 
+export type MovedLotBoxRow = {
+  id: string;
+  code: string;
+  title: string;
+  moved_at: string;
+  customer: { name: string | null; phone_e164: string } | null;
+  items: { qty: number; color: string; applied: boolean; player: { name: string } | null }[];
+};
+
+export type MovedLotBoxPage = {
+  rows: MovedLotBoxRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** Lotes já separados e ainda guardados na caixa do cliente. */
+export async function listLotsInCustomerBoxes(page = 1): Promise<MovedLotBoxPage> {
+  const supabase = await createClient();
+  const pageSize = 25;
+  const currentPage = Math.max(1, Math.floor(page));
+  const from = (currentPage - 1) * pageSize;
+  const { data, count, error } = await supabase.from("lots")
+    .select("id, code, title, moved_at, customer:customers(name, phone_e164), items:lot_items(qty, color, applied, player:players(name))", { count: "exact" })
+    .eq("status", "paid").not("moved_at", "is", null)
+    .order("moved_at", { ascending: false }).order("id", { ascending: true })
+    .range(from, from + pageSize - 1);
+  if (error) throw new Error(`Falha ao listar lotes nas caixas dos clientes: ${error.message}`);
+  return {
+    rows: (data ?? []) as unknown as MovedLotBoxRow[],
+    total: count ?? 0,
+    page: currentPage,
+    pageSize,
+  };
+}
+
 export async function listMovements(params: {
   page?: number;
   pageSize?: number;

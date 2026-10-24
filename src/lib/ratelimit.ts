@@ -11,8 +11,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * compartilham memória entre instâncias. `bump_rate_limit` faz um upsert
  * atômico, então duas requisições simultâneas nunca passam ambas.
  *
- * Falha aberta de propósito: se a migração ainda não foi aplicada, o login
- * continua funcionando (só perde a proteção) em vez de derrubar o acesso.
+ * Falha fechada: sem o contador persistente não permitimos uma tentativa que
+ * ignore o limite. Isso mantém o login e o aceite de convites protegidos em
+ * caso de indisponibilidade ou migration pendente.
  */
 export type RateBucket =
   | "admin-signin"
@@ -82,12 +83,12 @@ export async function allow(
 
     if (error) {
       console.warn(`[rate-limit] ${bucket}: ${error.message}`);
-      return true;
+      return false;
     }
     return data !== false;
   } catch (error) {
     console.warn("[rate-limit] indisponível:", error);
-    return true;
+    return false;
   }
 }
 

@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { getSeparationReportAction } from "@/app/actions/reports";
+import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
 import { PrintButton } from "@/components/admin/reports/print-button";
+import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,6 +21,8 @@ import type { SeparationAddress, SeparationReport } from "@/lib/reports-server";
 import { WEEKDAY_LABELS_FULL } from "@/lib/settings";
 
 const ALL = "all";
+const UNMOVED = "unmoved";
+const MOVED = "moved";
 
 /** Dia da semana por extenso de uma data ISO. Cálculo em UTC puro: idêntico
  *  no servidor e no cliente (sem hydration mismatch). */
@@ -50,6 +53,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
   const [date, setDate] = useState(initialDate);
   const [report, setReport] = useState(initialReport);
   const [customerId, setCustomerId] = useState(ALL);
+  const [movementFilter, setMovementFilter] = useState(UNMOVED);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
 
   // Se a data nova não trouxe o cliente selecionado, volta para "todos".
@@ -58,19 +63,29 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
     report.customers.some((customer) => customer.customerId === customerId)
       ? customerId
       : ALL;
-  const customers =
+  const baseCustomers =
     selectedId === ALL
       ? report.customers
       : report.customers.filter(
           (customer) => customer.customerId === selectedId,
         );
 
+  const customers = baseCustomers.map((customer) => ({
+    ...customer,
+    lots: customer.lots.filter((lot) =>
+      movementFilter === MOVED ? Boolean(lot.movedAt) : movementFilter === ALL ? true : !lot.movedAt,
+    ),
+  })).filter((customer) => customer.lots.length > 0);
+
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
+  const visibleIds = new Set(customers.flatMap((customer) => customer.lots.map((lot) => lot.id)));
+  const selectedVisibleIds = selectedIds.filter((id) => visibleIds.has(id));
 
   const changeDate = (value: string) => {
     if (!value) return;
     setDate(value);
     setCustomerId(ALL);
+    setSelectedIds([]);
     startTransition(async () => {
       const result = await getSeparationReportAction(value);
       if (!result.ok) {
@@ -78,6 +93,23 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         return;
       }
       setReport(result.data);
+    });
+  };
+
+  const moveSelected = () => {
+    const ids = [...selectedVisibleIds];
+    if (!ids.length) return;
+    startTransition(async () => {
+      const result = await moveLotsToCustomerBoxesAction(ids);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`${result.data.moved} lote(s) movimentado(s) para a caixa do cliente.`);
+      setSelectedIds([]);
+      const refreshed = await getSeparationReportAction(date);
+      if (refreshed.ok) setReport(refreshed.data);
+      else toast.error(refreshed.error);
     });
   };
 
@@ -130,6 +162,29 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
             </SelectContent>
           </Select>
         </Field>
+
+        <Field className="w-48">
+          <FieldLabel>Movimentação</FieldLabel>
+          <Select value={movementFilter} onValueChange={(value) => { setMovementFilter(value); setSelectedIds([]); }} disabled={isPending}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNMOVED}>Não movimentados</SelectItem>
+              <SelectItem value={MOVED}>Movimentados</SelectItem>
+              <SelectItem value={ALL}>Todos</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {report.totals.excludedCustomers > 0 && (
+          <p className="pb-2 text-sm text-amber-700 dark:text-amber-300">
+            {report.totals.excludedCustomers} cliente(s) oculto(s) por pagamento pendente.
+          </p>
+        )}
+        {selectedVisibleIds.length > 0 && (
+          <Button type="button" onClick={moveSelected} disabled={isPending} className="mb-1">
+            Movimentar {selectedVisibleIds.length} lote(s)
+          </Button>
+        )}
 
         {isPending && (
           <span className="pb-2 text-sm text-muted-foreground">
@@ -191,7 +246,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-muted/40 px-3 py-1.5 print:bg-transparent">
                       <p className="flex items-center gap-2 text-sm">
-                        <span className="block size-3.5 shrink-0 border border-foreground/40 print:border-black" />
+                        {lot.movedAt ? (
+                          <span className="rounded border px-1.5 py-0.5 text-[10px] print:hidden">Movimentado</span>
+                        ) : (
+                          <input type="checkbox" aria-label={`Selecionar lote ${lot.code} para movimentação`} checked={selectedIds.includes(lot.id)} disabled={isPending || lot.status !== "paid"} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, lot.id] : current.filter((id) => id !== lot.id))} className="size-4 shrink-0 print:hidden" />
+                        )}
+                        <span className="hidden size-3.5 shrink-0 border border-black print:block" />
                         <span className="font-mono font-semibold">
                           {lot.code}
                         </span>
@@ -202,14 +262,16 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                         {LOT_STATUS_LABELS[lot.status]}
                       </p>
                     </div>
-                    {(lot.description?.trim() || lot.notes?.trim()) && (
+                    {(lot.movedItems.length > 0 || lot.description?.trim() || lot.notes?.trim()) && (
                       <div className="grid gap-1 px-3 py-2 text-xs print:text-black">
-                        {lot.description?.trim() && (
+                        {lot.movedItems.length > 0 ? (
+                          <p className="whitespace-pre-wrap break-words"><span className="font-semibold">Movimentado:</span> {lot.movedItems.join(", ")}</p>
+                        ) : lot.description?.trim() ? (
                           <p className="whitespace-pre-wrap break-words">
                             <span className="font-semibold">Descrição:</span>{" "}
                             {lot.description}
                           </p>
-                        )}
+                        ) : null}
                         {lot.notes?.trim() && (
                           <p className="whitespace-pre-wrap break-words">
                             <span className="font-semibold">Observação:</span>{" "}

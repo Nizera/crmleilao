@@ -25,6 +25,8 @@ import { spToday } from "@/lib/dates";
 import { formatBRL, nextShippingDate } from "@/lib/lots";
 import { notifyCustomer } from "@/lib/notifications-server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { freightPeriodForDate } from "@/lib/freight";
+import { isChargeActive } from "@/lib/charges";
 
 /**
  * Núcleo dos envios SuperFrete (F4) — server-only.
@@ -144,6 +146,7 @@ export type EligibleShipmentLot = {
   title: string;
   arremate_value: number;
   shipping_date: string | null;
+  auction_date: string;
 };
 
 /** Lotes `paid` do cliente que ainda não estão em nenhum envio ativo. */
@@ -154,7 +157,7 @@ export async function listEligibleShipmentLots(
 
   const { data: lots, error } = await admin
     .from("lots")
-    .select("id, code, title, arremate_value, shipping_date, status")
+    .select("id, code, title, arremate_value, shipping_date, auction_date, status")
     .eq("customer_id", customerId)
     .eq("status", "paid")
     .order("auction_date", { ascending: false })
@@ -193,7 +196,10 @@ export type ShipmentQueueLot = {
   arremate_value: number;
   status: "pending_payment" | "paid" | "shipped" | "delivered" | "cancelled";
   shipping_date: string | null;
+  auction_date: string;
 };
+
+export type ShipmentFreightStatus = "paid" | "awaiting" | "due" | "none";
 
 export type ShipmentQueueRow = {
   customerId: string;
@@ -204,6 +210,8 @@ export type ShipmentQueueRow = {
   unpaidTotal: number;
   shippingDate: string | null;
   pendingShipment: Shipment | null;
+  freightStatus: ShipmentFreightStatus;
+  hasActiveCharge: boolean;
 };
 
 function round2(value: number): number {
@@ -253,7 +261,7 @@ export async function listShipmentQueue(params: {
   let query = admin
     .from("lots")
     .select(
-      "id, code, title, arremate_value, status, shipping_date, customer_id, customers(id, name, phone_e164)",
+      "id, code, title, arremate_value, status, shipping_date, auction_date, customer_id, customers(id, name, phone_e164)",
     )
     .neq("status", "cancelled")
     .order("shipping_date", { ascending: true })
@@ -272,6 +280,7 @@ export async function listShipmentQueue(params: {
     arremate_value: number;
     status: ShipmentQueueLot["status"];
     shipping_date: string | null;
+    auction_date: string;
     customer_id: string;
     customers: {
       id: string;
@@ -284,6 +293,48 @@ export async function listShipmentQueue(params: {
   if (truncated) rows.length = QUEUE_LOTS_CAP;
 
   if (rows.length === 0) return { rows: [], truncated };
+
+  const customerPeriods = new Map<string, Set<string>>();
+  const { data: customerLots, error: customerLotsError } = await admin.from("lots")
+    .select("customer_id, auction_date").in("customer_id", [...new Set(rows.map((row) => row.customer_id))])
+    .in("status", ["paid", "pending_payment"]);
+  if (customerLotsError) throw new Error(`Falha ao conferir períodos dos lotes: ${customerLotsError.message}`);
+  for (const lot of customerLots ?? []) {
+    const periods = customerPeriods.get(lot.customer_id) ?? new Set<string>();
+    periods.add(freightPeriodForDate(lot.auction_date));
+    customerPeriods.set(lot.customer_id, periods);
+  }
+  const chargeMap = new Map<string, { paid: boolean; active: boolean }>();
+  const customerIds = [...customerPeriods.keys()];
+  const { data: unpaidRows, error: unpaidRowsError } = await admin
+    .from("lots").select("customer_id, arremate_value")
+    .in("customer_id", customerIds).eq("status", "pending_payment");
+  if (unpaidRowsError) throw new Error(`Falha ao conferir lotes pendentes: ${unpaidRowsError.message}`);
+  const unpaidByCustomer = new Map<string, number>();
+  for (const unpaid of unpaidRows ?? []) unpaidByCustomer.set(unpaid.customer_id, round2((unpaidByCustomer.get(unpaid.customer_id) ?? 0) + Number(unpaid.arremate_value)));
+  const { data: openChargeRows, error: openChargeError } = await admin.from("charges")
+    .select("customer_id, status, expires_at")
+    .in("customer_id", customerIds).in("status", ["pending", "in_process"]);
+  if (openChargeError) throw new Error(`Falha ao conferir cobranças pendentes: ${openChargeError.message}`);
+  const customersWithOpenCharges = new Set((openChargeRows ?? []).filter((charge) => isChargeActive(charge as never)).map((charge) => charge.customer_id));
+  const allPeriods = [...new Set([...customerPeriods.values()].flatMap((v) => [...v]))];
+  for (const customerChunk of chunk([...customerPeriods.keys()], 100)) {
+    const { data: charges, error: chargeError } = await admin
+      .from("charges")
+      .select("customer_id, freight_period, freight_amount, status, expires_at")
+      .in("customer_id", customerChunk)
+      .in("freight_period", allPeriods)
+      .gt("freight_amount", 0);
+    if (chargeError) throw new Error(`Falha ao conferir pagamento de frete: ${chargeError.message}`);
+    for (const charge of charges ?? []) {
+      if (!charge.freight_period) continue;
+      const key = `${charge.customer_id}:${charge.freight_period}`;
+      const current = chargeMap.get(key) ?? { paid: false, active: false };
+      current.paid ||= charge.status === "approved";
+      current.active ||= isChargeActive(charge as never);
+      chargeMap.set(key, current);
+    }
+  }
 
   // 2) Só os envios ligados A ESTES lotes. Começar pelos vínculos e depois
   //    buscar os envios envolvidos evita varrer todos os envios ativos do
@@ -358,6 +409,7 @@ export async function listShipmentQueue(params: {
       arremate_value: Number(row.arremate_value),
       status: row.status,
       shipping_date: row.shipping_date,
+      auction_date: row.auction_date,
     });
 
     const shipment = lotToShipment.get(row.id);
@@ -373,11 +425,7 @@ export async function listShipmentQueue(params: {
         .filter((lot) => lot.status !== "pending_payment")
         .reduce((sum, lot) => sum + lot.arremate_value, 0),
     );
-    const unpaidTotal = round2(
-      entry.lots
-        .filter((lot) => lot.status === "pending_payment")
-        .reduce((sum, lot) => sum + lot.arremate_value, 0),
-    );
+    const unpaidTotal = unpaidByCustomer.get(customerId) ?? 0;
 
     queue.push({
       customerId,
@@ -389,6 +437,15 @@ export async function listShipmentQueue(params: {
       shippingDate:
         entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? null,
       pendingShipment: entry.pendingShipment,
+      freightStatus: (() => {
+        const periods = customerPeriods.get(customerId);
+        if (!periods?.size) return "none" as const;
+        const states = [...periods].map((period) => chargeMap.get(`${customerId}:${period}`));
+        if (states.every((state) => state?.paid)) return "paid" as const;
+        if (states.some((state) => !state?.paid && !state?.active)) return "due" as const;
+        return "awaiting" as const;
+      })(),
+      hasActiveCharge: customersWithOpenCharges.has(customerId),
     });
   }
 
@@ -764,6 +821,41 @@ export async function emitShipment(input: {
     throw new Error(
       "Nenhum dos lotes selecionados está pago e disponível para envio.",
     );
+  }
+
+  if (new Set(input.lotIds).size !== input.lotIds.length || picked.length !== input.lotIds.length) {
+    throw new Error("Revise os lotes selecionados; há itens inválidos ou indisponíveis.");
+  }
+  const { data: unpaidLots, error: unpaidError } = await admin
+    .from("lots")
+    .select("id")
+    .eq("customer_id", input.customerId)
+    .eq("status", "pending_payment")
+    .limit(1);
+  if (unpaidError) throw new Error(`Falha ao conferir pendências: ${unpaidError.message}`);
+  if (unpaidLots?.length) throw new Error("Não é possível emitir: o cliente tem lote(s) pendente(s) de pagamento.");
+  const { data: activeCharges, error: activeChargeError } = await admin
+    .from("charges").select("status, expires_at").eq("customer_id", input.customerId)
+    .in("status", ["pending", "in_process"]);
+  if (activeChargeError) throw new Error(`Falha ao conferir cobranças em aberto: ${activeChargeError.message}`);
+  if ((activeCharges ?? []).some((charge) => isChargeActive(charge as never))) {
+    throw new Error("Não é possível emitir: o cliente tem uma cobrança pendente.");
+  }
+
+  const { data: allCustomerLots, error: allLotsError } = await admin.from("lots")
+    .select("auction_date").eq("customer_id", input.customerId).in("status", ["paid", "pending_payment"]);
+  if (allLotsError) throw new Error(`Falha ao conferir períodos de frete: ${allLotsError.message}`);
+  const requiredPeriods = [...new Set((allCustomerLots ?? []).map((lot) => freightPeriodForDate(lot.auction_date)))];
+  const { data: freightCharges, error: freightError } = await admin
+    .from("charges")
+    .select("freight_period, freight_amount, status")
+    .eq("customer_id", input.customerId)
+    .in("freight_period", requiredPeriods)
+    .gt("freight_amount", 0);
+  if (freightError) throw new Error(`Falha ao conferir fretes: ${freightError.message}`);
+  const paidPeriods = new Set((freightCharges ?? []).filter((charge) => charge.status === "approved").map((charge) => charge.freight_period));
+  if (requiredPeriods.some((period) => !paidPeriods.has(period))) {
+    throw new Error("Não é possível emitir: há frete semanal pendente de pagamento.");
   }
 
   const lotSubtotal = round2(

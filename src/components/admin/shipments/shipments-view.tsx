@@ -226,10 +226,10 @@ export function ShipmentsView({
 
   /** Status do frete de uma linha da fila. */
   const freightLabel = (row: ShipmentQueueRow) => {
-    if (row.pendingShipment) {
-      return SHIPMENT_STATUS_LABELS[row.pendingShipment.status];
-    }
-    return row.paidTotal > 0 ? "A pagar" : "—";
+    const label = row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
+    return row.pendingShipment
+      ? `${SHIPMENT_STATUS_LABELS[row.pendingShipment.status]} · ${label}`
+      : label;
   };
 
   const notify = (shipment: Shipment) => {
@@ -558,16 +558,22 @@ export function ShipmentsView({
                       ) : (
                         <Button
                           size="sm"
-                          disabled={!canCreate}
+                          disabled={!canCreate || row.unpaidTotal > 0 || row.hasActiveCharge || row.freightStatus !== "paid"}
                           onClick={() => setEmitTarget(row)}
                           title={
-                            canCreate
-                              ? undefined
-                              : !migrationReady
-                                ? "Aplique a migração 0006_shipments.sql."
-                                : !originReady
-                                  ? "Preencha o endereço de origem em Configuração."
-                                  : "Configure SUPERFRETE_TOKEN no .env."
+                            row.unpaidTotal > 0
+                              ? "Há lotes pendentes de pagamento para este cliente."
+                              : row.hasActiveCharge
+                                ? "O cliente tem uma cobrança aguardando pagamento."
+                              : row.freightStatus !== "paid"
+                                ? "O frete de todos os períodos dos lotes precisa estar pago."
+                                : canCreate
+                                  ? undefined
+                                  : !migrationReady
+                                    ? "Aplique a migração 0006_shipments.sql."
+                                    : !originReady
+                                      ? "Preencha o endereço de origem em Configuração."
+                                      : "Configure SUPERFRETE_TOKEN no .env."
                           }
                         >
                           Emitir envio

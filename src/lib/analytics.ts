@@ -67,6 +67,23 @@ type ChargeRow = {
   created_at: string;
 };
 
+const LOTS_PAGE_SIZE = 500;
+
+async function fetchAllLots(supabase: ReturnType<typeof createAdminClient>) {
+  const rows: LotRow[] = [];
+  for (let from = 0; ; from += LOTS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("lots")
+      .select(LOT_SELECT)
+      .order("id", { ascending: true })
+      .range(from, from + LOTS_PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    const page = (data ?? []) as unknown as LotRow[];
+    rows.push(...page);
+    if (page.length < LOTS_PAGE_SIZE) return { data: rows, error: null };
+  }
+}
+
 export type DashboardStats = {
   ready: {
     lots: boolean;
@@ -148,7 +165,7 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     staffTotalRes,
     staffPaidOnRes,
   ] = await Promise.all([
-    supabase.from("lots").select(LOT_SELECT),
+    fetchAllLots(supabase),
     // Abertas (qualquer data) + criadas na janela de 30 dias até o dia-alvo.
     supabase
       .from("charges")

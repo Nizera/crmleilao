@@ -183,7 +183,7 @@ export function ClientShipmentsCard({
 
             <Stepper status={shipment.status} />
 
-            {(shipment.tracking_url || shipment.tracking_code) && (
+            {(
               <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3">
                 <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                   Referência OCDL <span className="font-mono font-semibold">{shipment.code}</span>
@@ -194,9 +194,9 @@ export function ClientShipmentsCard({
                     <Copy className="size-3.5" /> {copied === shipment.tracking_code ? "Copiado" : "Copiar código"}
                   </button>
                 )}
-                {shipment.tracking_url && (
+                {(shipment.tracking_url || shipment.tracking_code) && (
                   <a
-                    href={shipment.tracking_url}
+                    href={shipment.tracking_url || `https://rastreamento.superfrete.com/#${encodeURIComponent(shipment.tracking_code!)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`Rastrear o envio ${shipment.code}`}
@@ -206,10 +206,10 @@ export function ClientShipmentsCard({
                     <ExternalLink className="size-3.5" />
                   </a>
                 )}
-                {shipment.tracking_code && (
-                  <a href={`https://rastreamento.superfrete.com/#${encodeURIComponent(shipment.tracking_code)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground">
-                    Rastreio completo <ExternalLink className="size-3.5" />
-                  </a>
+                {!shipment.tracking_url && !shipment.tracking_code && (
+                  <button type="button" disabled className="cursor-not-allowed text-[11px] text-muted-foreground" title="O código de rastreio ainda não está disponível.">
+                    Rastrear · indisponível
+                  </button>
                 )}
                 </div>
               </div>

@@ -54,7 +54,12 @@ function isoToUtcDate(iso: string): Date {
 
 /** Início do período do frete: a terça mais recente (hoje, se hoje for terça). */
 export function freightPeriodStart(now: Date = new Date()): string {
-  const date = isoToUtcDate(spIsoDate(now));
+  return freightPeriodForDate(spIsoDate(now));
+}
+
+/** Início (terça-feira) do ciclo de frete que contém uma data civil ISO. */
+export function freightPeriodForDate(iso: string): string {
+  const date = isoToUtcDate(iso);
   const backToTuesday = (date.getUTCDay() - 2 + 7) % 7;
   return new Date(date.getTime() - backToTuesday * 86_400_000)
     .toISOString()

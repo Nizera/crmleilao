@@ -62,17 +62,25 @@ As migrações criam as tabelas, o RLS e os gatilhos:
   para `internal_notes` (colunas `notes` removidas)
 - `0013_hardening.sql` — `app_secrets` sem SELECT para anon/authenticated e RPC
   `hardening_status()` de diagnóstico (confirma o revog e o índice de convites)
+- `0014_customers_update_columns.sql` — colunas de perfil/endereço que o cliente pode atualizar
+- `0015_freight.sql` — ciclos e cobranças de frete semanal
+- `0016_staff_payments.sql` — pagamentos e fechamento da equipe
+- `0017_customer_notifications.sql` — notificações no painel do cliente
+- `0018_balance_transactions.sql` — histórico financeiro legado
+- `0019_loyalty_store.sql` — regras, pontos, recompensas e resgates
+- `0020_loyalty_reward_images.sql` — imagens do catálogo da loja de pontos
+- `0021_lot_movement_workflow.sql` — movimentação física do lote e baixa de estoque no ato
 
 ```bash
 npx supabase link --project-ref <seu-project-ref>
 npx supabase db push
 ```
 
-Sem CLI logado? Cole o conteúdo da migração no **Supabase → SQL Editor → New
-query → Run**, na ordem (`0001` … `0013`). Depois confira tudo com:
+Sem CLI logado? Cole o conteúdo das migrações no **Supabase → SQL Editor → New
+query → Run**, na ordem (`0001` … `0021`). Depois confira os controles disponíveis com:
 
 ```bash
-node scripts/verify-migrations.mjs   # espera 15/15 ok
+node scripts/verify-migrations.mjs   # checks de segurança e coluna da migration 0021
 ```
 
 Depois, libere o primeiro administrador (RLS impede que qualquer usuário se torne admin):
@@ -111,8 +119,9 @@ convite por 15 min e um teto global de 30 por IP no mesmo intervalo.
 
 - **Catálogo fixo**: `0003_stock.sql` semeia 20 jogadores × 4 cores = **80 SKUs**.
   Não existe parser de foto — o admin escolhe jogador/cor/qtd no formulário do lote.
-- **Baixa automática ao salvar o lote** (RPC `reconcile_lot_items`, diff atômico):
-  editar o lote recalcula, **cancelar devolve**, **reabrir baixa de novo**.
+- **Baixa de estoque ao movimentar o lote para a caixa do cliente** (RPC
+  `move_lots_to_customer_boxes`, transação atômica); cadastrar ou editar lote
+  não baixa estoque. Lotes já existentes preservam os movimentos anteriores.
 - **Saldo negativo é liberado** (aviso âmbar no formulário); corrija pela tela de
   Estoque → clique na célula → ajuste com delta (`+10`, `-3`) e nota.
 - **Ajustes manuais entram no ledger** (`stock_movements`) com motivo e autor.

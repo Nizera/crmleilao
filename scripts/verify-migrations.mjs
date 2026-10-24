@@ -140,6 +140,13 @@ async function rpc(key, fn, args = {}) {
     log("0013 índice customer_invites_pending_idx", flag("customer_invites_pending_idx"), detail);
   }
 
+  // 10. 0021: movimentação física do lote tem a coluna necessária para
+  // rastrear o momento em que saiu da fila de separação.
+  {
+    const r = await q(secret, "lots?select=id,moved_at&limit=0");
+    log("0021 lots.moved_at existe", r.status === 200, `HTTP ${r.status} ${r.body.slice(0, 140)}`);
+  }
+
   let fail = 0;
   for (const r of results) {
     if (!r.ok) fail++;

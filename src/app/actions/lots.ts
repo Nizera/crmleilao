@@ -132,7 +132,7 @@ export async function saveLot(
     const previous = values.id
       ? await supabase
           .from("lots")
-          .select("id, images")
+          .select("id, images, moved_at")
           .eq("id", values.id)
           .maybeSingle()
       : null;
@@ -140,6 +140,13 @@ export async function saveLot(
     if (values.id && !previous?.data) return failure("Lote não encontrado.");
 
     const previousImages: string[] = previous?.data?.images ?? [];
+    let wasMoved = false;
+    if (values.id) {
+      const { data: priorItems, error: priorItemsError } = await supabase
+        .from("lot_items").select("applied").eq("lot_id", values.id);
+      if (priorItemsError) return failure(`Falha ao conferir estoque do lote: ${priorItemsError.message}`);
+      wasMoved = Boolean(previous?.data?.moved_at) || (priorItems ?? []).some((item) => item.applied);
+    }
 
     const keep = (() => {
       const raw = formData.get("keep_images");
@@ -198,11 +205,17 @@ export async function saveLot(
     const { error: stockError } = await supabase.rpc("reconcile_lot_items", {
       p_lot_id: lotId,
       p_items: items,
-      p_apply: values.status !== "cancelled",
+      p_apply: wasMoved && ["paid", "shipped", "delivered"].includes(values.status),
     });
 
     if (stockError) {
       return failure(`Falha no estoque: ${stockError.message}`);
+    }
+    const remainsMoved = wasMoved && ["paid", "shipped", "delivered"].includes(values.status);
+    if (!remainsMoved) {
+      const { error: movementError } = await supabase.from("lots")
+        .update({ moved_at: null }).eq("id", lotId);
+      if (movementError) return failure(`Falha ao atualizar movimentação do lote: ${movementError.message}`);
     }
 
     // Observações internas: fora da tabela do lote, que o cliente lê na
@@ -322,7 +335,7 @@ export async function setLotStatus(
     // Estoque primeiro: se falhar, o status não muda e o admin pode repetir.
     const { data: itemRows, error: itemsError } = await supabase
       .from("lot_items")
-      .select("stock_item_id, qty")
+      .select("stock_item_id, qty, applied")
       .eq("lot_id", id);
 
     if (itemsError) {
@@ -338,7 +351,7 @@ export async function setLotStatus(
       const { error: stockError } = await supabase.rpc("reconcile_lot_items", {
         p_lot_id: id,
         p_items: items,
-        p_apply: status !== "cancelled",
+        p_apply: itemRows?.some((item) => item.applied) === true && ["paid", "shipped", "delivered"].includes(status),
       });
       if (stockError) return failure(`Falha no estoque: ${stockError.message}`);
     }
@@ -354,6 +367,9 @@ export async function setLotStatus(
     if (status === "cancelled") {
       patch.paid_at = null;
       patch.shipped_at = null;
+    }
+    if (["pending_payment", "cancelled"].includes(status)) {
+      patch.moved_at = null;
     }
 
     const { error } = await supabase.from("lots").update(patch).eq("id", id);
