@@ -17,6 +17,7 @@ export type LoyaltyReward = {
   internal_cost: number | null;
   stock: number | null;
   active: boolean;
+  image_path: string | null;
 };
 
 const DEFAULT_SETTINGS: LoyaltySettings = {
@@ -28,7 +29,7 @@ export async function getCustomerLoyaltyData(customerId: string) {
   const [{ data: settings }, { data: ledger }, { data: rewards }, { data: redemptions }, { data: customer }, { data: balanceData }] = await Promise.all([
     supabase.from("loyalty_settings").select("active, points_per_real, points_expire_days, ranking_enabled").eq("id", true).maybeSingle(),
     supabase.from("loyalty_ledger").select("id, points, kind, note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(30),
-    supabase.from("loyalty_rewards").select("id, name, description, points_cost, internal_cost, stock, active").eq("active", true).order("created_at", { ascending: false }),
+    supabase.from("loyalty_rewards").select("*").eq("active", true).order("created_at", { ascending: false }),
     supabase.from("loyalty_redemptions").select("id, reward_name, points_cost, status, admin_note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(20),
     supabase.from("customers").select("loyalty_rank_visible").eq("id", customerId).single(),
     supabase.rpc("get_customer_loyalty_balance", { p_customer_id: customerId }),
