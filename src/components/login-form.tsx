@@ -31,8 +31,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
           <form action={action} className="grid gap-6">
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                  <LogoMark className="size-5" />
+                <span className="flex size-14 items-center justify-center">
+                  <LogoMark className="size-full" />
                 </span>
                 <h1 className="text-2xl font-bold">Painel interno</h1>
                 <p className="text-balance text-muted-foreground">

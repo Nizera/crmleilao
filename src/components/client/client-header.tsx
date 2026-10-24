@@ -105,16 +105,17 @@ export function ClientHeader({
 
   return (
     <header className="sticky top-0 z-40 bg-background/85 pt-[env(safe-area-inset-top,0px)] backdrop-blur-xl after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-linear-to-r after:from-transparent after:via-ouro after:to-transparent after:content-['']">
-      <div className="mx-auto flex h-16 w-full max-w-2xl items-center gap-3 px-4">
-        <Link href="/painel" className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amarelo text-[#0a0a0a]">
-            <LogoMark className="size-5" />
+      <div className="mx-auto flex h-16 w-full max-w-2xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
+        <Link href="/painel" aria-label="Os Caras das Legends — Painel do cliente" className="flex min-w-0 items-center gap-2">
+          <span className="flex size-10 shrink-0 items-center justify-center">
+            <LogoMark className="size-full" />
           </span>
           <span className="flex min-w-0 flex-col leading-none">
-            <span className="truncate text-[15px] font-semibold uppercase tracking-widest">
-              OCDL
+            <span className="text-[11px] font-extrabold uppercase leading-tight tracking-wide sm:text-sm">
+              <span className="block whitespace-nowrap">Os Caras</span>
+              <span className="block whitespace-nowrap">das Legends</span>
             </span>
-            <span className="truncate text-[10px] font-medium uppercase tracking-[0.2em] text-ouro-ink">
+            <span className="mt-0.5 whitespace-nowrap text-[8px] font-medium uppercase tracking-wider text-ouro-ink sm:text-[9px]">
               Painel do Cliente
             </span>
           </span>
@@ -126,7 +127,7 @@ export function ClientHeader({
               <button
                 type="button"
                 title="Total pago em lotes"
-                className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1"
+                className="flex items-center gap-1 rounded-full bg-muted px-2 py-1 sm:px-3"
               >
                 <span className="text-xs font-bold text-muted-foreground">R$</span>
                 <span className="text-sm font-bold tracking-tight text-ouro-ink">

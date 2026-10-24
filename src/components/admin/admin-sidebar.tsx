@@ -68,12 +68,13 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/admin/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <LogoMark className="size-4" />
+                <div className="flex aspect-square size-8 shrink-0 items-center justify-center">
+                  <LogoMark className="size-full" />
                 </div>
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate font-semibold">
-                    Os Caras das Legends
+                  <span className="text-xs font-extrabold uppercase tracking-wide">
+                    <span className="block">Os Caras</span>
+                    <span className="block">das Legends</span>
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
                     Painel ADM

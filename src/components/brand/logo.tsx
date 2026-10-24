@@ -1,24 +1,17 @@
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 
-/**
- * Mark da marca "Figurinha-Legend": figurinha (retângulo arredondado com o
- * canto superior direito cortado a 45°) com estrela de 5 pontas vazada
- * (fill-rule evenodd — o miolo mostra a cor do fundo do tile).
- * Grid 24×24, mesma gramática dos ícones Lucide.
- */
-export function LogoMark({ className }: React.ComponentProps<"svg">) {
+/** Escudo original da marca: colecionáveis, futebol e conquista. */
+export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
+    <Image
+      src="/brand/app-emblem.webp"
+      alt=""
       aria-hidden="true"
-      className={cn("size-4", className)}
-    >
-      <path
-        fillRule="evenodd"
-        d="M6 3H16.5L21 7.5V18A3 3 0 0 1 18 21H6A3 3 0 0 1 3 18V6A3 3 0 0 1 6 3ZM12 7.4L13.23 10.7L16.76 10.85L14 13.05L14.94 16.45L12 14.5L9.06 16.45L10 13.05L7.24 10.85L10.77 10.7Z"
-      />
-    </svg>
+      width={384}
+      height={384}
+      className={cn("size-4 object-contain", className)}
+    />
   );
 }
 
@@ -36,12 +29,12 @@ type LogoProps = {
 };
 
 /**
- * Lockup da marca: tile `bg-primary` (mesmo slot que a UI já usa) + nome em
- * texto vivo. O tile inverte sozinho no dark mode via --primary.
+ * Lockup da marca: escudo em tile + nome em texto vivo para manter boa leitura
+ * em tamanhos pequenos e permitir que o nome seja localizado/acessível.
  */
 export function Logo({
   className,
-  name = "Os Caras das Legends",
+  name = <><span className="block">Os Caras</span><span className="block">das Legends</span></>,
   nameClassName,
   tileClassName,
   markClassName,
@@ -51,14 +44,15 @@ export function Logo({
     <span className={cn("flex items-center gap-2 font-semibold", className)}>
       <span
         className={cn(
-          "flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground",
+          "flex size-10 shrink-0 items-center justify-center",
           tileClassName,
         )}
       >
-        <LogoMark className={cn("size-4", markClassName)} />
+        <LogoMark className={cn("size-full", markClassName)} />
       </span>
       <span
         className={cn(
+          "text-xs font-extrabold uppercase leading-tight tracking-wide",
           hideNameOnMobile && "hidden sm:inline",
           nameClassName,
         )}

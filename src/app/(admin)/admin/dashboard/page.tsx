@@ -171,11 +171,11 @@ export default async function DashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Image
-            src="/brand/mark.png"
+            src="/brand/app-emblem.webp"
             alt=""
-            width={37}
-            height={40}
-            className="size-10 shrink-0 object-contain dark:invert"
+            width={384}
+            height={384}
+            className="size-10 shrink-0 object-contain"
           />
           <div>
             <h2 className="text-xl font-semibold tracking-tight">

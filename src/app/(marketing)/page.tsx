@@ -128,9 +128,9 @@ export default function LandingPage() {
               <Link href="/painel/login">Área do cliente</Link>
             </Button>
             <Button size="sm" asChild>
-              <a href={GROUP_URL} target="_blank" rel="noopener noreferrer">
+              <a href={GROUP_URL} target="_blank" rel="noopener noreferrer" aria-label="Entrar no grupo do leilão">
                 <MessageCircleIcon />
-                Entrar no grupo
+                <span className="hidden sm:inline">Entrar no grupo</span>
               </a>
             </Button>
           </div>
@@ -140,13 +140,19 @@ export default function LandingPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 md:px-6">
         {/* Hero */}
         <section className="flex flex-col items-center gap-6 py-16 text-center md:py-24">
-          <Image
-            src="/brand/hero-variation.png"
-            alt=""
-            width={526}
-            height={708}
-            className="h-40 w-auto dark:invert dark:hue-rotate-180"
-          />
+          <div className="flex flex-col items-center gap-2">
+            <Image
+              src="/brand/app-emblem.webp"
+              alt="Escudo preto e dourado de Os Caras das Legends"
+              width={384}
+              height={384}
+              className="h-40 w-40 object-contain"
+            />
+            <p className="text-center text-2xl font-black uppercase leading-tight tracking-wide sm:text-3xl">
+              <span className="block text-ouro-ink">Os Caras</span>
+              <span className="block">das Legends</span>
+            </p>
+          </div>
           <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground">
             Leilão diário · Legends da Copa 2026
           </span>
