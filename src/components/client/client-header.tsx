@@ -14,6 +14,7 @@ import {
   Moon,
   Palette,
   Sun,
+  Trophy,
   UserRound,
 } from "lucide-react";
 
@@ -258,6 +259,12 @@ export function ClientHeader({
                 <Link href="/painel/loja">
                   <Gift />
                   Loja de pontos
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/painel/ranking">
+                  <Trophy />
+                  Meu ranking
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

@@ -32,22 +32,38 @@ const DEFAULT_SETTINGS: LoyaltySettings = {
 
 export async function getCustomerLoyaltyData(customerId: string) {
   const supabase = await createClient();
-  const [{ data: settings }, { data: ledger }, { data: rewards }, { data: redemptions }, { data: customer }, { data: balanceData }] = await Promise.all([
+  const [{ data: settings }, { data: ledger }, { data: rewards }, { data: redemptions }, { data: balanceData }] = await Promise.all([
     supabase.from("loyalty_settings").select("active, points_per_real, points_expire_days, ranking_enabled").eq("id", true).maybeSingle(),
     supabase.from("loyalty_ledger").select("id, points, kind, note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(30),
     supabase.from("loyalty_rewards").select("*").eq("active", true).order("created_at", { ascending: false }),
     supabase.from("loyalty_redemptions").select("id, reward_name, points_cost, status, admin_note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(20),
-    supabase.from("customers").select("loyalty_rank_visible").eq("id", customerId).single(),
     supabase.rpc("get_customer_loyalty_balance", { p_customer_id: customerId }),
   ]);
   const entries = ledger ?? [];
   const balance = Number(balanceData ?? 0);
+  return {
+    settings: (settings as LoyaltySettings | null) ?? DEFAULT_SETTINGS,
+    ledger: entries,
+    balance,
+    rewards: (rewards ?? []) as LoyaltyReward[],
+    redemptions: redemptions ?? [],
+  };
+}
+
+export async function getCustomerLoyaltyRankingData(customerId: string) {
+  const supabase = await createClient();
+  const [{ data: settings }, { data: customer }] = await Promise.all([
+    supabase.from("loyalty_settings").select("active, points_per_real, points_expire_days, ranking_enabled").eq("id", true).maybeSingle(),
+    supabase.from("customers").select("loyalty_rank_visible").eq("id", customerId).single(),
+  ]);
+  const resolvedSettings = (settings as LoyaltySettings | null) ?? DEFAULT_SETTINGS;
   let tierLeaders: LoyaltyTierLeader[] = [];
-  let totalSpent = 0;
-  if (settings?.active && settings.ranking_enabled) {
-    const { data } = await supabase.rpc("get_loyalty_tier_leaders");
+  if (resolvedSettings.active && resolvedSettings.ranking_enabled) {
+    const { data, error } = await supabase.rpc("get_loyalty_tier_leaders");
+    if (error) throw error;
     tierLeaders = (data ?? []) as LoyaltyTierLeader[];
   }
+  let totalSpent = 0;
   for (let from = 0; ; from += 1000) {
     const { data: paidLots, error } = await supabase
       .from("lots")
@@ -64,11 +80,7 @@ export async function getCustomerLoyaltyData(customerId: string) {
     if (!paidLots || paidLots.length < 1000) break;
   }
   return {
-    settings: (settings as LoyaltySettings | null) ?? DEFAULT_SETTINGS,
-    ledger: entries,
-    balance,
-    rewards: (rewards ?? []) as LoyaltyReward[],
-    redemptions: redemptions ?? [],
+    settings: resolvedSettings,
     rankVisible: customer?.loyalty_rank_visible ?? false,
     tierLeaders,
     totalSpent,

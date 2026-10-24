@@ -22,7 +22,7 @@ export async function saveLoyaltySettings(form: FormData) {
     p_note: text(form, "note") || null,
   });
   if (error) fail(`Falha ao salvar as regras: ${error.message}`, "/configuracao");
-  revalidatePath("/admin/fidelidade"); revalidatePath("/painel/loja"); revalidatePath("/painel");
+  revalidatePath("/admin/fidelidade"); revalidatePath("/painel/loja"); revalidatePath("/painel/ranking"); revalidatePath("/painel");
   redirect("/admin/fidelidade/configuracao?salvo=1");
 }
 
@@ -119,7 +119,7 @@ export async function updateLoyaltyRankingVisibility(form: FormData) {
   const { customer } = await requireCustomer();
   const supabase = await createClient();
   const { error } = await supabase.from("customers").update({ loyalty_rank_visible: form.get("visible") === "on" }).eq("id", customer.id);
-  if (error) redirect(`/painel/loja?erro=${encodeURIComponent("Não foi possível atualizar a preferência de ranking.")}`);
-  revalidatePath("/painel/loja");
-  redirect("/painel/loja?salvo=1");
+  if (error) redirect(`/painel/ranking?erro=${encodeURIComponent("Não foi possível atualizar a preferência de ranking.")}`);
+  revalidatePath("/painel/ranking");
+  redirect("/painel/ranking?salvo=1");
 }
