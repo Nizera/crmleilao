@@ -144,8 +144,19 @@ function ClosingPanel({ initialDate }: { initialDate?: string }) {
       `Fechamento ${formatDateBR(data.date)}`,
       `Recebido: ${formatBRL(data.receivedOn)} (${data.entries.length} lote(s))`,
       data.pendingCharges.length > 0
-        ? `A receber: ${data.pendingCharges.length} cliente(s) — ${formatBRL(data.pendingTotal)}`
-        : "A receber: nada em aberto",
+        ? `Cobranças em aberto: ${data.pendingCharges.length} — ${formatBRL(data.pendingTotal)} (inclui frete, quando houver)`
+        : "Cobranças em aberto: nenhuma",
+      data.pendingLots.length > 0
+        ? [
+            `Lotes pendentes de pagamento: ${data.pendingLots.length} — ${formatBRL(
+              data.pendingLots.reduce((sum, lot) => sum + lot.amount, 0),
+            )}`,
+            ...data.pendingLots.map(
+              (lot) =>
+                `• ${lot.code} — ${lot.title} (${lot.customerName}) — ${formatBRL(lot.amount)}`,
+            ),
+          ].join("\n")
+        : "Lotes pendentes de pagamento: nenhum",
       `Pagamentos: ${paid} de ${data.staff.length}${
         missing.length > 0
           ? ` (falta: ${missing.join(", ")})`

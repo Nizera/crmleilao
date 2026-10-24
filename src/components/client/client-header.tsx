@@ -121,7 +121,7 @@ export function ClientHeader({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                title="Total pago"
+                title="Total pago em lotes"
                 className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1"
               >
                 <span className="text-xs font-bold text-muted-foreground">R$</span>
@@ -131,12 +131,12 @@ export function ClientHeader({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Total pago</DropdownMenuLabel>
+              <DropdownMenuLabel>Total pago em lotes</DropdownMenuLabel>
               <p className="px-3 pb-2 text-2xl font-bold text-ouro-ink">
                 {formatBRL(paidTotal)}
               </p>
               <p className="px-3 pb-2 text-xs text-muted-foreground">
-                Soma dos pagamentos confirmados, incluindo frete.
+                Soma dos lotes com pagamento confirmado. Fretes ficam fora deste total.
               </p>
               <DropdownMenuSeparator />
               <div className="flex items-center justify-between px-3 py-2 text-sm">

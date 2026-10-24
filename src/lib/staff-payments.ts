@@ -59,6 +59,13 @@ export type ClosingPendingCharge = {
   expiresAt: string | null;
 };
 
+export type ClosingPendingLot = {
+  code: string;
+  title: string;
+  customerName: string;
+  amount: number;
+};
+
 export type ClosingStaffMember = {
   id: string;
   name: string | null;
@@ -79,6 +86,7 @@ export type ClosingData = {
   entries: ClosingEntry[];
   pendingCharges: ClosingPendingCharge[];
   pendingTotal: number;
+  pendingLots: ClosingPendingLot[];
   staff: ClosingStaffMember[];
   history: ClosingHistoryDay[];
 };

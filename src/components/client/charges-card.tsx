@@ -196,18 +196,18 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
 
   return (
     <section className="rounded-xl bg-card p-4 shadow-md ring-1 ring-foreground/10">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:flex-1">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amarelo/15 text-ouro-ink">
             <QrCode className="size-[18px]" />
           </span>
           <div className="min-w-0">
             <h2 className="text-sm font-bold leading-tight">Pagamentos</h2>
-            <p className="truncate text-xs text-muted-foreground">{description}</p>
+            <p className="whitespace-normal text-xs leading-snug text-muted-foreground">{description}</p>
           </div>
         </div>
         {pendingCount > 0 && (
-          <span className="shrink-0 rounded-full bg-amarelo/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ouro-ink">
+          <span className="shrink-0 self-start rounded-full bg-amarelo/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ouro-ink sm:self-auto">
             {pendingCount} {pendingCount === 1 ? "Pendente" : "Pendentes"}
           </span>
         )}
@@ -257,32 +257,32 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
               key={charge.id}
               className={`flex flex-col gap-3 rounded-lg border p-3${isActive ? " border-ouro/40" : ""}`}
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">
+                  <span className="break-words font-medium">
                     {charge.lots && charge.lots.length > 0
                       ? `${charge.lots.length} ${charge.lots.length === 1 ? "lote" : "lotes"} · ${charge.code}`
                       : charge.code}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatBRL(charge.amount)}
+                  <span className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+                    <span className="whitespace-nowrap">{formatBRL(charge.amount)}</span>
                     {Number(charge.freight_amount) > 0 ? (
-                      <>
-                        {" · frete "}
+                      <span className="whitespace-nowrap">
+                        · frete{" "}
                         {formatBRL(Number(charge.freight_amount))}
-                      </>
+                      </span>
                     ) : null}
                     {charge.paid_at ? (
-                      <>
-                        {" · pago em "}
+                      <span className="whitespace-nowrap">
+                        · pago em{" "}
                         <DateBR value={charge.paid_at} />
-                      </>
+                      </span>
                     ) : expiry ? (
-                      <>{" · "}{expiry}</>
+                      <span className="whitespace-nowrap">· {expiry}</span>
                     ) : null}
                   </span>
                 </span>
-                <span className="flex shrink-0 items-center gap-2">
+                <span className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
                   <ChargeStatusBadge status={shownStatus} />
                   {isActive && (
                     <Button size="sm" onClick={() => qr.open(charge.id)} disabled={pending}>

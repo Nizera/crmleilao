@@ -20,6 +20,7 @@ import {
   type ClosingEntry,
   type ClosingHistoryDay,
   type ClosingPendingCharge,
+  type ClosingPendingLot,
   type ClosingStaffMember,
 } from "@/lib/staff-payments";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -30,6 +31,7 @@ const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 const REVENUE_CHARGE_LOTS = ["paid", "shipped", "delivered"] as const;
 
 const HISTORY_DAYS = 7;
+const PENDING_LOTS_PAGE_SIZE = 1000;
 
 function revalidateClosing() {
   updateTag("dashboard");
@@ -93,6 +95,36 @@ export async function getClosingDataAction(
           .limit(200),
         listTeam().catch(() => null),
       ]);
+
+    const pendingLots: ClosingPendingLot[] = [];
+    for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("lots")
+        .select("code, title, arremate_value, customer:customers(name)")
+        .eq("status", "pending_payment")
+        .order("auction_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
+
+      if (error) throw new Error(error.message);
+
+      type PendingLotRow = {
+        code: string;
+        title: string;
+        arremate_value: number | string;
+        customer: { name: string | null } | null;
+      };
+      const page = (data ?? []) as unknown as PendingLotRow[];
+      pendingLots.push(
+        ...page.map((lot) => ({
+          code: lot.code,
+          title: lot.title,
+          customerName: lot.customer?.name?.trim() || "Sem nome",
+          amount: Number(lot.arremate_value),
+        })),
+      );
+      if (page.length < PENDING_LOTS_PAGE_SIZE) break;
+    }
 
     if (lotsRes.error) throw new Error(lotsRes.error.message);
     if (chargesRes.error) throw new Error(chargesRes.error.message);
@@ -194,6 +226,7 @@ export async function getClosingDataAction(
           (sum, charge) => sum + charge.amount,
           0,
         ),
+        pendingLots,
         staff,
         history,
       },

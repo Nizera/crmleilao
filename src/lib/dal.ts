@@ -988,7 +988,7 @@ export const listCustomerCharges = cache(
 );
 
 export type CustomerSpendingSummary = {
-  /** Soma das cobranças confirmadas, incluindo o frete cobrado nelas. */
+  /** Soma dos valores dos lotes pagos; o frete fica fora. */
   paidTotal: number;
   /** Cobranças pending/in_process ainda dentro do prazo. */
   openAmount: number;
@@ -1008,7 +1008,7 @@ export const getCustomerSpendingSummary = cache(
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await supabase
         .from("charges")
-        .select("amount, status, expires_at")
+        .select("amount, freight_amount, status, expires_at")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
@@ -1024,14 +1024,19 @@ export const getCustomerSpendingSummary = cache(
 
       const rows = (data ?? []) as {
         amount: number | string;
+        freight_amount: number | string | null;
         status: ChargeStatus;
         expires_at: string | null;
       }[];
 
       for (const row of rows) {
-        const cents = Math.round(Number(row.amount) * 100);
-        if (row.status === "approved") paidCents += cents;
-        else if (isChargeActive(row)) openCents += cents;
+        const amountCents = Math.round(Number(row.amount) * 100);
+        const freightCents = Math.round(Number(row.freight_amount ?? 0) * 100);
+        if (row.status === "approved") {
+          paidCents += Math.max(0, amountCents - freightCents);
+        } else if (isChargeActive(row)) {
+          openCents += amountCents;
+        }
       }
 
       if (rows.length < pageSize) break;

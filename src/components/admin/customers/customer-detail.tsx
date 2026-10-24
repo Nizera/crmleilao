@@ -204,9 +204,9 @@ export function CustomerDetailView({
         <StatCard label="Pagos" value={String(stats.paid)} />
         <StatCard label="Enviados" value={String(stats.shipped)} />
         <StatCard
-          label="Total pago"
+          label="Total pago em lotes"
           value={formatBRL(spending.paidTotal)}
-          hint="Inclui os fretes cobrados"
+          hint="Fretes ficam fora"
         />
         <StatCard
           label="Pix em aberto"
