@@ -7,14 +7,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   Bell,
-  Gift,
   History,
   LogOut,
   Monitor,
   Moon,
   Palette,
   Sun,
-  Trophy,
   UserRound,
 } from "lucide-react";
 
@@ -255,18 +253,6 @@ export function ClientHeader({
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/painel/loja">
-                  <Gift />
-                  Loja de pontos
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/painel/ranking">
-                  <Trophy />
-                  Meu ranking
-                </Link>
-              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/painel/cadastro">
                   <UserRound />

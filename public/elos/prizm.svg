@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none">
+  <defs><linearGradient id="r" x1="80" y1="88" x2="80" y2="155" gradientUnits="userSpaceOnUse"><stop stop-color="#7AD7E8"/><stop offset=".52" stop-color="#9D73F3"/><stop offset="1" stop-color="#E284C1"/></linearGradient><linearGradient id="a" x1="43" y1="31" x2="117" y2="108" gradientUnits="userSpaceOnUse"><stop stop-color="#6EE7F2"/><stop offset=".35" stop-color="#B0F08C"/><stop offset=".68" stop-color="#FFD86E"/><stop offset="1" stop-color="#EF83C1"/></linearGradient></defs>
+  <path d="m49 105-13 43 35-13 9-24m31-6 13 43-35-13-9-24" fill="url(#r)" stroke="#F6EEFF" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="80" cy="69" r="53" fill="#17152F" stroke="#E4D5FF" stroke-width="5"/><circle cx="80" cy="69" r="44" fill="#25234A" stroke="#fff" stroke-opacity=".8" stroke-width="2"/>
+  <path d="m80 31 34 19v39l-34 19-34-19V50l34-19Z" fill="url(#a)" stroke="#F6F1FF" stroke-width="3" stroke-linejoin="round"/><path d="m80 31 5 39-39-20 34-19Zm34 19L85 70l29 19V50ZM80 108l5-38 29 19-34 19ZM46 89l39-19-5 38-34-19Z" fill="#fff" fill-opacity=".32" stroke="#fff" stroke-opacity=".65" stroke-width="1.5"/><path d="m80 31 5 39-5 38-5-38 5-39Z" fill="#fff" fill-opacity=".43"/>
+</svg>

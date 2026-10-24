@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Trophy } from "lucide-react";
 import { updateLoyaltyRankingVisibility } from "@/app/actions/loyalty";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ export function LoyaltyRanking({
       <CardContent className="grid gap-4">
         <div className="rounded-xl border border-ouro/30 bg-amarelo/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seu elo atual</p><p className="text-2xl font-bold text-ouro-ink">{currentTier.name}</p></div>
+            <div className="flex min-w-0 items-center gap-3"><Image src={`/elos/${currentTier.key}.svg`} alt={`${currentTier.name} — emblema do seu elo`} width={64} height={64} className="size-14 shrink-0 drop-shadow-md" /><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seu elo atual</p><p className="text-2xl font-bold text-ouro-ink">{currentTier.name}</p></div></div>
             <p className="text-sm font-semibold">{number(rankPoints)} pontos ganhos</p>
           </div>
           {nextTier ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-ouro" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">Faltam {number(Math.max(0, nextTier.min - rankPoints))} pontos para chegar ao elo {nextTier.name}.</p></> : <p className="mt-2 text-xs text-muted-foreground">Você alcançou o elo mais alto!</p>}
@@ -43,7 +44,7 @@ export function LoyaltyRanking({
           {LOYALTY_TIERS.map((tier) => {
             const leader = tierLeaders.find((row) => row.tier_key === tier.key);
             return <div key={tier.key} className={`rounded-xl border p-3 ${tier.key === currentTier.key ? "border-ouro/50 bg-amarelo/5" : "bg-card"}`}>
-              <div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{tier.name}</p><p className="text-[11px] text-muted-foreground">{tier.range}</p></div><span className="rounded-full bg-muted px-2 py-1 text-[10px] font-semibold">{tier.rate}</span></div>
+              <div className="flex items-center gap-2"><Image src={`/elos/${tier.key}.svg`} alt="" aria-hidden="true" width={52} height={52} className="size-12 shrink-0 drop-shadow-sm" /><div className="min-w-0 flex-1"><p className="truncate font-semibold">{tier.name}</p><p className="text-[11px] text-muted-foreground">{tier.range}</p></div><span className="rounded-full bg-muted px-2 py-1 text-[10px] font-semibold">{tier.rate}</span></div>
               <div className="mt-3 border-t pt-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top 1 deste elo</p><p className="mt-0.5 truncate text-sm font-medium">{enabled ? leader?.customer_name ?? "Ainda sem participante" : "Ranking em preparação"}</p>{leader?.points != null && <p className="text-xs text-muted-foreground">{number(Number(leader.points))} pts</p>}</div>
             </div>;
           })}
