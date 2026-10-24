@@ -202,6 +202,8 @@ function round2(value: number): number {
 export async function createCharge(input: {
   customerId: string;
   lotIds: string[];
+  /** Para o portal do cliente: sempre cobrar todos os lotes elegíveis. */
+  includeAllEligibleLots?: boolean;
   createdBy: string | null;
   /** Embute o frete fixo da semana (R$ 20) na cobrança. */
   includeFreight?: boolean;
@@ -220,7 +222,9 @@ export async function createCharge(input: {
   if (!customer) throw new Error("Cliente não encontrado.");
 
   const eligible = await listEligibleLotRefs(input.customerId);
-  const picked = eligible.filter((lot) => input.lotIds.includes(lot.id));
+  const picked = input.includeAllEligibleLots
+    ? eligible
+    : eligible.filter((lot) => input.lotIds.includes(lot.id));
 
   // Frete da semana: só se o cliente tem lote no período corrente e o
   // período ainda não foi coberto (índice único em charges reforça isso).
@@ -253,7 +257,7 @@ export async function createCharge(input: {
   }
 
   if (picked.length === 0 && !input.includeFreight) {
-    throw new Error("Nenhum dos lotes selecionados está aguardando pagamento.");
+    throw new Error("Não há lotes aguardando pagamento para gerar o Pix.");
   }
 
   const amount = round2(

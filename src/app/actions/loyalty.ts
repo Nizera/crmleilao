@@ -12,14 +12,12 @@ const fail = (message: string, section = ""): never => redirect(`/admin/fidelida
 export async function saveLoyaltySettings(form: FormData) {
   const { profile } = await requireAdmin();
   if (profile.role === "viewer") fail("Seu perfil é somente leitura.", "/configuracao");
-  const rate = optionalNumber(text(form, "points_per_real"));
   const active = form.get("active") === "on";
   const ranking = form.get("ranking_enabled") === "on";
-  if (rate !== null && (!Number.isFinite(rate) || rate <= 0 || rate > 10000)) fail("Informe uma regra de ganho válida.", "/configuracao");
   const supabase = await createClient();
   const { error } = await supabase.rpc("save_loyalty_settings", {
     p_active: active,
-    p_points_per_real: rate,
+    p_points_per_real: null,
     p_ranking_enabled: ranking,
     p_note: text(form, "note") || null,
   });

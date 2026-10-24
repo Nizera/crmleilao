@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Award, Gift, History, LayoutDashboard, PackageCheck, Settings2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const loyaltyNumber = (value: unknown) => new Intl.NumberFormat("pt-BR").format(Number(value ?? 0));
+export const loyaltyNumber = (value: unknown) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value ?? 0));
 export const loyaltyBRL = (value: unknown) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value ?? 0));
 export const loyaltyDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 export const LoyaltyField = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="grid gap-1.5 text-sm"><span className="font-medium">{label}</span>{children}</label>;

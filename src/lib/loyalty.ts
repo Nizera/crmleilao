@@ -19,6 +19,12 @@ export type LoyaltyReward = {
   active: boolean;
   image_path: string | null;
 };
+export type LoyaltyTierLeader = {
+  tier_key: string;
+  tier_name: string;
+  customer_name: string | null;
+  points: number | string | null;
+};
 
 const DEFAULT_SETTINGS: LoyaltySettings = {
   active: false, points_per_real: null, points_expire_days: null, ranking_enabled: false,
@@ -36,10 +42,26 @@ export async function getCustomerLoyaltyData(customerId: string) {
   ]);
   const entries = ledger ?? [];
   const balance = Number(balanceData ?? 0);
-  let ranking: { customer_name: string; points: number }[] = [];
+  let tierLeaders: LoyaltyTierLeader[] = [];
+  let totalSpent = 0;
   if (settings?.active && settings.ranking_enabled) {
-    const { data } = await supabase.rpc("get_loyalty_ranking");
-    ranking = (data ?? []) as typeof ranking;
+    const { data } = await supabase.rpc("get_loyalty_tier_leaders");
+    tierLeaders = (data ?? []) as LoyaltyTierLeader[];
+  }
+  for (let from = 0; ; from += 1000) {
+    const { data: paidLots, error } = await supabase
+      .from("lots")
+      .select("arremate_value")
+      .eq("customer_id", customerId)
+      .in("status", ["paid", "shipped", "delivered"])
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) throw error;
+    totalSpent += (paidLots ?? []).reduce(
+      (sum, lot) => sum + Number(lot.arremate_value),
+      0,
+    );
+    if (!paidLots || paidLots.length < 1000) break;
   }
   return {
     settings: (settings as LoyaltySettings | null) ?? DEFAULT_SETTINGS,
@@ -48,7 +70,8 @@ export async function getCustomerLoyaltyData(customerId: string) {
     rewards: (rewards ?? []) as LoyaltyReward[],
     redemptions: redemptions ?? [],
     rankVisible: customer?.loyalty_rank_visible ?? false,
-    ranking,
+    tierLeaders,
+    totalSpent,
   };
 }
 

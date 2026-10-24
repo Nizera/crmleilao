@@ -160,24 +160,16 @@ export async function createChargeAction(
 }
 
 /**
- * Auto-atendimento no painel: o cliente gera o Pix dos lotes que marcou,
- * opcionalmente incluindo o frete fixo da semana (sozinho ou com os lotes).
+ * Autoatendimento: o servidor inclui todos os lotes elegíveis do cliente.
+ * O cliente pode optar por acrescentar o frete da semana ao total.
  */
 export async function createSelfChargeAction(
-  lotIds: string[],
   includeFreight = false,
 ): Promise<ActionResult<{ charge: Charge }>> {
   try {
     const { customer } = await requireCustomer();
-    const parsed = chargeCreateSchema.safeParse({
-      customer_id: customer.id,
-      lot_ids: lotIds,
-    });
-    if (!parsed.success) {
-      return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
-    }
-    if (parsed.data.lot_ids.length === 0 && !includeFreight) {
-      return failure("Selecione ao menos um lote ou o frete da semana.");
+    if (typeof includeFreight !== "boolean") {
+      return failure("Opção de frete inválida.");
     }
 
     if (includeFreight) {
@@ -205,7 +197,8 @@ export async function createSelfChargeAction(
 
     const charge = await createCharge({
       customerId: customer.id,
-      lotIds: parsed.data.lot_ids,
+      lotIds: [],
+      includeAllEligibleLots: true,
       includeFreight,
       createdBy: null,
     });
@@ -252,21 +245,19 @@ export async function cancelSelfChargeAction(id: string): Promise<ActionResult> 
   }
 }
 
-/** "Já paguei": consulta o Mercado Pago na hora, sem esperar o webhook. */
+/** Consulta manual do Pix como alternativa ao webhook automático. */
 export async function syncSelfChargeAction(id: string): Promise<ActionResult> {
   try {
     const { customer } = await requireCustomer();
     const own = await requireOwnCharge(id, customer.id);
     if (!own.ok) return own;
-
     const result = await syncChargeWithMp(own.data.id);
     if (!result.ok) return failure(transitionMessage(result.reason));
-
     revalidateChargePaths();
     return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(selfError("sincronizar Pix do cliente", error));
+    return failure(selfError("verificar pagamento do cliente", error));
   }
 }
 
