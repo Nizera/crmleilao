@@ -6,39 +6,38 @@ import { getLoyaltyTier, LOYALTY_TIERS } from "@/lib/loyalty-tiers";
 import type { LoyaltyTierLeader } from "@/lib/loyalty";
 
 const number = (value: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
-const money = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
 
 export function LoyaltyRanking({
   enabled,
   rankVisible,
   tierLeaders,
-  totalSpent,
+  rankPoints,
 }: {
   enabled: boolean;
   rankVisible: boolean;
   tierLeaders: LoyaltyTierLeader[];
-  totalSpent: number;
+  rankPoints: number;
 }) {
-  const currentTier = getLoyaltyTier(totalSpent);
+  const currentTier = getLoyaltyTier(rankPoints);
   const currentTierIndex = LOYALTY_TIERS.findIndex((tier) => tier.key === currentTier.key);
   const nextTier = LOYALTY_TIERS[currentTierIndex + 1];
   const progress = nextTier
-    ? Math.min(100, Math.max(0, ((totalSpent - currentTier.min) / (nextTier.min - currentTier.min)) * 100))
+    ? Math.min(100, Math.max(0, ((rankPoints - currentTier.min) / (nextTier.min - currentTier.min)) * 100))
     : 100;
 
   return (
     <Card className="overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Trophy className="size-5 text-ouro-ink" /> Seu elo e o ranking</CardTitle>
-        <CardDescription>O elo considera o total gasto em lotes pagos. Frete e pontos resgatados não contam. Cada pagamento rende pontos pela taxa do elo que você já alcançou; os lotes de um mesmo Pix usam a mesma taxa. Pontos antigos não são recalculados.</CardDescription>
+        <CardDescription>Seu elo é definido pelos pontos ganhos com lotes pagos. Frete não gera pontos, e resgatar recompensas não reduz seu elo. Cada pagamento rende pontos pela taxa do elo em que você está; os lotes de um mesmo Pix usam a mesma taxa.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="rounded-xl border border-ouro/30 bg-amarelo/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seu elo atual</p><p className="text-2xl font-bold text-ouro-ink">{currentTier.name}</p></div>
-            <p className="text-sm font-semibold">{money(totalSpent)} em lotes pagos</p>
+            <p className="text-sm font-semibold">{number(rankPoints)} pontos ganhos</p>
           </div>
-          {nextTier ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-ouro" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">Faltam {money(Math.max(0, nextTier.min - totalSpent))} para chegar ao elo {nextTier.name}.</p></> : <p className="mt-2 text-xs text-muted-foreground">Você alcançou o elo mais alto!</p>}
+          {nextTier ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-ouro" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">Faltam {number(Math.max(0, nextTier.min - rankPoints))} pontos para chegar ao elo {nextTier.name}.</p></> : <p className="mt-2 text-xs text-muted-foreground">Você alcançou o elo mais alto!</p>}
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {LOYALTY_TIERS.map((tier) => {
@@ -50,7 +49,7 @@ export function LoyaltyRanking({
           })}
         </div>
         {enabled && <form action={updateLoyaltyRankingVisibility} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="visible" defaultChecked={rankVisible} className="accent-yellow-500" /> Quero aparecer no ranking</label><Button type="submit" size="sm" variant="outline">Salvar preferência</Button></form>}
-        <p className="text-xs text-muted-foreground">Participar é opcional. Quem aparece no ranking tem o primeiro nome e a inicial do sobrenome exibidos.</p>
+        <p className="text-xs text-muted-foreground">A faixa mostra os pontos ganhos acumulados. Participar da lista pública é opcional; quem participa aparece com o primeiro nome e a inicial do sobrenome.</p>
       </CardContent>
     </Card>
   );

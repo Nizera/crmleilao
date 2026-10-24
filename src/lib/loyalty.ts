@@ -63,27 +63,16 @@ export async function getCustomerLoyaltyRankingData(customerId: string) {
     if (error) throw error;
     tierLeaders = (data ?? []) as LoyaltyTierLeader[];
   }
-  let totalSpent = 0;
-  for (let from = 0; ; from += 1000) {
-    const { data: paidLots, error } = await supabase
-      .from("lots")
-      .select("arremate_value")
-      .eq("customer_id", customerId)
-      .in("status", ["paid", "shipped", "delivered"])
-      .order("id", { ascending: true })
-      .range(from, from + 999);
-    if (error) throw error;
-    totalSpent += (paidLots ?? []).reduce(
-      (sum, lot) => sum + Number(lot.arremate_value),
-      0,
-    );
-    if (!paidLots || paidLots.length < 1000) break;
-  }
+  const { data: earnedPoints, error: earnedPointsError } = await supabase.rpc(
+    "get_customer_loyalty_earned_points",
+    { p_customer_id: customerId },
+  );
+  if (earnedPointsError) throw earnedPointsError;
   return {
     settings: resolvedSettings,
     rankVisible: customer?.loyalty_rank_visible ?? false,
     tierLeaders,
-    totalSpent,
+    rankPoints: Number(earnedPoints ?? 0),
   };
 }
 

@@ -106,7 +106,7 @@ export async function adjustLoyaltyPoints(form: FormData) {
   const points = Number(text(form, "points"));
   const customerId = text(form, "customer_id");
   const note = text(form, "note");
-  if (!Number.isInteger(points) || points === 0 || Math.abs(points) > 1000000) fail("Ajuste inválido: informe um número inteiro diferente de zero.", "/extrato");
+  if (!Number.isFinite(points) || points === 0 || Math.abs(points) > 1000000 || Math.round(points * 100) !== points * 100) fail("Ajuste inválido: informe um valor diferente de zero com até duas casas decimais.", "/extrato");
   if (note.length < 4 || note.length > 500) fail("Explique o motivo do ajuste (4 a 500 caracteres).", "/extrato");
   const supabase = await createClient();
   const { error } = await supabase.rpc("adjust_loyalty_points", { p_customer_id: customerId, p_points: points, p_note: note });
