@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Coins,
   Boxes,
+  Award,
   FileText,
   LayoutDashboard,
   Package,
@@ -42,6 +43,7 @@ const groups = [
     items: [
       { title: "Clientes", url: "/admin/clientes", icon: Users },
       { title: "Cobranças", url: "/admin/cobrancas", icon: Coins },
+      { title: "Fidelidade", url: "/admin/fidelidade", icon: Award },
     ],
   },
   {

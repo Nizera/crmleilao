@@ -1,4 +1,4 @@
-import { Award, Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
+import { Award, Bolt, CircleDollarSign, Gift, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -221,6 +221,12 @@ export default async function ClientHomePage() {
           />
         </div>
       </section>
+
+      <Link href="/painel/loja" className="flex items-center gap-3 rounded-xl border border-ouro/25 bg-card p-3 shadow-sm transition hover:border-ouro/50">
+        <span className="rounded-lg bg-amarelo/15 p-2 text-ouro-ink"><Gift className="size-5" /></span>
+        <span className="min-w-0 flex-1"><strong className="block text-sm">Loja de pontos</strong><span className="block text-xs text-muted-foreground">Consulte seu extrato e as recompensas disponíveis.</span></span>
+        <span className="text-lg text-ouro-ink" aria-hidden="true">→</span>
+      </Link>
 
       <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
 

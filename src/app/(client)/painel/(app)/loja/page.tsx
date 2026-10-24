@@ -1,0 +1,45 @@
+import Link from "next/link";
+import { Award, ArrowDownToLine, ArrowLeft, Gift, History, Sparkles, Trophy } from "lucide-react";
+import { requireCustomer } from "@/lib/dal";
+import { getCustomerLoyaltyData } from "@/lib/loyalty";
+import { requestLoyaltyRedemption, updateLoyaltyRankingVisibility } from "@/app/actions/loyalty";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+export const metadata = { title: "Loja de pontos" };
+const number = (value: number) => new Intl.NumberFormat("pt-BR").format(value);
+const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(value));
+const kinds: Record<string, string> = { earned: "Lote pago", spent: "Resgate solicitado", reversal: "Estorno de lote", adjustment: "Ajuste da equipe" };
+const statuses: Record<string, string> = { pending: "Aguardando análise", approved: "Aprovado", fulfilled: "Concluído", rejected: "Recusado · pontos devolvidos" };
+
+export default async function ClientLoyaltyPage({ searchParams }: PageProps<"/painel/loja">) {
+  const { customer } = await requireCustomer();
+  const params = await searchParams;
+  let data: Awaited<ReturnType<typeof getCustomerLoyaltyData>> | null = null;
+  try {
+    data = await getCustomerLoyaltyData(customer.id);
+  } catch {
+    // Allows the rest of the production app to remain usable until migration
+    // 0019 has been applied to the database.
+  }
+  if (!data) return <div className="flex flex-col gap-5"><Button asChild variant="ghost" size="sm" className="w-fit -ml-2"><Link href="/painel"><ArrowLeft /> Voltar ao painel</Link></Button><Card><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><Sparkles className="size-9 text-amarelo" /><h1 className="text-xl font-semibold">Estamos preparando a loja de pontos</h1><p className="max-w-md text-sm text-muted-foreground">Em breve você poderá acompanhar seus pontos e trocar por recompensas. Seus pagamentos e lotes continuam funcionando normalmente.</p></CardContent></Card></div>;
+  const { settings, balance, ledger, rewards, redemptions, rankVisible, ranking } = data;
+
+  return <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-3"><Button asChild variant="ghost" size="sm" className="w-fit -ml-2"><Link href="/painel"><ArrowLeft /> Voltar ao painel</Link></Button><div><p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.18em] text-ouro-ink"><Sparkles className="size-4" /> Benefícios OCDL</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">Loja de pontos</h1><p className="text-sm text-muted-foreground">Pontos de fidelidade são separados dos valores em reais e dos fretes.</p></div></div>
+
+    {params.erro && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{params.erro}</div>}
+    {params.resgatado && <div role="status" className="rounded-lg border border-ouro/30 bg-amarelo/10 px-4 py-3 text-sm">Pedido de resgate enviado. A equipe vai acompanhar por aqui.</div>}
+    {params.salvo && <div role="status" className="rounded-lg border border-ouro/30 bg-amarelo/10 px-4 py-3 text-sm">Sua preferência foi atualizada.</div>}
+
+    <Card className="overflow-hidden border-ouro/35 bg-linear-to-br from-amarelo/15 via-card to-card"><CardContent className="flex flex-wrap items-center justify-between gap-4 p-5"><div><p className="text-sm text-muted-foreground">Seu saldo de pontos</p><p className="mt-1 flex items-baseline gap-2 text-4xl font-bold tracking-tight"><Award className="size-7 text-amarelo" /> {number(balance)}</p><p className="mt-2 text-xs text-muted-foreground">Pontos não expiram durante o piloto. Frete não gera pontos.</p></div><span className="rounded-full bg-background/70 px-3 py-1.5 text-xs font-semibold ring-1 ring-border">{settings.active ? "Programa ativo" : "Programa em preparação"}</span></CardContent></Card>
+
+    {!settings.active ? <Card><CardContent className="flex gap-3 py-4"><Sparkles className="mt-0.5 size-5 shrink-0 text-ouro-ink" /><div><p className="font-semibold">Estamos preparando as recompensas</p><p className="mt-1 text-sm text-muted-foreground">A equipe ainda está definindo as regras. Seus lotes pagos anteriores não serão recalculados quando o programa começar.</p></div></CardContent></Card> : <section className="grid gap-3"><div><h2 className="text-lg font-semibold">Recompensas</h2><p className="text-xs text-muted-foreground">Escolha uma recompensa; a equipe confirma e combina a entrega.</p></div>{rewards.length === 0 ? <Card><CardContent className="py-7 text-center text-sm text-muted-foreground">Novas recompensas em breve.</CardContent></Card> : rewards.map((reward) => { const cost = reward.points_cost == null ? null : Number(reward.points_cost); const unavailable = reward.stock === 0; const canRedeem = cost != null && balance >= cost && !unavailable; return <Card key={reward.id}><CardContent className="flex flex-wrap items-center gap-3 p-4"><span className="rounded-xl bg-amarelo/15 p-3 text-ouro-ink"><Gift className="size-5" /></span><div className="min-w-0 flex-1"><p className="font-semibold">{reward.name}</p>{reward.description && <p className="text-xs text-muted-foreground">{reward.description}</p>}<p className="mt-1 text-sm font-semibold text-ouro-ink">{cost == null ? "Preço em pontos em breve" : `${number(cost)} pontos`}{reward.stock != null ? ` · ${Number(reward.stock)} em estoque` : ""}</p></div><form action={requestLoyaltyRedemption}><input type="hidden" name="reward_id" value={reward.id} /><Button type="submit" size="sm" disabled={!canRedeem}>{unavailable ? "Indisponível" : cost == null ? "Em breve" : balance < cost ? "Juntar pontos" : "Pedir resgate"}</Button></form></CardContent></Card>; })}</section>}
+
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="size-5" /> Seus resgates</CardTitle><CardDescription>A equipe atualiza o andamento por aqui.</CardDescription></CardHeader><CardContent className="grid gap-3">{redemptions.length === 0 ? <p className="text-sm text-muted-foreground">Você ainda não fez resgates.</p> : redemptions.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0"><div><p className="text-sm font-semibold">{item.reward_name}</p><p className="text-xs text-muted-foreground">{date(item.created_at)} · {statuses[item.status] ?? item.status}</p>{item.admin_note && <p className="mt-1 text-xs text-muted-foreground">{item.admin_note}</p>}</div><span className="text-sm font-semibold">−{number(Number(item.points_cost))} pts</span></div>)}</CardContent></Card>
+
+    {settings.active && settings.ranking_enabled && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="size-5 text-ouro-ink" /> Ranking de colecionadores</CardTitle><CardDescription>Participação voluntária. O ranking mostra apenas primeiro nome e inicial do sobrenome.</CardDescription></CardHeader><CardContent className="grid gap-4"><form action={updateLoyaltyRankingVisibility} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="visible" defaultChecked={rankVisible} className="accent-yellow-500" /> Quero aparecer no ranking</label><Button type="submit" size="sm" variant="outline">Salvar preferência</Button></form>{ranking.length === 0 ? <p className="text-sm text-muted-foreground">O ranking aparece quando os clientes optarem por participar e houver pontos registrados.</p> : <ol className="grid gap-2">{ranking.map((row, index) => <li key={`${row.customer_name}-${index}`} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"><span className="grid size-7 place-items-center rounded-full bg-amarelo/15 font-bold text-ouro-ink">{index + 1}</span><span className="flex-1 font-medium">{row.customer_name}{row.customer_name.startsWith("Colecionador") ? " (você)" : ""}</span><span className="font-semibold">{number(Number(row.points))} pts</span></li>)}</ol>}</CardContent></Card>}
+
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><ArrowDownToLine className="size-5" /> Extrato de pontos</CardTitle><CardDescription>Pontos entram quando o pagamento do lote é confirmado. Estornos e ajustes aparecem aqui.</CardDescription></CardHeader><CardContent className="grid gap-2">{ledger.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma movimentação ainda.</p> : ledger.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-2 text-sm last:border-0"><div><p className="font-medium">{kinds[row.kind] ?? row.kind}</p><p className="text-xs text-muted-foreground">{row.note || "—"} · {date(row.created_at)}</p></div><span className={Number(row.points) > 0 ? "font-semibold text-emerald-600" : "font-semibold text-destructive"}>{Number(row.points) > 0 ? "+" : ""}{number(Number(row.points))} pts</span></div>)}</CardContent></Card>
+  </div>;
+}
