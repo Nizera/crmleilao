@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -10,6 +11,15 @@ export type LoyaltySettings = {
   ranking_enabled: boolean;
 };
 export type LoyaltyReward = {
+  sku?: string;
+  category?: string;
+  image_paths?: string[];
+  archived?: boolean;
+  low_stock_threshold?: number | null;
+  updated_at?: string;
+  cash_price?: number | null;
+  mixed_cash_price?: number | null;
+  mixed_points_cost?: number | null;
   id: string;
   name: string;
   description: string | null;
@@ -30,12 +40,18 @@ const DEFAULT_SETTINGS: LoyaltySettings = {
   active: false, points_per_real: null, points_expire_days: null, ranking_enabled: false,
 };
 
+export const getCustomerCaracoinsBalance = cache(async (customerId: string): Promise<number | null> => {
+  const db = await createClient();
+  const { data, error } = await db.rpc("get_customer_loyalty_balance", { p_customer_id: customerId });
+  return error ? null : Number(data ?? 0);
+});
+
 export async function getCustomerLoyaltyData(customerId: string) {
   const supabase = await createClient();
   const [{ data: settings }, { data: ledger }, { data: rewards }, { data: redemptions }, { data: balanceData }] = await Promise.all([
     supabase.from("loyalty_settings").select("active, points_per_real, points_expire_days, ranking_enabled").eq("id", true).maybeSingle(),
     supabase.from("loyalty_ledger").select("id, points, kind, note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(30),
-    supabase.from("loyalty_rewards").select("*").eq("active", true).order("created_at", { ascending: false }),
+    supabase.from("loyalty_rewards").select("id,name,description,points_cost,stock,active,image_path,image_paths,sku,category,cash_price,mixed_cash_price,mixed_points_cost").eq("active", true).order("created_at", { ascending: false }),
     supabase.from("loyalty_redemptions").select("id, reward_name, points_cost, status, admin_note, created_at").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(20),
     supabase.rpc("get_customer_loyalty_balance", { p_customer_id: customerId }),
   ]);

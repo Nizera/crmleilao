@@ -12,6 +12,9 @@ import {
   Package,
   Settings,
   Users,
+  Gift,
+  ShoppingCart,
+  History,
 } from "lucide-react";
 
 import { LogoMark } from "@/components/brand/logo";
@@ -43,7 +46,16 @@ const groups = [
     items: [
       { title: "Clientes", url: "/admin/clientes", icon: Users },
       { title: "Cobranças", url: "/admin/cobrancas", icon: Coins },
-      { title: "Fidelidade", url: "/admin/fidelidade", icon: Award },
+    ],
+  },
+  {
+    label: "Loja",
+    items: [
+      { title: "Visão geral", url: "/admin/fidelidade", icon: LayoutDashboard, exact: true },
+      { title: "Produtos", url: "/admin/fidelidade/recompensas", icon: Gift },
+      { title: "Pedidos", url: "/admin/fidelidade/resgates", icon: ShoppingCart },
+      { title: "Caracoins", url: "/admin/fidelidade/extrato", icon: History },
+      { title: "Configurações", url: "/admin/fidelidade/configuracao", icon: Award },
     ],
   },
   {
@@ -94,7 +106,7 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenu>
                 {group.items.map((item) => {
                   const isActive =
-                    pathname === item.url || pathname.startsWith(`${item.url}/`);
+                    pathname === item.url || (!("exact" in item && item.exact) && pathname.startsWith(`${item.url}/`));
                   return (
                     <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton

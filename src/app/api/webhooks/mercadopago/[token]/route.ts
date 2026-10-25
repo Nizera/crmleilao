@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 
 import { settleChargeByReference } from "@/lib/charges-server";
 import { getOrder, targetChargeStatus } from "@/lib/mercadopago";
+import { settleStoreMpOrder } from "@/lib/store-server";
 
 /**
  * Webhook do Mercado Pago (F3 — Orders API, tópico `order`).
@@ -264,6 +265,21 @@ async function handle(
   }
 
   const target = targetChargeStatus(order.status, order.statusDetail);
+  if (order.externalReference?.startsWith("shop_")) {
+    try {
+      const result = await settleStoreMpOrder(order);
+      if (target) {
+        revalidatePath("/painel", "layout");
+        revalidatePath("/admin/fidelidade");
+        revalidatePath("/admin/fidelidade/resgates");
+        revalidatePath("/admin/fidelidade/recompensas");
+      }
+      return new Response(JSON.stringify(result), { status: 200, headers: JSON_HEADERS });
+    } catch (error) {
+      console.error("[mercadopago-webhook] falha na loja:", error instanceof Error ? error.message : "erro");
+      return new Response(JSON.stringify({ error: "retry" }), { status: 500, headers: JSON_HEADERS });
+    }
+  }
   if (!target || !order.externalReference?.startsWith("chg_")) {
     return new Response(JSON.stringify({ ok: true, ignored: true }), {
       status: 200,

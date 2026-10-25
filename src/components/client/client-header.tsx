@@ -7,6 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   Bell,
+  Coins,
   History,
   LogOut,
   Monitor,
@@ -35,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { CustomerNotification } from "@/lib/notifications";
-import { formatBRL } from "@/lib/lots";
+import { coinNumber } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -43,10 +44,7 @@ type Props = {
   phone: string;
   notifications: CustomerNotification[];
   unreadCount: number;
-  paidTotal: number;
-  paidFreightTotal: number;
-  paidPixTotal: number;
-  openAmount: number;
+  caracoins: number | null;
 };
 
 function initialsOf(name: string | null) {
@@ -70,17 +68,14 @@ function formatShortTime(iso: string) {
 }
 
 /**
- * Top bar do painel: total pago (incluindo frete), notificações e avatar.
+ * Top bar do painel: Caracoins disponíveis, notificações e avatar.
  */
 export function ClientHeader({
   name,
   phone,
   notifications,
   unreadCount,
-  paidTotal,
-  paidFreightTotal,
-  paidPixTotal,
-  openAmount,
+  caracoins,
 }: Props) {
   const router = useRouter();
   const { setTheme } = useTheme();
@@ -122,43 +117,11 @@ export function ClientHeader({
         </Link>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                title="Total pago em lotes"
-                className="flex items-center gap-1 rounded-full bg-muted px-2 py-1 sm:px-3"
-              >
-                <span className="text-xs font-bold text-muted-foreground">R$</span>
-                <span className="text-sm font-bold tracking-tight text-ouro-ink">
-                  {formatBRL(paidTotal).replace("R$ ", "")}
-                </span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Total pago em lotes</DropdownMenuLabel>
-              <p className="px-3 pb-2 text-2xl font-bold text-ouro-ink">
-                {formatBRL(paidTotal)}
-              </p>
-              <p className="px-3 pb-2 text-xs text-muted-foreground">
-                Soma dos lotes com pagamento confirmado. Fretes ficam fora deste total.
-              </p>
-              <DropdownMenuSeparator />
-              <div className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Fretes pagos</span>
-                <span className="font-semibold">{formatBRL(paidFreightTotal)}</span>
-              </div>
-              <div className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Total pago via Pix</span>
-                <span className="font-semibold">{formatBRL(paidPixTotal)}</span>
-              </div>
-              <DropdownMenuSeparator />
-              <div className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Pix em aberto</span>
-                <span className="font-semibold">{formatBRL(openAmount)}</span>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Link href="/painel/loja" title="Seu saldo disponível de Caracoins" aria-label={caracoins === null ? "Consultar Caracoins na loja" : `${coinNumber(caracoins)} Caracoins disponíveis. Abrir loja.`} className="flex items-center gap-1 rounded-full bg-amarelo/15 px-2 py-1.5 text-ouro-ink sm:px-3">
+            <Coins className="size-4 shrink-0" />
+            <span className="max-w-20 truncate text-sm font-bold tabular-nums">{caracoins === null ? "—" : coinNumber(caracoins)}</span>
+            <span className="hidden text-[10px] font-semibold sm:inline">Caracoins</span>
+          </Link>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -16,6 +16,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * caso de indisponibilidade ou migration pendente.
  */
 export type RateBucket =
+  | "store-catalog-write"
+  | "store-checkout"
+  | "store-sync"
   | "admin-signin"
   | "customer-signin"
   | "invite-accept"
@@ -23,6 +26,9 @@ export type RateBucket =
   | "ip-only";
 
 const RULES: Record<RateBucket, { limit: number; window: number }> = {
+  "store-catalog-write": { limit: 60, window: 300 },
+  "store-checkout": { limit: 12, window: 300 },
+  "store-sync": { limit: 15, window: 60 },
   // Senha de 8+ caracteres: volume baixo por conta.
   "admin-signin": { limit: 5, window: 900 },
   "customer-signin": { limit: 5, window: 900 },

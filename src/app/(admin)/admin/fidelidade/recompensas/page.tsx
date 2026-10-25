@@ -1,33 +1,16 @@
-import { Gift } from "lucide-react";
-import Image from "next/image";
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/dal";
-import { getAdminLoyaltyData } from "@/lib/loyalty";
-import { saveLoyaltyReward } from "@/app/actions/loyalty";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LoyaltyAdminShell, LoyaltyField, LoyaltyMigrationWarning, loyaltyBRL, loyaltyNumber } from "@/components/admin/loyalty/loyalty-admin-shell";
+import { catalogFilters,getStoreCatalog } from "@/lib/store-admin-server";
+import { CATALOG_PATH } from "@/lib/store-admin";
+import { ProductCatalog } from "@/components/admin/loyalty/product-catalog";
+import { LoyaltyAdminShell } from "@/components/admin/loyalty/loyalty-admin-shell";
 
-export const metadata = { title: "Recompensas de fidelidade" };
-
-export default async function LoyaltyRewardsPage({ searchParams }: PageProps<"/admin/fidelidade/recompensas">) {
-  const { profile } = await requireAdmin();
-  const params = await searchParams;
-  const { settings, rewards, stats, error } = await getAdminLoyaltyData();
-  const query = (key: string) => Array.isArray(params[key]) ? params[key]?.[0] : params[key];
-  if (error || !settings) return <LoyaltyAdminShell active="recompensas"><LoyaltyMigrationWarning error={error} /></LoyaltyAdminShell>;
-  const canEdit = profile.role !== "viewer";
-  return <LoyaltyAdminShell active="recompensas" programActive={settings.active} error={query("erro")} saved={Boolean(query("salvo"))}>
-    <section className="grid gap-4"><header><h2 className="flex items-center gap-2 text-xl font-semibold"><Gift className="size-5 text-ouro-ink" /> Catálogo de recompensas</h2><p className="text-sm text-muted-foreground">O custo interno fica reservado à equipe; o preço em pontos aparece para o cliente.</p></header>
-      <div className="grid gap-3 sm:grid-cols-3"><Card size="sm"><CardContent className="pt-3"><p className="text-xs text-muted-foreground">Itens cadastrados</p><p className="text-lg font-semibold">{loyaltyNumber(rewards.length)}</p></CardContent></Card><Card size="sm"><CardContent className="pt-3"><p className="text-xs text-muted-foreground">Disponíveis no catálogo</p><p className="text-lg font-semibold">{loyaltyNumber(rewards.filter((reward) => reward.active).length)}</p></CardContent></Card><Card size="sm"><CardContent className="pt-3"><p className="text-xs text-muted-foreground">Custo conhecido em estoque</p><p className="text-lg font-semibold">{loyaltyBRL(stats?.inventory_cost)}</p></CardContent></Card></div>
-      {rewards.map((reward) => <Card key={reward.id} className="overflow-hidden"><CardHeader><CardTitle className="text-base">{reward.name}</CardTitle><CardDescription>{reward.active ? "Disponível no catálogo" : "Oculta dos clientes"}{reward.points_cost != null ? ` · ${loyaltyNumber(reward.points_cost)} pts` : " · preço a definir"}</CardDescription></CardHeader><CardContent><form action={saveLoyaltyReward} className="grid min-w-0 gap-4"><input type="hidden" name="id" value={reward.id} /><input type="hidden" name="image_path" value={reward.image_path ?? ""} />
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[180px_minmax(0,1fr)]"><div className="grid content-start gap-2">{reward.image_path ? <Image src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/${reward.image_path}`} alt={reward.name} width={360} height={240} className="aspect-[3/2] w-full rounded-lg border object-cover" /> : <div className="grid aspect-[3/2] place-items-center rounded-lg border border-dashed text-xs text-muted-foreground">Sem imagem</div>}{canEdit && <LoyaltyField label="Foto do produto"><Input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="h-auto min-w-0 px-2 py-2 text-xs file:mr-2 file:max-w-24 file:truncate" /></LoyaltyField>}{canEdit && reward.image_path && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" name="remove_image" className="accent-yellow-500" /> Remover imagem</label>}</div>
-        <div className="grid min-w-0 gap-3"><div className="grid min-w-0 gap-3 md:grid-cols-2"><LoyaltyField label="Nome"><Input name="name" defaultValue={reward.name} required minLength={2} maxLength={120} disabled={!canEdit} className="min-w-0" /></LoyaltyField><LoyaltyField label="Descrição"><Input name="description" defaultValue={reward.description ?? ""} placeholder="Como o cliente recebe ou utiliza" disabled={!canEdit} className="min-w-0" /></LoyaltyField></div>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"><LoyaltyField label="Preço (pontos)"><Input name="points_cost" type="number" min="1" step="1" placeholder="A definir" defaultValue={reward.points_cost ?? ""} disabled={!canEdit} className="min-w-0" /></LoyaltyField><LoyaltyField label="Custo interno (R$)"><Input name="internal_cost" type="number" min="0" step="0.01" placeholder="A definir" defaultValue={reward.internal_cost ?? ""} disabled={!canEdit} className="min-w-0" /></LoyaltyField><LoyaltyField label="Estoque (vazio = sem limite)"><Input name="stock" type="number" min="0" step="1" placeholder="Sem limite" defaultValue={reward.stock ?? ""} disabled={!canEdit} className="min-w-0" /></LoyaltyField></div></div></div>
-        <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={reward.active} disabled={!canEdit} className="accent-yellow-500" /> Disponível no catálogo</label>{canEdit && <Button type="submit" size="sm" variant="outline">Salvar recompensa</Button>}</div>
-      </form></CardContent></Card>)}
-      {rewards.length === 0 && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhuma recompensa cadastrada.</p>}
-      {canEdit && <Card className="border-dashed"><CardHeader><CardTitle className="text-base">Nova recompensa</CardTitle><CardDescription>Cadastre como um produto: inclua foto, descrição e estoque. Preço em pontos e custo podem ficar em branco enquanto o programa estiver desligado.</CardDescription></CardHeader><CardContent><form action={saveLoyaltyReward} className="grid min-w-0 gap-4"><div className="grid min-w-0 gap-3 md:grid-cols-2"><LoyaltyField label="Nome"><Input name="name" required minLength={2} maxLength={120} placeholder="Ex.: desconto em próximo lote" className="min-w-0" /></LoyaltyField><LoyaltyField label="Descrição"><Input name="description" placeholder="Detalhes para o cliente" className="min-w-0" /></LoyaltyField></div><div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"><LoyaltyField label="Preço em pontos"><Input name="points_cost" type="number" min="1" step="1" placeholder="A definir" className="min-w-0" /></LoyaltyField><LoyaltyField label="Custo interno (R$)"><Input name="internal_cost" type="number" min="0" step="0.01" placeholder="A definir" className="min-w-0" /></LoyaltyField><LoyaltyField label="Estoque"><Input name="stock" type="number" min="0" step="1" placeholder="Sem limite" className="min-w-0" /></LoyaltyField></div><LoyaltyField label="Foto do produto"><Input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="h-auto max-w-xl px-2 py-2 text-xs file:mr-2 file:max-w-24 file:truncate" /></LoyaltyField><p className="text-xs text-muted-foreground">JPG, PNG, WebP ou AVIF · até 3,5 MB.</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" className="accent-yellow-500" /> Disponível no catálogo</label><Button type="submit" className="w-fit">Cadastrar recompensa</Button></form></CardContent></Card>}
-    </section>
-  </LoyaltyAdminShell>;
+export const metadata={title:"Produtos da loja"};
+export default async function StoreProductsPage({searchParams}:PageProps<"/admin/fidelidade/recompensas">) {
+  const {profile}=await requireAdmin(); const params=await searchParams; const filters=catalogFilters(params);
+  const {data,error}=await getStoreCatalog(filters);
+  if(!data || error)return <LoyaltyAdminShell active="recompensas"><div className="rounded-xl border p-5"><p className="font-semibold">O novo catálogo precisa da atualização do banco</p><p className="mt-2 text-sm text-muted-foreground">{error}</p><code className="mt-3 block text-xs">0025_store_catalog_admin.sql</code></div></LoyaltyAdminShell>;
+  const lastPage=Math.max(1,Math.ceil(data.total/25));
+  if(filters.page>lastPage){const next=new URLSearchParams();if(filters.q)next.set("q",filters.q);if(filters.status!=="all")next.set("status",filters.status);if(filters.category)next.set("category",filters.category);if(filters.payment)next.set("payment",filters.payment);if(lastPage>1)next.set("page",String(lastPage));redirect(`${CATALOG_PATH}${next.size?`?${next}`:""}`);}
+  return <LoyaltyAdminShell active="recompensas" hideHeader saved={params.salvo==="1"}><ProductCatalog key={JSON.stringify(filters)} data={data} filters={filters} canEdit={profile.role!=="viewer"} /></LoyaltyAdminShell>;
 }

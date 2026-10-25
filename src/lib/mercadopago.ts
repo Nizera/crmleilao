@@ -298,8 +298,8 @@ export async function getOrder(orderId: string): Promise<MpOrder | null> {
  * correspondente aqui e um pagamento nela não teria onde cair.
  *
  * Devolve `true` quando é seguro desfazer tudo localmente:
- * - 404/400 = a order nunca existiu, não há o que compensar;
- * - 200 com status `cancelled` = cancelada de fato.
+ * - 404 = a order não foi localizada;
+ * - 200 com status `canceled` = cancelada de fato.
  *
  * Qualquer outra resposta (rede, 4xx/5xx) devolve `false` e o chamador
  * mantém a cobrança local em vez de apagá-la.
@@ -308,21 +308,21 @@ export async function cancelPixOrder(orderId: string): Promise<boolean> {
   if (!/^[A-Za-z][A-Za-z0-9_-]{3,}$/.test(orderId)) return false;
 
   try {
-    const response = await fetch(`${MP_API}/v1/orders/${orderId}`, {
-      method: "PATCH",
+    const response = await fetch(`${MP_API}/v1/orders/${orderId}/cancel`, {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${mpAccessToken()}`,
         "Content-Type": "application/json",
+        "X-Idempotency-Key": `cancel_${orderId}`,
       },
-      body: JSON.stringify({ status: "cancelled" }),
       cache: "no-store",
     });
 
-    if (response.status === 404 || response.status === 400) return true;
+    if (response.status === 404) return true;
     if (!response.ok) return false;
 
     const json = (await response.json()) as MpOrderResponse;
-    return json.status === "cancelled";
+    return json.status === "canceled" || json.status === "cancelled";
   } catch (error) {
     console.error(`[mercadopago] falha ao cancelar ${orderId}:`, error);
     return false;

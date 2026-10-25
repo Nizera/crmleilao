@@ -1,12 +1,12 @@
 import { connection } from "next/server";
 import {
   countCustomerUnreadNotifications,
-  getCustomerSpendingSummary,
   listCustomerNotifications,
   requireCustomer,
 } from "@/lib/dal";
 import { ClientHeader } from "@/components/client/client-header";
 import { ClientBottomNav } from "@/components/client/client-bottom-nav";
+import { getCustomerCaracoinsBalance } from "@/lib/loyalty";
 
 // Rotas autenticadas leem cookies() na request e não entram no shell estático.
 export const instant = false;
@@ -17,10 +17,10 @@ export default async function ClientLayout({
   await connection();
   const { customer } = await requireCustomer();
 
-  const [notifications, unreadCount, spending] = await Promise.all([
+  const [notifications, unreadCount, caracoins] = await Promise.all([
     listCustomerNotifications(customer.id),
     countCustomerUnreadNotifications(customer.id),
-    getCustomerSpendingSummary(customer.id),
+    getCustomerCaracoinsBalance(customer.id),
   ]);
 
   return (
@@ -30,10 +30,7 @@ export default async function ClientLayout({
         phone={customer.phone_e164}
         notifications={notifications}
         unreadCount={unreadCount}
-        paidTotal={spending.paidTotal}
-        paidFreightTotal={spending.paidFreightTotal}
-        paidPixTotal={spending.paidPixTotal}
-        openAmount={spending.openAmount}
+        caracoins={caracoins}
       />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-24 pt-6">
         {children}
