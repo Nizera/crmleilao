@@ -83,7 +83,7 @@ export function LotFormSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-2xl"
+        className="flex flex-col gap-0 overflow-hidden p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(92vw,960px)]"
       >
         <SheetHeader className="border-b px-6 py-4">
           <SheetTitle>
@@ -324,7 +324,7 @@ function LotForm({
     <form
       onSubmit={submit}
       noValidate
-      className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5 sm:px-6"
     >
       <FieldGroup>
         <Field data-invalid={!selectedCustomer && !!errors.phone}>
