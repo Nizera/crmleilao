@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { saveLot, searchLotCustomers } from "@/app/actions/lots";
 import { StockPicker } from "@/components/admin/lots/stock-picker";
+import { LotAiReview } from "@/components/admin/lots/lot-ai-review";
 import { Button } from "@/components/ui/button";
 import { formatPhoneBR } from "@/lib/customers";
 import type { Customer } from "@/lib/dal";
@@ -523,6 +524,7 @@ function LotForm({
           <FieldError>{errors.description?.message}</FieldError>
         </Field>
 
+        <LotAiReview files={uploads.map(photo=>photo.file)} savedPaths={keptImages} lotId={lot?.id} players={players} stock={stock} onApprove={setItems} hasItems={items.length>0} disabled={pending||compressing}/>
         <StockPicker
           players={players}
           stock={stock}

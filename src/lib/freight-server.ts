@@ -25,14 +25,14 @@ export async function getFreightWeekStats(): Promise<FreightWeekStats> {
     periodStart,
     periodEnd,
     total: 0,
-    byDay: { ter: 0, qua: 0, qui: 0, sex: 0, sab: 0, dom: 0 },
+    byDay: { ter: 0, qua: 0, qui: 0, sex: 0, sab: 0, dom: 0, seg: 0 },
     paidCount: 0,
     pendingCount: 0,
   };
 
   // Pagos no período: janela [terça 00:00, próxima terça 00:00) em SP.
   const { data: paidRows, error: paidError } = await admin
-    .from("charges")
+    .from("charge_freight_periods")
     .select("customer_id, freight_amount, paid_at")
     .gt("freight_amount", 0)
     .eq("status", "approved")
@@ -62,7 +62,7 @@ export async function getFreightWeekStats(): Promise<FreightWeekStats> {
       .gte("auction_date", periodStart)
       .lt("auction_date", periodEnd),
     admin
-      .from("charges")
+      .from("charge_freight_periods")
       .select("customer_id")
       .gt("freight_amount", 0)
       .eq("freight_period", periodStart)

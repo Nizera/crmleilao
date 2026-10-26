@@ -23,22 +23,9 @@ export type AppSettings = {
 export const DEFAULT_SETTINGS: AppSettings = {
   bid_increment: 5,
   shipping_weekday: 2,
-  wa_notice_template: [
-    "Lote {code} — {title}",
-    "Arremate: {value}",
-    "Envio: {shipping}",
-    "",
-    "Acompanhe no seu painel: {link}",
-  ].join("\n"),
-  wa_payment_template: [
-    "Olá {name}! O lote {code} está aguardando pagamento.",
-    "Valor: {value}",
-    "Pague pelo Pix: {link}",
-  ].join("\n"),
-  wa_shipping_template: [
-    "Olá {name}! O lote {code} foi enviado.",
-    "Rastreio: {tracking}",
-  ].join("\n"),
+  wa_notice_template: "Olá {name}! Acompanhe seus arremates, pagamentos e envios no nosso painel: {link}\nOs novos lotes aparecem automaticamente por lá.",
+  wa_payment_template: "Olá {name}! Seu valor total pendente é {value} (lotes e fretes devidos).\nConfira os detalhes e pague pelo painel: {link}\nO total é atualizado conforme seus arremates e pagamentos.",
+  wa_shipping_template: "Olá {name}! A etiqueta dos seus arremates do período de {period_start} a {period_end} foi emitida.\nRastreio: {tracking}\n{tracking_link}\nAcompanhe pelo painel: {link}",
   origin_name: "",
   origin_address: "",
   origin_number: "",
@@ -84,19 +71,19 @@ export const MESSAGE_TEMPLATES: {
     key: "wa_notice_template",
     title: "Aviso de arremate",
     description: "Mensagem aberta pelo botão “Enviar no WhatsApp” em Lotes.",
-    placeholders: ["code", "title", "value", "shipping", "link"],
+    placeholders: ["name", "link"],
   },
   {
     key: "wa_payment_template",
     title: "Pedido de pagamento",
     description: "Enviado junto com o QR/link do Pix da cobrança (Mercado Pago).",
-    placeholders: ["name", "code", "value", "link"],
+    placeholders: ["name", "value", "link"],
   },
   {
     key: "wa_shipping_template",
     title: "Aviso de envio",
-    description: "Enviado quando o pacote é postado, com o código de rastreio.",
-    placeholders: ["name", "code", "tracking"],
+    description: "Disponível após emitir a etiqueta; inclui período e rastreio quando liberado.",
+    placeholders: ["name", "period_start", "period_end", "tracking", "tracking_link", "link"],
   },
 ];
 
@@ -106,9 +93,12 @@ export const TEMPLATE_SAMPLE_VARS: Record<string, string> = {
   title: "Figura especial — seleção França",
   value: "R$ 45,00",
   shipping: "13/10/2026",
-  link: "https://seusite.com/painel/lotes/A1B2C3D4",
+  link: "https://seusite.com/painel",
   name: "João",
   tracking: "BR123456789LP",
+  period_start: "20/10/2026",
+  period_end: "26/10/2026",
+  tracking_link: "https://seusite.com/painel/envios",
 };
 
 /** Substitui `{chave}` pelos valores informados; chaves desconhecidas ficam. */

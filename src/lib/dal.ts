@@ -14,9 +14,6 @@ import type { LotItemRow, Player, StockItem, StockMovement } from "@/lib/stock";
 import { isChargeActive, type Charge, type ChargeStatus } from "@/lib/charges";
 import { CHARGE_COLUMNS } from "@/lib/charges-server";
 import {
-  WEEKLY_FREIGHT,
-  freightPeriodEnd,
-  freightPeriodStart,
   type CustomerFreightState,
 } from "@/lib/freight";
 import { hashInviteToken } from "@/lib/invites";
@@ -1101,60 +1098,12 @@ export const getCustomerSpendingSummary = cache(
  */
 export const getCustomerFreightState = cache(
   async (customerId: string): Promise<CustomerFreightState> => {
+    const {customer}=await requireCustomer();
+    if(customer.id!==customerId)throw new Error("Cliente inválido.");
     const supabase = await createClient();
-    const periodStart = freightPeriodStart();
-    const amount = WEEKLY_FREIGHT;
-
-    const { count, error: lotsError } = await supabase
-      .from("lots")
-      .select("id", { count: "exact", head: true })
-      .eq("customer_id", customerId)
-      .gte("auction_date", periodStart)
-      .lt("auction_date", freightPeriodEnd(periodStart));
-
-    if (lotsError) {
-      console.error(`[dal] contar lotes do período do frete: ${lotsError.message}`);
-      throw new Error("Não foi possível carregar o frete da semana.");
-    }
-
-    const { data, error } = await supabase
-      .from("charges")
-      .select("code, status, freight_amount, expires_at")
-      .eq("customer_id", customerId)
-      .eq("freight_period", periodStart)
-      .gt("freight_amount", 0)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      // Migração 0015 ainda não aplicada: o painel continua funcionando.
-      if (error.code === "42P01" || error.code === "42703") {
-        return { status: (count ?? 0) > 0 ? "due" : "none", amount, periodStart };
-      }
-      console.error(`[dal] frete da semana do cliente: ${error.message}`);
-      throw new Error("Não foi possível carregar o frete da semana.");
-    }
-
-    const rows = (data ?? []) as {
-      code: string;
-      status: ChargeStatus;
-      freight_amount: number;
-      expires_at: string | null;
-    }[];
-
-    if (rows.some((row) => row.status === "approved")) {
-      return { status: "paid", amount, periodStart };
-    }
-
-    const open = rows.find(
-      (row) =>
-        (row.status === "pending" || row.status === "in_process") &&
-        isChargeActive(row),
-    );
-    if (open) {
-      return { status: "awaiting", amount, periodStart, chargeCode: open.code };
-    }
-
-    return { status: (count ?? 0) > 0 ? "due" : "none", amount, periodStart };
+    const {data,error}=await supabase.rpc('get_customer_freight_summary');
+    if(error||!data)throw new Error('Não foi possível carregar o frete do período.');
+    return data as CustomerFreightState;
   },
 );
 

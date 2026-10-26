@@ -37,6 +37,7 @@ export type ShipmentLotRef = {
   id: string;
   code: string;
   title: string;
+  auction_date?: string;
 };
 
 /** Snapshot do destinatário gravado na emissão da etiqueta. */

@@ -42,7 +42,7 @@ export function CatalogImport({disabled=false}:{disabled?:boolean}) {
   </>;
 }
 
-const tabs:[CatalogStatus,string][]=[["all","Todos"],["published","Publicados"],["draft","Rascunhos"],["sold-out","Esgotados"],["archived","Arquivados"]];
+const tabs:[CatalogStatus,string][]=[["all","Todos"],["published","Publicados"],["draft","Rascunhos"],["sold-out","Esgotados"],["low-stock","Estoque baixo"],["missing-photo","Sem foto"],["missing-cost","Sem custo"],["archived","Arquivados"]];
 export function ProductCatalog({data,filters,canEdit}:{data:CatalogData;filters:CatalogFilters;canEdit:boolean}) {
   const router=useRouter(); const [query,setQuery]=useState(filters.q); const [selected,setSelected]=useState<string[]>([]); const [pending,startTransition]=useTransition();
   const href=(patch:Partial<CatalogFilters>)=>{

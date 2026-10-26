@@ -25,7 +25,6 @@ import { ChargeStatusBadge } from "@/components/admin/charges/charge-status-badg
 import { useChargeQr } from "@/components/client/charge-qr-sheet";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DateBR } from "@/components/ui/date-br";
 import {
   chargeExpiryDeltaMs,
@@ -77,7 +76,6 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [withFreight, setWithFreight] = useState(false);
   const qr = useChargeQr();
 
   const active = charges.find((charge) => isChargeActive(charge)) ?? null;
@@ -107,9 +105,10 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
     [lots, activeChargeIds],
   );
 
-  // Frete da semana segue opcional; lotes nunca são selecionáveis.
+  // Frete do período segue opcional; lotes nunca são selecionáveis.
   const freightDue = freight.status === "due";
   const canAddFreight = freightDue && !active;
+  const withFreight = canAddFreight;
   const showCart = !active && (eligibleLots.length > 0 || canAddFreight);
 
   const total = useMemo(
@@ -131,7 +130,6 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
       toast.success(`Cobrança ${result.data.charge.code} criada.`);
       // O QR abre aqui no painel — sem aba nova (que o navegador bloquearia).
       qr.open(result.data.charge.id);
-      setWithFreight(false);
       router.refresh();
     });
   };
@@ -170,9 +168,9 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
     ? "Você tem um Pix aguardando pagamento. A confirmação é automática após o pagamento."
     : showCart
       ? eligibleLots.length > 0 && canAddFreight
-        ? "Todos os lotes pendentes são somados automaticamente. Você pode incluir o frete da semana."
+        ? "Todos os lotes pendentes e os fretes devidos são somados automaticamente no mesmo Pix."
         : canAddFreight
-          ? "Inclua o frete da semana no pagamento."
+          ? "O frete pendente será incluído automaticamente no pagamento."
           : "Todos os seus lotes pendentes serão somados em um único Pix."
       : charges.length > 0
         ? "Histórico das suas cobranças Pix."
@@ -207,7 +205,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
         {freight.status === "due" && (
           <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <p className="font-medium">
-              Frete da semana — {formatBRL(freight.amount)} pendente
+              Frete do período — {formatBRL(freight.amount)} pendente
             </p>
             <p className="text-xs">
               {active
@@ -218,13 +216,13 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
         )}
         {freight.status === "awaiting" && freight.chargeCode && (
           <div className="rounded-lg border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
-            Frete da semana incluso no Pix {freight.chargeCode} — aguardando
+            Frete do período incluso no Pix {freight.chargeCode} — aguardando
             confirmação.
           </div>
         )}
         {freight.status === "paid" && (
           <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-600 dark:text-emerald-400">
-            Frete da semana pago.
+            Frete do período pago.
           </div>
         )}
 
@@ -338,23 +336,14 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
             {canAddFreight && (
               <ul className="flex flex-col divide-y rounded-lg bg-muted/60">
                 <li className="flex items-center gap-2.5 px-3 py-2.5">
-                  <Checkbox
-                    id="freight-week"
-                    checked={withFreight}
-                    onCheckedChange={(value) => setWithFreight(value === true)}
-                    disabled={pending}
-                  />
-                  <label
-                    htmlFor="freight-week"
-                    className="flex flex-1 cursor-pointer items-center justify-between gap-3"
-                  >
+                  <div className="flex flex-1 items-center justify-between gap-3"                  >
                     <span className="flex min-w-0 items-center gap-2.5">
                       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background text-ouro-ink">
                         <Truck className="size-[18px]" />
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold">
-                          Frete da semana
+                          Frete do período
                         </span>
                         <span className="block text-[10px] text-muted-foreground">
                           cobrança única do período (terça a terça)
@@ -364,7 +353,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                     <span className="ml-2 shrink-0 text-sm font-semibold">
                       {formatBRL(freight.amount)}
                     </span>
-                  </label>
+                  </div>
                 </li>
               </ul>
             )}

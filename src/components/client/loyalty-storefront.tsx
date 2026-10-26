@@ -1,10 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Coins, Gift, Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { getCartProducts } from "@/app/actions/loyalty-history";
+import type { CustomerCatalog } from "@/lib/loyalty-history";
 import { checkoutStoreAction } from "@/app/actions/store";
 import { cartCheckoutSchema, cartTotals, coinNumber, priceLabel, productPrices, storeBRL, type CartLine, type PriceMode, type StoreProduct } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -45,15 +47,25 @@ function ProductCard({ product, onAdd }: { product: StoreProduct; onAdd: (produc
   </article>;
 }
 
-export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder }: { rewards: StoreProduct[]; balance: number; customerId: string; hasOpenOrder: boolean }) {
+export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, catalog, catalogFilters }: { rewards: StoreProduct[]; balance: number; customerId: string; hasOpenOrder: boolean; catalog:CustomerCatalog; catalogFilters:{q:string;category:string;mode:string;sort:string} }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sort, setSort] = useState("newest");
   const [open, setOpen] = useState(false);
   const [cart, dispatch] = useReducer((_: Cart, next: Cart) => next, emptyCart);
   const [pending, startTransition] = useTransition();
   const submitting = useRef(false);
+  const [retryCart,setRetryCart]=useState(0);
+  const cartIds=Array.from(new Set(cart.items.map(item=>item.reward_id))).sort().join(',');
+  const cartVersion=cart.requestKey;
+  const [cartSnapshot,setCartSnapshot]=useState<{ids:string;version:string;source:StoreProduct[];retry:number;products:StoreProduct[];error:string}>({ids:'',version:'',source:rewards,retry:0,products:[],error:''});
+  const cartLoading=!!cartIds&&(cartSnapshot.ids!==cartIds||cartSnapshot.version!==cartVersion||cartSnapshot.source!==rewards||cartSnapshot.retry!==retryCart);
+  const cartError=cartLoading?'':cartSnapshot.error;
+  useEffect(()=>{
+    if(!cartIds)return;
+    let cancelled=false;
+    getCartProducts(cartIds.split(',')).then(result=>{if(cancelled)return;setCartSnapshot({ids:cartIds,version:cartVersion,source:rewards,retry:retryCart,products:result.ok?result.data:[],error:result.ok?'':result.error});}).catch(()=>{if(!cancelled)setCartSnapshot({ids:cartIds,version:cartVersion,source:rewards,retry:retryCart,products:[],error:'Não foi possível atualizar os itens do carrinho.'});});
+    return()=>{cancelled=true;};
+  },[cartIds,cartVersion,rewards,retryCart]);
+  const products=[...rewards,...cartSnapshot.products.filter(product=>!rewards.some(visible=>visible.id===product.id))];
   const storageKey = `ocdl-store-cart-v1:${customerId}`;
   useEffect(() => {
     try {
@@ -80,15 +92,15 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder }
   };
   const totals = cartTotals(cart.items);
   const missing = totals.coins > 0 ? Math.max(0, totals.coins / 100 - balance) : 0;
-  const currentPrice = (item: CartLine) => { const product = rewards.find((p) => p.id === item.reward_id); return product ? productPrices(product).find((price) => price.mode === item.mode) : undefined; };
+  const currentPrice = (item: CartLine) => { const product = products.find((p) => p.id === item.reward_id); return product ? productPrices(product).find((price) => price.mode === item.mode) : undefined; };
   const changed = (item: CartLine) => { const price = currentPrice(item); return !price || price.cash !== item.expected_cash || price.coins !== item.expected_coins; };
   const hasStaleItems = cart.items.some(changed);
   const overStock = cart.items.some((item) => {
-    const product = rewards.find((p) => p.id === item.reward_id);
+    const product = products.find((p) => p.id === item.reward_id);
     return !product || (product.stock !== null && cart.items.filter((line) => line.reward_id === item.reward_id).reduce((sum,line) => sum + line.quantity,0) > product.stock);
   });
   const changePayment = (item: CartLine, mode: PriceMode) => {
-    const product = rewards.find((p) => p.id === item.reward_id);
+    const product = products.find((p) => p.id === item.reward_id);
     const price = product && productPrices(product).find((p) => p.mode === mode);
     if (!price) return;
     const rest = cart.items.filter((row) => row !== item);
@@ -96,18 +108,6 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder }
     if (other && other.quantity + item.quantity > 99) { toast.error("Limite de 99 unidades por modalidade."); return; }
     update(other ? rest.map((row) => row === other ? { ...row, quantity: row.quantity + item.quantity, expected_cash: price.cash, expected_coins: price.coins } : row) : [...rest,{ ...item,mode,expected_cash:price.cash,expected_coins:price.coins }]);
   };
-  const filtered = useMemo(() => {
-    const result = rewards.filter((product) => {
-      const matches = `${product.name} ${product.description ?? ""}`.toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR"));
-      return matches && (filter === "all" || productPrices(product).some((price) => price.mode === filter));
-    });
-    if (sort !== "newest") result.sort((a,b) => {
-      const mode = sort === "cash" ? "cash" : "coins";
-      const cost = (product: StoreProduct) => { const price = productPrices(product).find((p) => p.mode === mode); return price ? (mode === "cash" ? price.cash : price.coins) : Infinity; };
-      return cost(a) - cost(b);
-    });
-    return result;
-  }, [rewards, query, filter, sort]);
   const checkout = () => {
     if (submitting.current) return;
     submitting.current = true;
@@ -127,24 +127,30 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder }
   };
   return <section className="grid gap-4" aria-labelledby="catalogo-loja">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-wider text-ouro-ink">Explore e aproveite</p><h2 id="catalogo-loja" className="text-xl font-bold">Produtos da loja</h2></div><Button onClick={() => setOpen(true)} variant="outline"><ShoppingCart /> Carrinho <span className="rounded-full bg-amarelo/20 px-2 text-xs">{totals.quantity}</span></Button></div>
-    <label className="relative"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><input aria-label="Buscar produtos" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="O que você procura?" className="h-11 w-full rounded-xl border bg-background pl-10 pr-3 text-sm" /></label>
-    <div className="flex flex-wrap gap-2">{[["all","Todos"],["coins","Caracoins"],["cash","Reais"],["mixed","Reais + Caracoins"]].map(([key,label]) => <button type="button" key={key} onClick={() => setFilter(key)} aria-pressed={filter === key} className={`rounded-full border px-3 py-1.5 text-xs ${filter === key ? "border-ouro bg-amarelo/15 font-semibold text-ouro-ink" : "text-muted-foreground"}`}>{label}</button>)}<select aria-label="Ordenar produtos" value={sort} onChange={(event) => setSort(event.target.value)} className="ml-auto rounded-lg border bg-background p-1.5 text-xs"><option value="newest">Novidades</option><option value="cash">Menor preço em reais</option><option value="coins">Menos Caracoins</option></select></div>
-    {filtered.length ? <div className="grid grid-cols-2 gap-3 sm:gap-4">{filtered.map((product) => <ProductCard key={product.id} product={product} onAdd={add} />)}</div> : <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum produto encontrado.</p>}
+    <form key={JSON.stringify(catalogFilters)} action="/painel/loja" className="grid grid-cols-2 items-end gap-3"><input type="hidden" name="tab" value="products"/>
+      <label className="col-span-2 grid gap-1 text-xs">Buscar produtos<div className="relative"><Search className="absolute left-3 top-3 size-4 text-muted-foreground"/><input name="q" defaultValue={catalogFilters.q} maxLength={100} placeholder="O que você procura?" className="h-11 w-full rounded-xl border bg-background pl-10 pr-3 text-sm"/></div></label>
+      <label className="grid min-w-0 gap-1 text-xs">Categoria<select name="category" defaultValue={catalogFilters.category} className="h-10 min-w-0 rounded-lg border bg-background px-2"><option value="">Todas</option>{catalog.categories.map(category=><option key={category}>{category}</option>)}</select></label>
+      <label className="grid min-w-0 gap-1 text-xs">Como pagar<select name="mode" defaultValue={catalogFilters.mode} className="h-10 min-w-0 rounded-lg border bg-background px-2"><option value="">Todas as formas</option><option value="cash">Reais (Pix)</option><option value="coins">Caracoins</option><option value="mixed">Reais + Caracoins</option></select></label>
+      <label className="grid min-w-0 gap-1 text-xs">Ordenar<select name="sort" defaultValue={catalogFilters.sort} className="h-10 min-w-0 rounded-lg border bg-background px-2"><option value="newest">Novidades</option><option value="cash">Menor preço em reais</option><option value="coins">Menos Caracoins</option></select></label><Button type="submit" variant="outline">Filtrar</Button>
+    </form>
+    {rewards.length ? <div className="grid grid-cols-2 gap-3 sm:gap-4">{rewards.map((product) => <ProductCard key={product.id} product={product} onAdd={add} />)}</div> : <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum produto encontrado neste filtro.</p>}
     {cart.items.length > 0 && <Button onClick={() => setOpen(true)} className="sticky bottom-24 z-20 flex h-auto justify-between gap-3 rounded-xl p-4 shadow-lg"><span className="flex items-center gap-2"><ShoppingCart /> Ver carrinho ({totals.quantity})</span><span className="text-right text-xs">{priceLabel(totals.cash / 100, totals.coins / 100)}</span></Button>}
     <Sheet open={open} onOpenChange={(value) => { if (!pending) setOpen(value); }}><SheetContent className="flex flex-col data-[side=right]:w-full data-[side=right]:sm:max-w-lg"><SheetHeader><SheetTitle className="flex items-center gap-2"><ShoppingCart /> Seu carrinho</SheetTitle><SheetDescription>Revise os itens e a forma de pagamento de cada produto.</SheetDescription></SheetHeader>
       <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         {cart.items.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">Seu carrinho está vazio.</p>}
-        {cart.items.map((item) => { const product = rewards.find((p) => p.id === item.reward_id); return <div key={`${item.reward_id}-${item.mode}`} className="rounded-xl border p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{product?.name ?? "Produto indisponível"}</p><p className="text-xs text-ouro-ink">{priceLabel(item.expected_cash,item.expected_coins)} / unidade</p></div><Button variant="ghost" size="icon" disabled={pending} aria-label={`Remover ${product?.name ?? "produto"}`} onClick={() => update(cart.items.filter((row) => row !== item))}><Trash2 className="size-4" /></Button></div>
+        {cart.items.map((item) => { const product = products.find((p) => p.id === item.reward_id); return <div key={`${item.reward_id}-${item.mode}`} className="rounded-xl border p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{product?.name ?? "Produto indisponível"}</p><p className="text-xs text-ouro-ink">{priceLabel(item.expected_cash,item.expected_coins)} / unidade</p></div><Button variant="ghost" size="icon" disabled={pending} aria-label={`Remover ${product?.name ?? "produto"}`} onClick={() => update(cart.items.filter((row) => row !== item))}><Trash2 className="size-4" /></Button></div>
           {product && <select aria-label={`Forma de pagamento de ${product.name} no carrinho`} disabled={pending} value={item.mode} onChange={(event) => changePayment(item,event.target.value as PriceMode)} className="mt-2 w-full rounded-lg border bg-background p-2 text-xs">{!currentPrice(item) && <option value={item.mode}>Modalidade indisponível</option>}{productPrices(product).map((price) => <option key={price.mode} value={price.mode}>{priceLabel(price.cash,price.coins)}</option>)}</select>}
           {changed(item) && currentPrice(item) && <Button size="sm" variant="outline" disabled={pending} className="mt-2" onClick={() => changePayment(item,item.mode)}>Aceitar preço atualizado</Button>}
           <div className="mt-3 flex items-center gap-3"><Button size="icon" variant="outline" disabled={pending} aria-label="Diminuir quantidade" onClick={() => update(cart.items.flatMap((row) => row !== item ? [row] : row.quantity > 1 ? [{ ...row, quantity: row.quantity - 1 }] : []))}><Minus className="size-4" /></Button><span className="tabular-nums">{item.quantity}</span><Button size="icon" variant="outline" disabled={pending || !product} aria-label="Aumentar quantidade" onClick={() => product && add(product,item.mode)}><Plus className="size-4" /></Button><p className="ml-auto text-right text-xs font-semibold">{priceLabel(item.expected_cash * item.quantity,item.expected_coins * item.quantity)}</p></div></div>; })}
       </div>
       <div className="space-y-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"><div className="flex justify-between text-sm"><span>Disponível</span><span className="flex items-center gap-1"><Coins className="size-4 text-ouro-ink" />{coinNumber(balance)} Caracoins</span></div><div className="flex justify-between gap-3 font-bold"><span>Total</span><span className="text-right text-ouro-ink">{cart.items.length ? priceLabel(totals.cash / 100,totals.coins / 100) : "—"}</span></div>
         {missing > 0 && <p role="alert" className="text-sm text-destructive">Faltam {coinNumber(missing)} Caracoins. Escolha a opção em reais nos produtos que oferecem essa modalidade.</p>}
+        {cartLoading && <p role="status" className="text-sm text-muted-foreground">Atualizando os itens do carrinho…</p>}
+        {cartError && <div role="alert" className="grid gap-2 text-sm text-destructive"><p>{cartError}</p><Button variant="outline" onClick={()=>setRetryCart(n=>n+1)}>Tentar novamente</Button></div>}
         {hasOpenOrder && <p className="text-sm text-muted-foreground">Você já tem um pedido aguardando Pix. Conclua ou cancele esse pagamento para comprar novamente.</p>}
         {(hasStaleItems || overStock) && <p role="alert" className="text-sm text-destructive">O catálogo mudou. Confira os preços atualizados e reduza ou remova os itens sem estoque antes de confirmar.</p>}
         <p className="text-xs text-muted-foreground">{totals.cash > 0 ? "O valor em reais será pago em um único Pix. As Caracoins ficam reservadas até a confirmação; se o pagamento expirar ou for cancelado, elas voltam ao saldo." : "As Caracoins serão descontadas ao confirmar a compra."} A equipe acompanha a entrega ou utilização dos itens.</p>
-        <Button className="w-full" disabled={pending || !cart.items.length || missing > 0 || hasOpenOrder || hasStaleItems || overStock} onClick={checkout}>{pending ? "Preparando pedido…" : totals.cash > 0 ? `Gerar Pix de ${storeBRL(totals.cash / 100)}` : "Confirmar compra com Caracoins"}</Button>
+        <Button className="w-full" disabled={pending || cartLoading || !!cartError || !cart.items.length || missing > 0 || hasOpenOrder || hasStaleItems || overStock} onClick={checkout}>{pending ? "Preparando pedido…" : totals.cash > 0 ? `Gerar Pix de ${storeBRL(totals.cash / 100)}` : "Confirmar compra com Caracoins"}</Button>
       </div>
     </SheetContent></Sheet>
   </section>;

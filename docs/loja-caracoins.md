@@ -26,7 +26,9 @@ Caracoins e estoque só são liberados após o Mercado Pago confirmar cancelamen
 
 ## Operação do ADM
 
-**Fidelidade → Pedidos e resgates** mostra os pedidos recentes da loja, clientes, itens, quantidades, totais e situação. Filtros: pagos para separar, aguardando pagamento, em análise, concluídos e todos. Os indicadores de reais/Caracoins são da lista recente, não do histórico inteiro. Resgates antigos continuam acessíveis abaixo.
+**Loja → Pedidos** reúne compras do carrinho e resgates antigos na mesma lista, identificados pela origem. Abas: todos, para separar, em separação, aguardando pagamento, concluídos, em análise e encerrados. Busca por cliente, telefone ou código; filtro de origem e período (horário de Brasília); paginação de 10, 20 ou 50 pedidos no banco. As contagens abrangem o histórico da busca/origem/período, não apenas a página atual. Os detalhes e ações de cada pedido abrem ao clicar na linha.
+
+Não existe aprovação manual do pagamento. Pix é confirmado pelo Mercado Pago e compras com Caracoins debitam as moedas no checkout. Nos resgates antigos, o antigo botão "Aprovar" foi renomeado para "Iniciar separação": o crédito já foi debitado quando o cliente resgatou. "Concluído" significa que a equipe já finalizou esse pedido e não exige ação adicional.
 
 Somente pedidos pagos podem ser separados/concluídos. As mensagens do campo do pedido são visíveis ao cliente. Produtos da loja ficam nesta fila; entrega/utilização e associação física com envios de lotes são organizadas pela equipe.
 
@@ -40,6 +42,28 @@ O estoque do catálogo significa **disponível**, já descontadas as reservas. A
 2. Aplicar `supabase/migrations/0025_store_catalog_admin.sql` após a 0024. Ela adiciona SKU, categoria, galeria, arquivamento, filtros e importação administrativa.
 3. Publicar esta versão do aplicativo logo após aplicar os dois arquivos. A migration 0024 substitui o checkout antigo de um único resgate pelo carrinho.
 4. Configurar os preços desejados e conferir o primeiro pedido no ADM. A integração usa as credenciais e o webhook do Mercado Pago já existentes; não exige novas variáveis.
+
+Para a lista unificada de pedidos, aplicar também `supabase/migrations/0026_admin_order_history.sql`, após a 0025 e antes de publicar a atualização. Ela cria uma consulta administrativa protegida e índices de ordenação; não altera pagamentos, saldos ou situações existentes.
+
+## Dashboard da loja
+
+Aplicar `supabase/migrations/0027_store_dashboard.sql` após a 0026 e antes de publicar o dashboard. A consulta exige acesso administrativo e reúne compras do carrinho e resgates antigos; não lê lotes, fretes ou créditos de pontos ganhos.
+
+Períodos: hoje, últimos 7 dias, últimos 30 dias e personalizado de até 366 dias, em horário de Brasília. Indicadores, gráfico e produtos mais vendidos consideram compras atualmente confirmadas, pela data de confirmação (ou criação quando não há `paid_at`). Resgates antigos usam a data de criação. Cancelamentos, estornos integrais/parciais e pagamentos em análise não entram; por isso um estorno pode mudar um período anterior. Reais e Caracoins permanecem separados.
+
+O custo interno é copiado para cada item nas novas compras pela trigger `store_item_cost_snapshot`. Custos antigos não são preenchidos com o valor atual. O dashboard informa quantas unidades do período estão sem custo histórico e mostra apenas o custo conhecido, sem calcular lucro. O custo não inclui taxas, tributos ou entrega; o campo histórico de custo é oculto para clientes nas permissões do banco.
+
+As pendências operacionais e alertas do catálogo consideram todo o histórico, independentemente do período. Os cinco últimos pedidos usam a data de criação dentro do período e levam à busca correspondente. Alertas abrem o catálogo filtrado por estoque baixo, esgotado, sem foto ou sem custo.
+
+## Históricos e navegação da loja
+
+Aplicar `supabase/migrations/0028_loyalty_history_and_client_store.sql` após a 0027 e antes desta publicação. A loja do cliente tem seções Produtos, Meus pedidos e Extrato. O catálogo consulta 20 produtos por página, com busca, categoria, forma de pagamento e ordenação. Itens do carrinho são reconsultados por ID (até 50), independentemente da página atual; erros impedem confirmar a compra até nova consulta.
+
+Meus pedidos reúne compras do carrinho e resgates antigos, com período, situação e páginas de 10 registros. O Pix em andamento continua acessível no topo da vitrine e na seção de pedidos, com confirmação automática. O extrato do cliente e do ADM tem filtros, paginação de 10/20/50 e totais do filtro, explicitamente diferentes do saldo disponível. As consultas do cliente usam seu ID autenticado e não recebem um ID arbitrário do navegador.
+
+O ajuste administrativo busca até 20 clientes por nome/telefone, consulta o saldo e exige revisar cliente, valor e motivo antes de confirmar. Uma chave UUID torna a repetição da mesma confirmação idempotente no banco. Após uma falha de rede, repetir na mesma confirmação; consultar o extrato antes de iniciar uma solicitação diferente. O ajuste não muda o elo.
+
+As configurações consultam apenas regras e as últimas dez mudanças. Falhas de saldo, catálogo e históricos mostram indisponibilidade com nova tentativa, em vez de saldo zero ou histórico vazio. A migration 0028 não altera movimentos anteriores.
 
 ## Catálogo administrativo
 

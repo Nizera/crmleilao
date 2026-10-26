@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireCustomer } from "@/lib/dal";
+import { orderHistoryFilters, orderHistoryHref } from "@/lib/order-history";
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const fail = (message: string, section = ""): never => redirect(`/admin/fidelidade${section}?erro=${encodeURIComponent(message)}`);
@@ -45,23 +46,10 @@ export async function handleLoyaltyRedemption(form: FormData) {
     p_note: text(form, "admin_note") || null,
   });
   if (error) fail(`Falha ao atualizar resgate: ${error.message}`, "/resgates");
-  revalidatePath("/admin/fidelidade"); revalidatePath("/painel/loja");
-  redirect("/admin/fidelidade/resgates?salvo=1");
-}
-
-export async function adjustLoyaltyPoints(form: FormData) {
-  const { profile } = await requireAdmin();
-  if (profile.role === "viewer") fail("Seu perfil é somente leitura.", "/extrato");
-  const points = Number(text(form, "points"));
-  const customerId = text(form, "customer_id");
-  const note = text(form, "note");
-  if (!Number.isFinite(points) || points === 0 || Math.abs(points) > 1000000 || Math.round(points * 100) !== points * 100) fail("Ajuste inválido: informe um valor diferente de zero com até duas casas decimais.", "/extrato");
-  if (note.length < 4 || note.length > 500) fail("Explique o motivo do ajuste (4 a 500 caracteres).", "/extrato");
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("adjust_loyalty_points", { p_customer_id: customerId, p_points: points, p_note: note });
-  if (error) fail(`Falha ao lançar ajuste: ${error.message}`, "/extrato");
-  revalidatePath("/admin/fidelidade"); revalidatePath("/painel/loja");
-  redirect("/admin/fidelidade/extrato?salvo=1");
+  revalidatePath("/admin/fidelidade"); revalidatePath("/admin/fidelidade/resgates"); revalidatePath("/painel/loja");
+  const filters = orderHistoryFilters(Object.fromEntries(new URLSearchParams(text(form,"return_query"))));
+  const href = orderHistoryHref(filters);
+  redirect(`${href}${href.includes("?") ? "&" : "?"}salvo=1`);
 }
 
 export async function updateLoyaltyRankingVisibility(form: FormData) {

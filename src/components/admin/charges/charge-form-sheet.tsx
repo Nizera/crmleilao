@@ -20,7 +20,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { Charge, ChargeLotRef } from "@/lib/charges";
-import { WEEKLY_FREIGHT } from "@/lib/freight";
 import type { Customer } from "@/lib/dal";
 import { formatBRL } from "@/lib/lots";
 import { formatPhoneBR } from "@/lib/customers";
@@ -35,6 +34,7 @@ type Context = {
   active: { id: string; code: string; amount: number; expires_at: string | null } | null;
   lots: ChargeLotRef[];
   freightDue: boolean;
+  freightAmount: number;
 };
 
 export function ChargeFormSheet({ open, onOpenChange, onCreated }: Props) {
@@ -68,7 +68,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
   const [context, setContext] = useState<Context | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [withFreight, setWithFreight] = useState(false);
+  const withFreight = context?.freightDue ?? false;
 
   useEffect(() => {
     if (!selected) return;
@@ -114,7 +114,6 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
     setSelected(customer);
     setContext(null);
     setPicked(new Set());
-    setWithFreight(false);
     setServerError(null);
     setLoadingContext(true);
   };
@@ -132,7 +131,7 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
     (context?.lots
       .filter((lot) => picked.has(lot.id))
       .reduce((sum, lot) => sum + Number(lot.arremate_value), 0) ?? 0) +
-    (withFreight ? WEEKLY_FREIGHT : 0);
+    (context?.freightAmount ?? 0);
 
   const generate = () => {
     if (!selected) return;
@@ -301,28 +300,19 @@ function ChargeForm({ onDone }: { onDone: (charge: Charge) => void }) {
 
               {context.freightDue && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-sm font-medium">Frete da semana</p>
+                  <p className="text-sm font-medium">Frete obrigatório do período</p>
                   <div className="flex items-center gap-3 rounded-md border px-3 py-2.5">
-                    <Checkbox
-                      id="charge-freight"
-                      checked={withFreight}
-                      onCheckedChange={(value) => setWithFreight(value === true)}
-                      disabled={pending}
-                    />
-                    <label
-                      htmlFor="charge-freight"
-                      className="flex flex-1 cursor-pointer items-center justify-between gap-3"
-                    >
+                    <div className="flex flex-1 items-center justify-between gap-3"                    >
                       <span className="text-sm font-medium">
-                        Frete da semana
+                        Frete obrigatório do período
                         <span className="block text-xs font-normal text-muted-foreground">
                           cobrança única do período (terça a terça)
                         </span>
                       </span>
                       <span className="whitespace-nowrap text-sm text-muted-foreground">
-                        {formatBRL(WEEKLY_FREIGHT)}
+                        {formatBRL(context.freightAmount)}
                       </span>
-                    </label>
+                    </div>
                   </div>
                 </div>
               )}

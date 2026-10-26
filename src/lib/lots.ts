@@ -127,7 +127,7 @@ export function buildLotMessage(lot: Lot, template?: string): string {
     title: lot.title,
     value: formatBRL(lot.arremate_value),
     shipping: formatDateBR(lot.shipping_date),
-    link: lotDeepLink(lot.code),
+    link: `${siteUrl()}/painel`,
     name: lot.customer?.name ?? "",
   });
 }

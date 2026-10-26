@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Copy, ExternalLink, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import { getPendingPaymentTotalAction } from "@/app/actions/charges";
 import { logWaMessage } from "@/app/actions/lots";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
@@ -83,17 +84,20 @@ export function ChargeQrPanel({
 
   const sendWhatsApp = () => {
     if (!charge.customer?.phone_e164) return;
-    const message = buildChargeMessage(charge, paymentTemplate);
-    const link = waMessageLink(charge.customer.phone_e164, message);
-
+    const popup=window.open('about:blank','_blank');if(popup)popup.opener=null;
     startTransition(async () => {
+      const result=await getPendingPaymentTotalAction(charge.customer_id);
+      if(!result.ok){popup?.close();toast.error(result.error);return;}
+      if(result.data.total<=0){popup?.close();toast.info('Este cliente não tem valor pendente.');return;}
+      const message=buildChargeMessage(charge,paymentTemplate,result.data.total);
+      const link=waMessageLink(charge.customer!.phone_e164,message);
       await logWaMessage({
         customer_id: charge.customer_id,
         kind: "payment_request",
         text_body: message,
         link,
       }).catch(() => null);
-      window.open(link, "_blank", "noopener");
+      if(popup)popup.location.href=link;else window.open(link,"_blank","noopener");
     });
   };
 

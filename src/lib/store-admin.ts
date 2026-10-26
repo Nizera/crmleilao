@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { LoyaltyReward } from "@/lib/loyalty";
 
 export type AdminProduct = LoyaltyReward & { sku: string; category: string; image_paths: string[]; archived: boolean; low_stock_threshold: number | null; reserved: number };
-export type CatalogStatus = "all" | "published" | "draft" | "sold-out" | "low-stock" | "archived";
+export type CatalogStatus = "all" | "published" | "draft" | "sold-out" | "low-stock" | "archived" | "missing-photo" | "missing-cost";
 export type CatalogData = { items: AdminProduct[]; total: number; counts: Record<CatalogStatus, number>; categories: string[] };
 export const CATALOG_PATH = "/admin/fidelidade/recompensas";
 export const MAX_PRODUCT_PHOTOS = 6;

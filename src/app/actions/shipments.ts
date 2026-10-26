@@ -31,7 +31,10 @@ import {
   syncShipment,
   type EligibleShipmentLot,
 } from "@/lib/shipments-server";
-import { renderTemplate } from "@/lib/settings";
+import { renderTemplate, DEFAULT_SETTINGS } from "@/lib/settings";
+import { siteUrl } from "@/lib/lots";
+import { freightPeriodForDate,freightPeriodEnd } from "@/lib/freight";
+import { isoDayAdd } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 import { formatBRL, waMessageLink } from "@/lib/lots";
 
@@ -419,11 +422,14 @@ export async function getShippingNoticeAction(id: string): Promise<
       return failure("Seu perfil é somente leitura.");
     }
 
-    const shipment = await getShipmentById(id);
+    let shipment = await getShipmentById(id);
     if (!shipment) return failure("Envio não encontrado.");
-    if (!shipment.tracking_code) {
-      return failure("Este envio ainda não tem código de rastreio.");
-    }
+    if(!["released","posted","delivered"].includes(shipment.status))return failure("Emita a etiqueta antes de avisar o cliente.");
+    if(!shipment.tracking_code){try{shipment=await syncShipment(id);}catch{/* O provedor pode liberar o código depois da etiqueta. */}}
+    if(!["released","posted","delivered"].includes(shipment.status))return failure("A etiqueta não está ativa. Atualize o envio antes de avisar o cliente.");
+    const dates=(shipment.lots??[]).map(lot=>lot.auction_date).filter((d):d is string=>!!d).sort();
+    const start=freightPeriodForDate(dates[0]??shipment.batch_date);
+    const end=isoDayAdd(freightPeriodEnd(freightPeriodForDate(dates.at(-1)??shipment.batch_date)),-1);
 
     const supabase = await createClient();
     const { data: settings } = await supabase
@@ -433,12 +439,15 @@ export async function getShippingNoticeAction(id: string): Promise<
       .maybeSingle();
 
     const text = renderTemplate(
-      settings?.wa_shipping_template ??
-        "Olá {name}! O lote {code} foi enviado.\nRastreio: {tracking}",
+      settings?.wa_shipping_template ?? DEFAULT_SETTINGS.wa_shipping_template,
       {
         name: shipment.customer?.name?.split(" ")[0] ?? "",
         code: shipment.code,
-        tracking: shipment.tracking_code,
+        tracking: shipment.tracking_code??"Aguardando liberação pela transportadora; consulte o painel.",
+        period_start: start.split('-').reverse().join('/'),
+        period_end: end.split('-').reverse().join('/'),
+        tracking_link: shipment.tracking_url??`${siteUrl()}/painel/envios`,
+        link: `${siteUrl()}/painel/envios`,
       },
     );
 

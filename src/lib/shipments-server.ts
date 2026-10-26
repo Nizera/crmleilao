@@ -72,7 +72,7 @@ type ShipmentEvent = { event: string; received_at: string; detail?: unknown };
 /** Liga os lotes (via shipment_lots) a cada envio da lista. */
 export async function attachLots<T extends { id: string; lots?: unknown }>(
   rows: T[],
-): Promise<(T & { lots: { id: string; code: string; title: string }[] })[]> {
+): Promise<(T & { lots: { id: string; code: string; title: string; auction_date: string }[] })[]> {
   if (rows.length === 0) return rows as never;
 
   const admin = createAdminClient();
@@ -83,16 +83,16 @@ export async function attachLots<T extends { id: string; lots?: unknown }>(
     chunk(rows.map((row) => row.id), 200).map((piece) =>
       admin
         .from("shipment_lots")
-        .select("shipment_id, lots(id, code, title)")
+        .select("shipment_id, lots(id, code, title, auction_date)")
         .in("shipment_id", piece),
     ),
   );
 
   type LinkRow = {
     shipment_id: string;
-    lots: { id: string; code: string; title: string } | null;
+    lots: { id: string; code: string; title: string; auction_date: string } | null;
   };
-  const byShipment = new Map<string, { id: string; code: string; title: string }[]>();
+  const byShipment = new Map<string, { id: string; code: string; title: string; auction_date: string }[]>();
   for (const result of results) {
     if (result.error) {
       throw new Error(`Falha ao listar lotes do envio: ${result.error.message}`);
@@ -320,7 +320,7 @@ export async function listShipmentQueue(params: {
   const allPeriods = [...new Set([...customerPeriods.values()].flatMap((v) => [...v]))];
   for (const customerChunk of chunk([...customerPeriods.keys()], 100)) {
     const { data: charges, error: chargeError } = await admin
-      .from("charges")
+      .from("charge_freight_periods")
       .select("customer_id, freight_period, freight_amount, status, expires_at")
       .in("customer_id", customerChunk)
       .in("freight_period", allPeriods)
@@ -826,37 +826,7 @@ export async function emitShipment(input: {
   if (new Set(input.lotIds).size !== input.lotIds.length || picked.length !== input.lotIds.length) {
     throw new Error("Revise os lotes selecionados; há itens inválidos ou indisponíveis.");
   }
-  const { data: unpaidLots, error: unpaidError } = await admin
-    .from("lots")
-    .select("id")
-    .eq("customer_id", input.customerId)
-    .eq("status", "pending_payment")
-    .limit(1);
-  if (unpaidError) throw new Error(`Falha ao conferir pendências: ${unpaidError.message}`);
-  if (unpaidLots?.length) throw new Error("Não é possível emitir: o cliente tem lote(s) pendente(s) de pagamento.");
-  const { data: activeCharges, error: activeChargeError } = await admin
-    .from("charges").select("status, expires_at").eq("customer_id", input.customerId)
-    .in("status", ["pending", "in_process"]);
-  if (activeChargeError) throw new Error(`Falha ao conferir cobranças em aberto: ${activeChargeError.message}`);
-  if ((activeCharges ?? []).some((charge) => isChargeActive(charge as never))) {
-    throw new Error("Não é possível emitir: o cliente tem uma cobrança pendente.");
-  }
-
-  const { data: allCustomerLots, error: allLotsError } = await admin.from("lots")
-    .select("auction_date").eq("customer_id", input.customerId).in("status", ["paid", "pending_payment"]);
-  if (allLotsError) throw new Error(`Falha ao conferir períodos de frete: ${allLotsError.message}`);
-  const requiredPeriods = [...new Set((allCustomerLots ?? []).map((lot) => freightPeriodForDate(lot.auction_date)))];
-  const { data: freightCharges, error: freightError } = await admin
-    .from("charges")
-    .select("freight_period, freight_amount, status")
-    .eq("customer_id", input.customerId)
-    .in("freight_period", requiredPeriods)
-    .gt("freight_amount", 0);
-  if (freightError) throw new Error(`Falha ao conferir fretes: ${freightError.message}`);
-  const paidPeriods = new Set((freightCharges ?? []).filter((charge) => charge.status === "approved").map((charge) => charge.freight_period));
-  if (requiredPeriods.some((period) => !paidPeriods.has(period))) {
-    throw new Error("Não é possível emitir: há frete semanal pendente de pagamento.");
-  }
+  await assertShipmentPayments(input.customerId);
 
   const lotSubtotal = round2(
     picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
@@ -952,12 +922,20 @@ export async function emitShipment(input: {
   return { shipment, warning };
 }
 
+async function assertShipmentPayments(customerId:string){
+  const admin=createAdminClient();
+  const {error}=await admin.rpc('assert_customer_shipping_ready',{p_customer:customerId});
+  if(error)throw new Error(error.message || 'Não foi possível conferir as pendências do cliente.');
+}
+
 export async function payShipment(id: string): Promise<Shipment> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
   if (shipment.status !== "pending") {
     throw new Error("Este envio não está aguardando pagamento.");
   }
+
+  await assertShipmentPayments(shipment.customer_id);
 
   // Claim atômico: só quem leva o UPDATE dispara o checkout. Sem isso dois
   // cliques (ou dois admins) chamam checkoutOrders ao mesmo tempo e debitem a

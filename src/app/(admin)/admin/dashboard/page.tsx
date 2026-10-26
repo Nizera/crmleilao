@@ -302,7 +302,7 @@ export default async function DashboardPage({
           hint={
             s.ready.lots
               ? `${s.revenue.dayLots} ${
-                  s.revenue.dayLots === 1 ? "lote pago" : "lotes pagos"
+                  s.revenue.dayLots === 1 ? "lote cadastrado" : "lotes cadastrados"
                 } em ${formatDateBR(day)}`
               : "aplique a migração 0002_lots.sql"
           }

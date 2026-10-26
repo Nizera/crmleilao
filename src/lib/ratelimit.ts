@@ -16,6 +16,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * caso de indisponibilidade ou migration pendente.
  */
 export type RateBucket =
+  | "lot-ai"
+  | "loyalty-read"
   | "store-catalog-write"
   | "store-checkout"
   | "store-sync"
@@ -26,6 +28,8 @@ export type RateBucket =
   | "ip-only";
 
 const RULES: Record<RateBucket, { limit: number; window: number }> = {
+  "lot-ai": { limit: 8, window: 3600 },
+  "loyalty-read": { limit: 120, window: 60 },
   "store-catalog-write": { limit: 60, window: 300 },
   "store-checkout": { limit: 12, window: 300 },
   "store-sync": { limit: 15, window: 60 },

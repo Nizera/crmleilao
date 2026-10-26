@@ -7,9 +7,9 @@
 /** Valor fixo do frete semanal cobrado do cliente (1x por período). */
 export const WEEKLY_FREIGHT = 20;
 
-export type FreightDayKey = "ter" | "qua" | "qui" | "sex" | "sab" | "dom";
+export type FreightDayKey = "ter" | "qua" | "qui" | "sex" | "sab" | "dom" | "seg";
 
-/** Dias exibidos no card do dashboard (a semana da operação: terça a domingo). */
+/** Dias exibidos no card do dashboard (a semana da operação: terça a segunda). */
 export const FREIGHT_DAYS: { key: FreightDayKey; label: string }[] = [
   { key: "ter", label: "Ter" },
   { key: "qua", label: "Qua" },
@@ -17,6 +17,7 @@ export const FREIGHT_DAYS: { key: FreightDayKey; label: string }[] = [
   { key: "sex", label: "Sex" },
   { key: "sab", label: "Sáb" },
   { key: "dom", label: "Dom" },
+  { key: "seg", label: "Seg" },
 ];
 
 /** Estado do frete semanal do cliente logado (painel). */
@@ -76,6 +77,6 @@ export function freightPeriodEnd(start: string): string {
 export function spWeekdayKey(isoTimestamp: string): FreightDayKey | null {
   const iso = spIsoDate(new Date(isoTimestamp));
   const dow = isoToUtcDate(iso).getUTCDay();
-  const KEYS: (FreightDayKey | null)[] = ["dom", null, "ter", "qua", "qui", "sex", "sab"];
+  const KEYS: (FreightDayKey | null)[] = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
   return KEYS[dow] ?? null;
 }

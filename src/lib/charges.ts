@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { formatBRL, type LotStatus } from "@/lib/lots";
+import { siteUrl } from "@/lib/lots";
 import { DEFAULT_SETTINGS, renderTemplate } from "@/lib/settings";
 
 export const CHARGE_STATUSES = [
@@ -128,6 +129,7 @@ export function chargeQRDataUrl(base64: string | null | undefined): string | nul
 export function buildChargeMessage(
   charge: Charge,
   template?: string,
+  totalPending: number = charge.amount,
 ): string {
   const codes =
     charge.lots && charge.lots.length > 0
@@ -137,8 +139,8 @@ export function buildChargeMessage(
   return renderTemplate(template ?? DEFAULT_SETTINGS.wa_payment_template, {
     name: charge.customer?.name ?? "",
     code: codes,
-    value: formatBRL(charge.amount),
-    link: charge.ticket_url ?? "",
+    value: formatBRL(totalPending),
+    link: `${siteUrl()}/painel`,
     charge: charge.code,
   });
 }

@@ -14,11 +14,6 @@ import {
   targetChargeStatus,
 } from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  WEEKLY_FREIGHT,
-  freightPeriodEnd,
-  freightPeriodStart,
-} from "@/lib/freight";
 import { formatBRL } from "@/lib/lots";
 import { notifyCustomer } from "@/lib/notifications-server";
 
@@ -97,30 +92,6 @@ export async function listEligibleLotRefs(
     }));
 }
 
-type AdminClient = ReturnType<typeof createAdminClient>;
-
-/**
- * O frete do período já está coberto? (pago, ou com Pix em aberto que o
- * inclui). Cancelada/expirada/recusada não cobre — o cliente pode gerar outro.
- */
-async function isFreightCovered(
-  admin: AdminClient,
-  customerId: string,
-  periodStart: string,
-): Promise<boolean> {
-  const { data, error } = await admin
-    .from("charges")
-    .select("id")
-    .eq("customer_id", customerId)
-    .eq("freight_period", periodStart)
-    .gt("freight_amount", 0)
-    .in("status", ["pending", "in_process", "approved"])
-    .limit(1);
-
-  if (error) throw new Error(`Falha ao verificar o frete da semana: ${error.message}`);
-  return (data ?? []).length > 0;
-}
-
 /**
  * Contexto para criar cobrança: cobrança aberta do cliente (se houver),
  * lotes ainda elegíveis e se o frete da semana ainda está por pagar.
@@ -129,6 +100,7 @@ export async function getChargeContext(customerId: string): Promise<{
   activeCharge: Charge | null;
   eligibleLots: ChargeLotRef[];
   freightDue: boolean;
+  freightAmount: number;
 }> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -145,23 +117,11 @@ export async function getChargeContext(customerId: string): Promise<{
   const activeCharge = rows.find((charge) => isChargeActive(charge)) ?? null;
   const eligibleLots = await listEligibleLots(customerId);
 
-  const periodStart = freightPeriodStart();
-  const { count: lotsInPeriod, error: lotsError } = await admin
-    .from("lots")
-    .select("id", { count: "exact", head: true })
-    .eq("customer_id", customerId)
-    .gte("auction_date", periodStart)
-    .lt("auction_date", freightPeriodEnd(periodStart));
-
-  if (lotsError) {
-    throw new Error(`Falha ao contar lotes do período: ${lotsError.message}`);
-  }
-
-  const freightDue =
-    (lotsInPeriod ?? 0) > 0 &&
-    !(await isFreightCovered(admin, customerId, periodStart));
-
-  return { activeCharge, eligibleLots, freightDue };
+  const {data:due,error:dueError}=await admin.rpc('get_due_freight_periods',{p_customer:customerId});
+  if(dueError)throw new Error('Não foi possível consultar os fretes pendentes.');
+  const freightAmount=(due??[]).reduce((sum:number,row:{freight_amount:number})=>sum+Number(row.freight_amount),0);
+  const freightDue=freightAmount>0;
+  return { activeCharge, eligibleLots, freightDue, freightAmount };
 }
 
 export async function getChargeById(id: string): Promise<Charge | null> {
@@ -196,8 +156,8 @@ function round2(value: number): number {
 
 /**
  * Cria a cobrança Pix no Mercado Pago, grava em `charges` e vincula os lotes.
- * Ordem: MP primeiro (se falhar, nada fica no banco); depois insert; depois
- * vínculo. Um PIX órfão no MP expira sozinho em 3 dias.
+ * Reserva local do frete e vínculo dos lotes antes de criar o Pix; falhas
+ * anteriores à criação no provedor desfazem a reserva.
  */
 export async function createCharge(input: {
   customerId: string;
@@ -226,48 +186,13 @@ export async function createCharge(input: {
     ? eligible
     : eligible.filter((lot) => input.lotIds.includes(lot.id));
 
-  // Frete da semana: só se o cliente tem lote no período corrente e o
-  // período ainda não foi coberto (índice único em charges reforça isso).
-  let freightAmount = 0;
-  let freightPeriod: string | null = null;
-  if (input.includeFreight) {
-    freightPeriod = freightPeriodStart();
-    freightAmount = WEEKLY_FREIGHT;
-
-    const { count: lotsInPeriod, error: lotsError } = await admin
-      .from("lots")
-      .select("id", { count: "exact", head: true })
-      .eq("customer_id", input.customerId)
-      .gte("auction_date", freightPeriod)
-      .lt("auction_date", freightPeriodEnd(freightPeriod));
-
-    if (lotsError) {
-      throw new Error(`Falha ao contar lotes do período: ${lotsError.message}`);
-    }
-    if ((lotsInPeriod ?? 0) === 0) {
-      throw new Error(
-        "Este cliente não tem lote no período atual — o frete da semana não é devido.",
-      );
-    }
-    if (await isFreightCovered(admin, input.customerId, freightPeriod)) {
-      throw new Error(
-        "O frete da semana já está pago ou com Pix em aberto para este cliente.",
-      );
-    }
-  }
-
-  if (picked.length === 0 && !input.includeFreight) {
-    throw new Error("Não há lotes aguardando pagamento para gerar o Pix.");
-  }
-
-  const amount = round2(
-    picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) +
-      freightAmount,
-  );
-  if (amount <= 0) {
-    throw new Error("O valor total da cobrança precisa ser maior que zero.");
-  }
-
+  // O servidor determina todos os ciclos devidos; a opção do navegador é ignorada.
+  const {data:due,error:dueError}=await admin.rpc('get_due_freight_periods',{p_customer:input.customerId});
+  if(dueError)throw new Error('Não foi possível conferir os fretes dos ciclos.');
+  let freightAmount=(due??[]).reduce((sum:number,row:{freight_amount:number})=>sum+Number(row.freight_amount),0);
+  if(picked.length===0&&freightAmount===0)throw new Error('Não há lotes ou fretes pendentes para gerar o Pix.');
+  let amount=round2(picked.reduce((sum,lot)=>sum+Number(lot.arremate_value),0)+freightAmount);
+  if(amount<=0)throw new Error('O valor total precisa ser maior que zero.');
   const email = customer.email?.trim() || null;
   if (!email) {
     throw new Error(
@@ -276,16 +201,7 @@ export async function createCharge(input: {
   }
 
   const externalReference = `chg_${crypto.randomUUID()}`;
-  const description = [
-    picked.length > 0
-      ? `Leilão Legends — ${picked.length === 1 ? "lote" : "lotes"} ${picked
-          .map((lot) => lot.code)
-          .join(", ")}`
-      : "Leilão Legends",
-    freightAmount > 0 ? "frete da semana" : null,
-  ]
-    .filter(Boolean)
-    .join(" + ");
+  const description=`Leilão Legends — ${picked.length} arremate(s) acumulados${freightAmount>0?' + fretes dos ciclos devidos':''}`;
 
   const [firstName, ...rest] = (customer.name?.trim() || "Cliente").split(/\s+/);
   const digits = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
@@ -301,8 +217,8 @@ export async function createCharge(input: {
       status: "pending",
       external_reference: externalReference,
       description,
-      freight_amount: freightAmount,
-      freight_period: freightPeriod,
+      freight_amount: 0,
+      freight_period: null,
       created_by: input.createdBy,
     })
     .select("id")
@@ -333,6 +249,12 @@ export async function createCharge(input: {
     const remove = await admin.from("charges").delete().eq("id", chargeId);
     if (remove.error) console.error("[charges] rollback da cobrança:", remove.error);
   };
+
+  // Reserva atômica por cliente/ciclo ANTES de vincular os lotes ou chamar o provedor.
+  const {data:reserved,error:reserveError}=await admin.rpc('reserve_charge_freights',{p_charge:chargeId,p_lots:pickedIds});
+  if(reserveError){await rollback();throw new Error('Não foi possível incluir os fretes. Selecione todos os lotes pendentes e confira se já existe um Pix em aberto.');}
+  freightAmount=Number(reserved??0);
+  amount=round2(picked.reduce((sum,lot)=>sum+Number(lot.arremate_value),0)+freightAmount);
 
   // 2) Lotes elegíveis podem apontar para uma cobrança que expirou por tempo
   //    (sem webhook). Libera esses vínculos obsoletos antes de reclamar.

@@ -81,7 +81,7 @@ export type ClosingHistoryDay = {
 
 export type ClosingData = {
   date: string;
-  /** Receita do dia-alvo (SP) — casa com o KPI "Faturamento do dia". */
+  /** Recebimentos do dia-alvo (SP), usados no fechamento e pagamento da equipe. */
   receivedOn: number;
   entries: ClosingEntry[];
   pendingCharges: ClosingPendingCharge[];

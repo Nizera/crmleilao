@@ -3,17 +3,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { createPixOrder, getOrder, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";
 import { isStoreOrderOpen, type StoreOrder } from "@/lib/store";
-import { requireAdmin } from "@/lib/dal";
-
-export type AdminStoreOrder = StoreOrder & { customer: { name: string | null; phone_e164: string } | null };
-export async function getAdminStoreOrders() {
-  await requireAdmin();
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("store_orders")
-    .select("id,code,customer_id,cash_total,coins_total,payment_status,fulfillment_status,admin_note,created_at,items:store_order_items(id,reward_id,name,quantity,price_mode,unit_cash,unit_coins),customer:customers(name,phone_e164)")
-    .order("created_at", { ascending: false }).limit(100);
-  return { orders: (data ?? []) as unknown as AdminStoreOrder[], error: error?.message ?? null };
-}
 
 export const STORE_ORDER_COLUMNS = "*, items:store_order_items(id,reward_id,name,image_path,quantity,price_mode,unit_cash,unit_coins)";
 export async function getOwnStoreOrder(id: string, customerId: string): Promise<StoreOrder | null> {
@@ -22,13 +11,6 @@ export async function getOwnStoreOrder(id: string, customerId: string): Promise<
   if (error) throw error;
   return data as unknown as StoreOrder | null;
 }
-export async function getCustomerStoreOrders(customerId: string) {
-  const db = await createClient();
-  const { data, error } = await db.from("store_orders").select(STORE_ORDER_COLUMNS).eq("customer_id", customerId).order("created_at", { ascending: false }).limit(20);
-  if (error) return { ready: false as const, orders: [] as StoreOrder[] };
-  return { ready: true as const, orders: data as unknown as StoreOrder[] };
-}
-
 /** Chave idempotente estável: repetir a criação nunca gera outro Pix. */
 export async function ensureStorePix(order: StoreOrder): Promise<StoreOrder> {
   if (!isStoreOrderOpen(order) || order.mp_order_id) return order;

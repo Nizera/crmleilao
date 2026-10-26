@@ -44,7 +44,7 @@ const PIPELINE_ORDER: LotStatus[] = [
 ];
 
 const LOT_SELECT = [
-  "code, title, status, arremate_value, paid_at, shipping_date, customer_id,",
+  "code, title, status, arremate_value, created_at, paid_at, shipping_date, customer_id,",
   "customer:customers(id, name)",
 ].join(" ");
 
@@ -54,6 +54,7 @@ type LotRow = {
   status: LotStatus;
   arremate_value: number | string;
   paid_at: string | null;
+  created_at: string;
   shipping_date: string | null;
   customer_id: string;
   customer: { id: string; name: string | null } | null;
@@ -93,7 +94,7 @@ export type DashboardStats = {
     closing: boolean;
   };
   revenue: {
-    /** Receita do dia-alvo (SP) — o mesmo número do card de fechamento. */
+    /** Total dos lotes cadastrados no dia (SP), sem cancelados; independente do recebimento. */
     day: number;
     dayLots: number;
     month: number;
@@ -243,20 +244,21 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
   let totalRevenue = 0;
   let paidLots = 0;
   let dayRevenue = 0;
+  let dayReceived = 0;
+  let dayReceivedLots = 0;
   let dayLots = 0;
   for (const lot of lots) {
+    if(lot.status!=='cancelled'&&spDayOf(lot.created_at)===day){dayRevenue+=Number(lot.arremate_value);dayLots+=1;}
     if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
     const value = Number(lot.arremate_value);
     // Recorte de dinheiro: só o que já tinha acontecido no fim do dia-alvo.
     if (Date.parse(lot.paid_at) >= dayEndMs) continue;
+    if(spDayOf(lot.paid_at)===day){dayReceived+=value;dayReceivedLots+=1;}
     totalRevenue += value;
     paidLots += 1;
     const bucket = monthIndex.get(spMonthOf(lot.paid_at));
     if (bucket) bucket.value += value;
-    if (spDayOf(lot.paid_at) === day) {
-      dayRevenue += value;
-      dayLots += 1;
-    }
+
   }
 
   const monthRevenue = months[5].value;
@@ -319,6 +321,7 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     { id: string; name: string; lots: number; total: number }
   >();
   for (const lot of lots) {
+    if(lot.status!=='cancelled'&&spDayOf(lot.created_at)===day){dayRevenue+=Number(lot.arremate_value);dayLots+=1;}
     if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
     if (Date.parse(lot.paid_at) >= dayEndMs) continue;
     const entry =
@@ -417,8 +420,8 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     },
     shipments,
     closing: {
-      receivedOn: dayRevenue,
-      paidLotsOn: dayLots,
+      receivedOn: dayReceived,
+      paidLotsOn: dayReceivedLots,
       staffPaid: staffPaidOnRes.count ?? 0,
       staffTotal: staffTotalRes.count ?? 0,
     },

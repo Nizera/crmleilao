@@ -20,8 +20,17 @@ import {
   type ChargeLotRef,
   type ChargeStatus,
 } from "@/lib/charges";
-import { requireAdmin, requireCustomer, getCustomerFreightState, searchCustomers, type Customer } from "@/lib/dal";
+import { requireAdmin, requireCustomer, searchCustomers, type Customer } from "@/lib/dal";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { z } from "zod";
+
+export async function getPendingPaymentTotalAction(customerId:string):Promise<ActionResult<{total:number}>>{
+ try{await requireAdmin();if(!z.uuid().safeParse(customerId).success)return {ok:false,error:"Cliente inválido."};
+ const db=createAdminClient();const {data,error}=await db.rpc('get_customer_pending_payment_total',{p_customer:customerId});
+ if(error)return {ok:false,error:"Não foi possível consultar o total pendente."};return {ok:true,data:{total:Number(data??0)}};
+ }catch(error){rethrowIfRedirect(error);return {ok:false,error:"Não foi possível consultar o total pendente."};}
+}
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -93,11 +102,12 @@ export async function loadChargeContext(customerId: string): Promise<
     active: { id: string; code: string; amount: number; expires_at: string | null } | null;
     lots: ChargeLotRef[];
     freightDue: boolean;
+    freightAmount: number;
   }>
 > {
   try {
     await requireAdmin();
-    const { activeCharge, eligibleLots, freightDue } = await getChargeContext(customerId);
+    const { activeCharge, eligibleLots, freightDue, freightAmount } = await getChargeContext(customerId);
     return {
       ok: true,
       data: {
@@ -111,6 +121,7 @@ export async function loadChargeContext(customerId: string): Promise<
           : null,
         lots: eligibleLots,
         freightDue,
+        freightAmount,
       },
     };
   } catch (error) {
@@ -161,35 +172,13 @@ export async function createChargeAction(
 
 /**
  * Autoatendimento: o servidor inclui todos os lotes elegíveis do cliente.
- * O cliente pode optar por acrescentar o frete da semana ao total.
+ * O frete dos ciclos devidos é incluído obrigatoriamente pelo servidor.
  */
 export async function createSelfChargeAction(
-  includeFreight = false,
+  includeFreight = true,
 ): Promise<ActionResult<{ charge: Charge }>> {
   try {
     const { customer } = await requireCustomer();
-    if (typeof includeFreight !== "boolean") {
-      return failure("Opção de frete inválida.");
-    }
-
-    if (includeFreight) {
-      // Validação amigável antes do createCharge (que também revalida).
-      const freight = await getCustomerFreightState(customer.id);
-      if (freight.status === "paid") {
-        return failure("O frete da semana já foi pago.");
-      }
-      if (freight.status === "awaiting") {
-        return failure(
-          "O frete da semana já está em um Pix aguardando pagamento.",
-        );
-      }
-      if (freight.status !== "due") {
-        return failure(
-          "O frete da semana só aparece depois que um lote seu for cadastrado no período.",
-        );
-      }
-    }
-
     const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
       return failure("Você já tem uma cobrança aguardando pagamento.");

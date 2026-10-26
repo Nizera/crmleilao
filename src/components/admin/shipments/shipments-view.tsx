@@ -233,15 +233,13 @@ export function ShipmentsView({
   };
 
   const notify = (shipment: Shipment) => {
-    if (!shipment.tracking_code) {
-      toast.error("Este envio ainda não tem código de rastreio.");
-      return;
-    }
+    const popup=window.open("about:blank","_blank");if(popup)popup.opener=null;
     setBusyId(shipment.id);
     startTransition(async () => {
       try {
         const result = await getShippingNoticeAction(shipment.id);
         if (!result.ok) {
+          popup?.close();
           toast.error(result.error ?? "Falha ao montar o aviso.");
           return;
         }
@@ -250,11 +248,13 @@ export function ShipmentsView({
           result.data.text,
           result.data.link,
         );
-        window.open(result.data.link, "_blank", "noopener");
+        if(popup)popup.location.href=result.data.link;else window.open(result.data.link,"_blank","noopener");
+        router.refresh();
         if (!logged.ok) {
           toast.info(`Aviso aberto, mas o registro falhou: ${logged.error}`);
         }
       } catch (error) {
+        popup?.close();
         toast.error(error instanceof Error ? error.message : "Erro inesperado.");
       } finally {
         setBusyId(null);
@@ -539,7 +539,7 @@ export function ShipmentsView({
                             size="sm"
                             variant="outline"
                             onClick={() => notify(shipment)}
-                            disabled={busyId === shipment.id || !shipment.tracking_code}
+                            disabled={busyId === shipment.id || !["released","posted","delivered"].includes(shipment.status)}
                           >
                             {busyId === shipment.id ? (
                               <Loader2 className="animate-spin" />
@@ -689,7 +689,7 @@ export function ShipmentsView({
                             <Printer />
                             Etiqueta PDF
                           </DropdownMenuItem>
-                          {shipment.tracking_code && (
+                          {["released","posted","delivered"].includes(shipment.status) && (
                             <DropdownMenuItem onClick={() => notify(shipment)}>
                               <ExternalLink />
                               Enviar ao cliente

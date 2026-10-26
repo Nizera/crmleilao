@@ -8,7 +8,7 @@ export type CatalogFilters = { q: string; status: CatalogStatus; category: strin
 export function catalogFilters(params: Record<string,string | string[] | undefined>): CatalogFilters {
   const one = (key: string) => (Array.isArray(params[key]) ? params[key]?.[0] : params[key]) ?? "";
   const status=one("status"); const payment=one("payment");
-  return {q:one("q").trim().slice(0,100),status:(["all","published","draft","sold-out","low-stock","archived"].includes(status)?status:"all") as CatalogStatus,
+  return {q:one("q").trim().slice(0,100),status:(["all","published","draft","sold-out","low-stock","archived","missing-photo","missing-cost"].includes(status)?status:"all") as CatalogStatus,
     category:one("category").slice(0,60),payment:["cash","coins","mixed"].includes(payment)?payment:"",page:Math.max(1,Math.min(100000,Math.trunc(Number(one("page"))) || 1))};
 }
 export async function getStoreCatalog(filters: CatalogFilters) {
