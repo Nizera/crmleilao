@@ -27,7 +27,7 @@ export async function saveStoreProductAction(form:FormData):Promise<ActionResult
     const intent=String(form.get("intent") ?? "draft");
     if(!["publish","draft","archive"].includes(intent)) return {ok:false,error:"Publicação inválida."};
     const keys=["name","description","sku","category","points_cost","cash_price","mixed_cash_price","mixed_points_cost","internal_cost","stock","low_stock_threshold"];
-    const parsed=storeProductSchema.safeParse({...Object.fromEntries(keys.map((key)=>[key,form.get(key)])),active:intent==="publish",archived:intent==="archive"});
+    const parsed=storeProductSchema.safeParse({...Object.fromEntries(keys.map((key)=>[key,form.get(key)])),delivery_kind:form.get("delivery_kind") ?? "physical",active:intent==="publish",archived:intent==="archive"});
     if(!parsed.success) return {ok:false,error:parsed.error.issues[0]?.message ?? "Revise o cadastro."};
     let retained:unknown;
     try {retained=JSON.parse(String(form.get("retained_images") ?? "[]"));} catch{return {ok:false,error:"Galeria inválida."};}

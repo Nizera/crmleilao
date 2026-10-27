@@ -31,7 +31,7 @@ function ProductCard({ product, onAdd }: { product: StoreProduct; onAdd: (produc
       {gallery.length>1 && <span className="absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[10px] text-white">{gallery.length} fotos</span>}
     </button>
     <div className="flex flex-1 flex-col gap-3 p-3 sm:p-4">
-      <div><h3 className="line-clamp-2 text-sm font-semibold sm:text-base">{product.name}</h3>{product.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{product.description}</p>}</div>
+      <div><h3 className="line-clamp-2 text-sm font-semibold sm:text-base">{product.name}</h3><p className="mt-1 text-[11px] font-medium text-ouro-ink">{product.delivery_kind==='digital'?'Benefício digital':'Enviado junto dos seus lotes'}</p>{product.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{product.description}</p>}</div>
       <div className="mt-auto grid gap-2">
         {options.length > 1 && <label className="grid gap-1 text-[11px] text-muted-foreground">Como pagar<select aria-label={`Pagamento de ${product.name}`} value={price?.mode} onChange={(event) => setMode(event.target.value as PriceMode)} className="min-w-0 rounded-lg border bg-background px-2 py-2 text-xs text-foreground">{options.map((option) => <option key={option.mode} value={option.mode}>{option.mode === "coins" ? "Caracoins" : option.mode === "cash" ? "Reais (Pix)" : "Reais + Caracoins"}</option>)}</select></label>}
         <p className="min-h-10 text-sm font-bold leading-snug text-ouro-ink sm:text-base">{price ? priceLabel(price.cash, price.coins) : "Em breve"}</p>

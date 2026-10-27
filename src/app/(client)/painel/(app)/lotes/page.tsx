@@ -4,7 +4,7 @@ import { formatDateBR } from "@/lib/lots";
 
 export default async function ClientLotsPage() {
   await requireCustomer();
-  const lots = await listLots({ images: true });
+  const lots = await listLots({ images: true, description: true });
 
   const latestAuctionDay = lots.reduce<string | null>(
     (acc, lot) => (acc === null || lot.auction_date > acc ? lot.auction_date : acc),

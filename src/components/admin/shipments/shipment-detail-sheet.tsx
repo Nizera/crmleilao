@@ -255,6 +255,7 @@ export function ShipmentDetailSheet({
           </div>
 
           <div className="flex flex-col gap-2">
+            {(shipment.storeOrders?.length ?? 0)>0 && <div className="mb-4 rounded-lg border p-3 text-sm"><p className="font-semibold">Loja — produtos incluídos</p>{shipment.storeOrders?.map(order=><div key={order.id} className="mt-2"><p>{order.code}</p>{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><p key={index} className="text-xs">{item.quantity}× {item.name}</p>)}</div>)}</div>}
             <p className="text-sm font-medium">
               Lotes ({shipment.lots?.length ?? 0})
             </p>

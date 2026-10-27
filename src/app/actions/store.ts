@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { allow } from "@/lib/ratelimit";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { cartCheckoutSchema, isStoreOrderOpen, type StoreOrder } from "@/lib/store";
-import { ensureStorePix, getOwnStoreOrder, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
+import { ensureStorePix, getOwnStoreOrder, reconcileStoreOrders, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
 import { cancelPixOrder } from "@/lib/mercadopago";
 
 function invalidateStore() {
@@ -91,12 +91,24 @@ export async function handleStoreOrderAction(form: FormData): Promise<ActionResu
     if (profile.role === "viewer") return { ok: false, error: "Seu perfil é somente leitura." };
     const id = String(form.get("order_id") ?? "");
     const status = String(form.get("status") ?? "");
-    if (!z.uuid().safeParse(id).success || !["processing", "fulfilled", "cancelled"].includes(status)) return { ok: false, error: "Pedido ou ação inválidos." };
+    if (!z.uuid().safeParse(id).success || !["processing", "boxed", "fulfilled", "cancelled"].includes(status)) return { ok: false, error: "Pedido ou ação inválidos." };
     const db = await createClient();
     const { error } = await db.rpc("handle_store_order", { p_order_id: id, p_status: status, p_note: String(form.get("note") ?? "").trim().slice(0,500) });
     if (error) return { ok: false, error: "Não foi possível movimentar. Confira se o pedido está pago e ainda não foi concluído." };
     invalidateStore();
+    revalidatePath('/admin/relatorios');
+    revalidatePath('/admin/envios');
     return { ok: true, data: null };
+  } catch (error) { return failed(error); }
+}
+
+export async function reconcileStoreOrdersAction(): Promise<ActionResult<{checked:number;failed:number}>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === 'viewer' || !await allow('store-sync', profile.id)) return {ok:false,error:'Sem permissão ou limite de consultas atingido.'};
+    const result = await reconcileStoreOrders();
+    invalidateStore();
+    return {ok:true,data:result};
   } catch (error) { return failed(error); }
 }
 

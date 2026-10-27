@@ -161,6 +161,7 @@ export function ClientShipmentsCard({
               <ShipmentStatusBadge status={shipment.status} />
             </div>
 
+            {(shipment.storeOrders?.length ?? 0)>0 && <div className="mt-3 grid gap-2 rounded-lg border p-3 text-xs"><p className="font-semibold">Produtos da loja neste pacote</p>{shipment.storeOrders?.map(order=><div key={order.id}><p className="font-medium">{order.code}</p>{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity}× {item.name}</p>)}</div>)}</div>}
             {(shipment.lots?.length ?? 0) > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(expanded.includes(shipment.id) ? shipment.lots : shipment.lots?.slice(0, 3))?.map((lot) => (

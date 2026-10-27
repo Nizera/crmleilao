@@ -29,10 +29,11 @@ import {
   payShipment,
   refreshPrintUrl,
   syncShipment,
+  storeShippingBlock,
   type EligibleShipmentLot,
 } from "@/lib/shipments-server";
 import { renderTemplate, DEFAULT_SETTINGS } from "@/lib/settings";
-import { siteUrl } from "@/lib/lots";
+import { siteUrl, todayISO } from "@/lib/lots";
 import { freightPeriodForDate,freightPeriodEnd } from "@/lib/freight";
 import { isoDayAdd } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
@@ -62,6 +63,7 @@ export async function searchShipmentCustomers(
 }
 
 export type ShipmentContext = {
+  storeBlock: string | null;
   lots: EligibleShipmentLot[];
   /** Campos da ficha que faltam para emitir a etiqueta. */
   missing: string[];
@@ -118,6 +120,7 @@ export async function loadShipmentContext(
       ok: true,
       data: {
         lots,
+        storeBlock: await storeShippingBlock(customerId, defaultBatchDate ?? todayISO()),
         missing,
         addressLine: addressParts.length > 0 ? addressParts.join(", ") : null,
         defaultBatchDate,

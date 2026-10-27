@@ -56,6 +56,7 @@ export type ShipmentAddress = {
 };
 
 export type Shipment = {
+  storeOrders?: {id:string;code:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   id: string;
   code: string;
   customer_id: string;

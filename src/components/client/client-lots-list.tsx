@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ImageLightbox } from "@/components/client/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatBRL, formatDateBR, lotImageUrl, LOT_STATUS_LABELS, LOT_STATUSES, type Lot, type LotStatus } from "@/lib/lots";
+import { formatBRL, formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
 
 type Props = {
   lots: Lot[];
@@ -20,7 +20,6 @@ type Props = {
 
 export function ClientLotsList({ lots, subtitle }: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const [filter, setFilter] = useState<LotStatus | "all">("all");
   const [search, setSearch] = useState("");
 
   if (lots.length === 0) {
@@ -38,8 +37,8 @@ export function ClientLotsList({ lots, subtitle }: Props) {
         </div>
         <EmptyState
           image="/brand/empty-lots.png"
-          title="Nenhum lote ainda"
-          description="Quando você arrematar um lote no leilão, ele aparece aqui com foto e valor."
+          title="Nenhum lote para mostrar"
+          description="Os lotes do dia e os pendentes aparecem aqui. Consulte Lotes para ver seus demais arremates."
         />
       </section>
     );
@@ -63,9 +62,8 @@ export function ClientLotsList({ lots, subtitle }: Props) {
 
   const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
   const visibleRows = rows.filter(({ lot }) => {
-    const statusMatches = filter === "all" || lot.status === filter;
     const textMatches = !normalizedSearch || `${lot.code} ${lot.title} ${lot.description ?? ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
-    return statusMatches && textMatches;
+    return textMatches;
   });
   return (
     <section className="flex flex-col gap-2">
@@ -86,10 +84,7 @@ export function ClientLotsList({ lots, subtitle }: Props) {
           <span className="sr-only">Buscar lote por código, nome ou descrição</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código, nome ou descrição" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
         </label>
-        <select aria-label="Filtrar lotes por situação" value={filter} onChange={(event) => setFilter(event.target.value as LotStatus | "all")} className="rounded-lg border bg-background px-3 py-2 text-sm">
-          <option value="all">Todas as situações ({rows.length})</option>
-          {LOT_STATUSES.map((status) => <option key={status} value={status}>{LOT_STATUS_LABELS[status]}</option>)}
-        </select>
+
       </div>
 
       <ul className="flex flex-col gap-2">

@@ -157,7 +157,9 @@ export const listLots = cache(
     } = {},
   ): Promise<Lot[]> => {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    const lots: Lot[] = [];
+    for (let from = 0; ; from += 500) {
+      const { data, error } = await supabase
       .from("lots")
       .select(
         lotColumns({
@@ -167,11 +169,16 @@ export const listLots = cache(
         }),
       )
       .order("auction_date", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + 499);
 
     if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
 
-    const lots = (data ?? []) as unknown as Lot[];
+      const page = (data ?? []) as unknown as Lot[];
+      lots.push(...page);
+      if (page.length < 500) break;
+    }
     if (!opts.notes) return lots;
 
     const notes = await loadNotes(

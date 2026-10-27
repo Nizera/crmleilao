@@ -60,17 +60,15 @@ export function mpWebhookUrl(): string | null {
 /**
  * Vencimento local do Pix (mesmo intervalo enviado em `expiration_time: P3D`).
  * Usado como fallback quando a resposta de criação não traz a data.
- * ISO 8601 com offset de Brasília (America/Sao_Paulo é -03:00 sem DST).
+ * UTC; a conversão de fuso pertence apenas à apresentação.
  */
 function expiryIso(days: number): string {
-  return new Date(Date.now() + days * 86_400_000)
-    .toISOString()
-    .replace("Z", "-03:00");
+  return new Date(Date.now() + days * 86_400_000).toISOString();
 }
 
 async function mpFetch(
   path: string,
-  options?: { method?: "GET" | "POST"; body?: unknown; idempotencyKey?: string },
+  options?: { method?: "GET" | "POST"; body?: unknown; idempotencyKey?: string; signal?: AbortSignal },
 ): Promise<unknown> {
   const response = await fetch(`${MP_API}${path}`, {
     method: options?.method ?? "GET",
@@ -83,6 +81,7 @@ async function mpFetch(
     },
     ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     cache: "no-store",
+    signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   });
 
   const json: unknown = await response.json().catch(() => null);
@@ -140,7 +139,7 @@ function firstPayment(json: MpOrderResponse | null): MpOrderPayment | null {
   return json?.transactions?.payments?.[0] ?? null;
 }
 
-function qrFrom(json: MpOrderResponse | null): {
+export function qrFrom(json: MpOrderResponse | null): {
   qrCode: string | null;
   qrCodeBase64: string | null;
   ticketUrl: string | null;
@@ -166,13 +165,15 @@ export async function createPixOrder(input: {
   payerFirstName?: string;
   payerLastName?: string;
   identification?: { type: "CPF" | "CNPJ"; number: string };
-}): Promise<MpPixOrder> {
+}, options: { waitForQr?: boolean; signal?: AbortSignal } = {}): Promise<MpPixOrder> {
+  const signal = options.signal ?? AbortSignal.timeout(25000);
   const amount = input.amount.toFixed(2);
   const localExpiry = expiryIso(PIX_EXPIRES_DAYS);
 
   const json = (await mpFetch("/v1/orders", {
     method: "POST",
     idempotencyKey: input.externalReference,
+    signal,
     body: {
       type: "online",
       total_amount: amount,
@@ -213,16 +214,16 @@ export async function createPixOrder(input: {
   const orderId: string = order.id;
 
   // Criação assíncrona: a order volta "processing" e o QR chega em seguida.
-  for (let attempt = 0; !(qr.qrCode || qr.ticketUrl) && attempt < 4; attempt += 1) {
+  for (let attempt = 0; options.waitForQr !== false && !(qr.qrCode || qr.ticketUrl) && attempt < 4; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const refreshed = await getOrder(orderId);
+    const refreshed = await getOrder(orderId, signal);
     if (refreshed) {
       order = refreshed.raw;
       qr = qrFrom(order);
     }
   }
 
-  if (!qr.qrCode && !qr.ticketUrl) {
+  if (options.waitForQr !== false && !qr.qrCode && !qr.ticketUrl) {
     throw new Error(
       "Mercado Pago: a order foi criada, mas o QR do Pix não ficou disponível. Tente gerar a cobrança novamente.",
     );
@@ -258,12 +259,13 @@ export type MpOrder = {
  * - lança erro em falha transitória (rede/5xx) — o webhook responde 500 e o
  *   Mercado Pago reenvia a notificação.
  */
-export async function getOrder(orderId: string): Promise<MpOrder | null> {
+export async function getOrder(orderId: string, signal?: AbortSignal): Promise<MpOrder | null> {
   // Ids de order da Orders API são alfanuméricos iniciando por letra (ORD…);
   // ids numéricos puros são da Payments API legada e não resolvem aqui.
   if (!/^[A-Za-z][A-Za-z0-9_-]{3,}$/.test(orderId)) return null;
 
   const response = await fetch(`${MP_API}/v1/orders/${orderId}`, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     headers: {
       Authorization: `Bearer ${mpAccessToken()}`,
       "Content-Type": "application/json",
@@ -310,6 +312,7 @@ export async function cancelPixOrder(orderId: string): Promise<boolean> {
   try {
     const response = await fetch(`${MP_API}/v1/orders/${orderId}/cancel`, {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
       headers: {
         Authorization: `Bearer ${mpAccessToken()}`,
         "Content-Type": "application/json",

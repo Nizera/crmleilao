@@ -25,6 +25,7 @@ export const storeProductSchema = z.object({
   description: optionalText(2000),
   sku: optionalText(48).refine((value) => value === null || /^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$/.test(value),"SKU aceita letras, números, ponto, hífen e sublinhado.").transform((value) => value?.toUpperCase() ?? null),
   category: z.preprocess((raw) => String(raw ?? "").trim() || "Sem categoria",z.string().max(60)),
+  delivery_kind: z.enum(['physical','digital']).default('physical'),
   points_cost: integer(1), cash_price: amount(0.01), mixed_cash_price: amount(0.01), mixed_points_cost: integer(1),
   internal_cost: amount(0), stock: integer(0,1000000), low_stock_threshold: integer(0,1000000),
   active: z.boolean().default(false), archived: z.boolean().default(false),

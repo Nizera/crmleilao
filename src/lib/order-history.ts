@@ -6,6 +6,8 @@ export const orderStages = {
 export type OrderStage = keyof typeof orderStages;
 export type OrderHistoryFilters = { q: string; status: OrderStage; source: "all" | "store" | "legacy"; from: string; to: string; page: number; size: number };
 export type HistoryOrder = {
+  physical?: boolean; boxed_at?: string | null; shipment_id?: string | null; reconciliation_error?: string | null;
+  events?: { id:number; happened_at:string; actor:string|null; payment_after:string; fulfillment_after:string; boxed_at:string|null; shipment_id:string|null; note:string|null }[];
   id: string; source: "store" | "legacy"; code: string; customer_id: string; customer_name: string | null;
   customer_phone: string | null; created_at: string; cash_total: number; coins_total: number;
   payment_status: import("./store").StoreOrder["payment_status"];

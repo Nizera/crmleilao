@@ -227,6 +227,7 @@ function ShipmentForm({
     if (context.missing.length > 0) {
       return `Faltam dados do destinatário: ${context.missing.join(", ")}.`;
     }
+    if (context.storeBlock) return context.storeBlock;
     if (picked.size === 0) return "Selecione ao menos um lote.";
     if (insuranceMismatch) {
       return `Com seguro, o valor precisa ser igual ao subtotal da declaração (${formatBRL(total)}).`;

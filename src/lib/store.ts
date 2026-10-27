@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export type PriceMode = "coins" | "cash" | "mixed";
 export type StoreProduct = {
+  delivery_kind?: 'physical' | 'digital';
   image_paths?: string[];
   sku?: string;
   category?: string;
@@ -54,6 +55,8 @@ export function cartTotals(items: CartLine[]) {
 
 export type StoreOrderItem = { id: string; reward_id: string; name: string; image_path: string | null; quantity: number; price_mode: PriceMode; unit_cash: number; unit_coins: number };
 export type StoreOrder = {
+  boxed_at?: string | null; shipment_id?: string | null;
+  shipment?: {code:string;status:string;tracking_code:string|null}|null;
   id: string; code: string; customer_id: string; external_reference: string;
   cash_total: number; coins_total: number;
   payment_status: "creating" | "pending" | "paid" | "cancelled" | "expired" | "failed" | "refunded" | "partially_refunded" | "payment_review";

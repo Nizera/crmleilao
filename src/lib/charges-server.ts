@@ -186,9 +186,9 @@ export async function createCharge(input: {
     ? eligible
     : eligible.filter((lot) => input.lotIds.includes(lot.id));
 
-  // O servidor determina todos os ciclos devidos; a opção do navegador é ignorada.
+  // O servidor determina o frete único do envio acumulado; a opção do navegador é ignorada.
   const {data:due,error:dueError}=await admin.rpc('get_due_freight_periods',{p_customer:input.customerId});
-  if(dueError)throw new Error('Não foi possível conferir os fretes dos ciclos.');
+  if(dueError)throw new Error('Não foi possível conferir o frete do envio.');
   let freightAmount=(due??[]).reduce((sum:number,row:{freight_amount:number})=>sum+Number(row.freight_amount),0);
   if(picked.length===0&&freightAmount===0)throw new Error('Não há lotes ou fretes pendentes para gerar o Pix.');
   let amount=round2(picked.reduce((sum,lot)=>sum+Number(lot.arremate_value),0)+freightAmount);
@@ -201,7 +201,7 @@ export async function createCharge(input: {
   }
 
   const externalReference = `chg_${crypto.randomUUID()}`;
-  const description=`Leilão Legends — ${picked.length} arremate(s) acumulados${freightAmount>0?' + fretes dos ciclos devidos':''}`;
+  const description=`Leilão Legends — ${picked.length} arremate(s) acumulados${freightAmount>0?' + frete do envio acumulado':''}`;
 
   const [firstName, ...rest] = (customer.name?.trim() || "Cliente").split(/\s+/);
   const digits = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
@@ -229,7 +229,7 @@ export async function createCharge(input: {
     // entre a validação e o insert (ou o cliente tentou duas vezes).
     if (insertError.code === "23505") {
       throw new Error(
-        "O frete da semana já está pago ou com Pix em aberto para este cliente.",
+        "Já há um Pix de frete em aberto para este cliente.",
       );
     }
     throw new Error(`Falha ao registrar cobrança: ${insertError.message}`);
@@ -252,7 +252,7 @@ export async function createCharge(input: {
 
   // Reserva atômica por cliente/ciclo ANTES de vincular os lotes ou chamar o provedor.
   const {data:reserved,error:reserveError}=await admin.rpc('reserve_charge_freights',{p_charge:chargeId,p_lots:pickedIds});
-  if(reserveError){await rollback();throw new Error('Não foi possível incluir os fretes. Selecione todos os lotes pendentes e confira se já existe um Pix em aberto.');}
+  if(reserveError){await rollback();throw new Error('Não foi possível incluir o frete do envio. Selecione todos os lotes pendentes e confira se já existe um Pix em aberto.');}
   freightAmount=Number(reserved??0);
   amount=round2(picked.reduce((sum,lot)=>sum+Number(lot.arremate_value),0)+freightAmount);
 

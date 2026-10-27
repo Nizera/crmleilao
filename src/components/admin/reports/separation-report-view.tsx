@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
+import { handleStoreOrderAction } from "@/app/actions/store";
 import { PrintButton } from "@/components/admin/reports/print-button";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -72,10 +73,11 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
   const customers = baseCustomers.map((customer) => ({
     ...customer,
+    storeOrders: (customer.storeOrders ?? []).filter(order => movementFilter === MOVED ? !!order.boxed_at : movementFilter === ALL || !order.boxed_at),
     lots: customer.lots.filter((lot) =>
       movementFilter === MOVED ? Boolean(lot.movedAt) : movementFilter === ALL ? true : !lot.movedAt,
     ),
-  })).filter((customer) => customer.lots.length > 0);
+  })).filter((customer) => customer.lots.length > 0 || customer.storeOrders.length > 0);
 
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
   const visibleIds = new Set(customers.flatMap((customer) => customer.lots.map((lot) => lot.id)));
@@ -119,7 +121,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Relatórios</h2>
           <p className="text-sm text-muted-foreground">
-            Separação dos arremates por dia de envio.
+            Separação de arremates e produtos da loja por dia de envio.
           </p>
         </div>
         <PrintButton variant="outline" disabled={customers.length === 0} />
@@ -239,6 +241,16 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   )}
                 </div>
 
+                {customer.storeOrders.map(order => <div key={order.id} className="mb-3 rounded-md border border-ouro/40 p-3 break-inside-avoid">
+                  <p className="text-sm font-semibold">Loja · {order.code} {order.boxed_at ? '· Na caixa' : '· A separar'}</p>
+                  <ul className="mt-2 grid gap-1 text-xs">{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><li key={index}>{item.quantity}× {item.name}</li>)}</ul>
+                  {!order.boxed_at && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
+                    const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');
+                    const result=await handleStoreOrderAction(form);
+                    if(!result.ok){toast.error(result.error);return;}
+                    const refreshed=await getSeparationReportAction(date);if(refreshed.ok)setReport(refreshed.data);else toast.error(refreshed.error);
+                  })}>{order.fulfillment_status==='awaiting'?'Iniciar separação':'Colocar na caixa do cliente'}</Button>}
+                </div>)}
                 {customer.lots.map((lot) => (
                   <div
                     key={lot.id}

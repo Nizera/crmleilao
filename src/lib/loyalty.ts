@@ -10,6 +10,7 @@ export type LoyaltySettings = {
   ranking_enabled: boolean;
 };
 export type LoyaltyReward = {
+  delivery_kind?: 'physical' | 'digital';
   sku?: string;
   category?: string;
   image_paths?: string[];

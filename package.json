@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test:store": "node --test scripts/store.test.mjs scripts/store-admin.test.mjs",
+    "test:store": "node --test scripts/store.test.mjs scripts/store-admin.test.mjs scripts/store-reliability.test.mjs scripts/freight-accumulated.test.mjs",
+    "test:store:concurrency": "node scripts/store-concurrency.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

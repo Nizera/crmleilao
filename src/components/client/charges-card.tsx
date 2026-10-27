@@ -39,6 +39,7 @@ type Props = {
   lots: Lot[];
   charges: Charge[];
   freight: CustomerFreightState;
+  showFreightStatus?: boolean;
 };
 
 /** "Vence em 12h" / "Vence em 3 dias" / "Prazo vencido". */
@@ -71,7 +72,7 @@ function LotThumb({ lot }: { lot: Lot }) {
   );
 }
 
-export function ClientChargesCard({ lots, charges, freight }: Props) {
+export function ClientChargesCard({ lots, charges, freight, showFreightStatus = true }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
     [lots, activeChargeIds],
   );
 
-  // Frete do período segue opcional; lotes nunca são selecionáveis.
+  // O frete do envio devido acompanha obrigatoriamente os lotes pendentes.
   const freightDue = freight.status === "due";
   const canAddFreight = freightDue && !active;
   const withFreight = canAddFreight;
@@ -168,7 +169,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
     ? "Você tem um Pix aguardando pagamento. A confirmação é automática após o pagamento."
     : showCart
       ? eligibleLots.length > 0 && canAddFreight
-        ? "Todos os lotes pendentes e os fretes devidos são somados automaticamente no mesmo Pix."
+        ? "Todos os lotes pendentes e o frete do envio são somados automaticamente no mesmo Pix."
         : canAddFreight
           ? "O frete pendente será incluído automaticamente no pagamento."
           : "Todos os seus lotes pendentes serão somados em um único Pix."
@@ -202,27 +203,27 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
-        {freight.status === "due" && (
+        {showFreightStatus && freight.status === "due" && (
           <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <p className="font-medium">
-              Frete do período — {formatBRL(freight.amount)} pendente
+              Frete do envio — {formatBRL(freight.amount)} pendente
             </p>
             <p className="text-xs">
               {active
                 ? `Você já tem o Pix ${active.code} aberto — cancle-o para gerar um novo com o frete.`
-                : "Cobrança única do período (terça a terça). Pague sozinho ou junto com seus lotes."}
+                : "R$ 20 pelo envio dos lotes acumulados, mesmo que sejam de semanas diferentes."}
             </p>
           </div>
         )}
-        {freight.status === "awaiting" && freight.chargeCode && (
+        {showFreightStatus && freight.status === "awaiting" && freight.chargeCode && (
           <div className="rounded-lg border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
-            Frete do período incluso no Pix {freight.chargeCode} — aguardando
+            Frete do envio incluso no Pix {freight.chargeCode} — aguardando
             confirmação.
           </div>
         )}
-        {freight.status === "paid" && (
+        {showFreightStatus && freight.status === "paid" && (
           <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-600 dark:text-emerald-400">
-            Frete do período pago.
+            Frete do envio pago.
           </div>
         )}
 
@@ -343,10 +344,10 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold">
-                          Frete do período
+                          Frete do envio
                         </span>
                         <span className="block text-[10px] text-muted-foreground">
-                          cobrança única do período (terça a terça)
+                          R$ 20 por envio acumulado
                         </span>
                       </span>
                     </span>
@@ -388,7 +389,7 @@ export function ClientChargesCard({ lots, charges, freight }: Props) {
                   {eligibleLots.length === 1
                     ? "lote incluído automaticamente"
                     : "lotes incluídos automaticamente"}
-                  {withFreight ? " + frete da semana" : ""}
+                  {withFreight ? " + frete do envio" : ""}
                 </span>
                 <span className="text-[10px] font-medium uppercase tracking-wider text-ouro-ink">
                   Pagamento via Pix

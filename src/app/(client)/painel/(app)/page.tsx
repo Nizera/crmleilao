@@ -1,17 +1,14 @@
-import { Award, Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
+import { Award, Bolt, CircleDollarSign, Medal } from "lucide-react";
 import Link from "next/link";
 
 import {
-  countCustomerShipments,
   getCustomerSpendingSummary,
   getCustomerFreightState,
   listCustomerCharges,
-  listCustomerShipments,
   listLots,
   requireCustomer,
 } from "@/lib/dal";
 import { ClientChargesCard } from "@/components/client/charges-card";
-import { ClientShipmentsCard } from "@/components/client/shipments-card";
 import { ClientLotsList } from "@/components/client/client-lots-list";
 import {
   chargeExpiryDeltaMs,
@@ -20,6 +17,7 @@ import {
 } from "@/lib/charges";
 import { formatBRL, formatDateBR, type LotStatus } from "@/lib/lots";
 import { cn } from "@/lib/utils";
+import { selectHomeLots } from "@/lib/client-home";
 
 const PAID_LOT_STATUSES: LotStatus[] = ["paid", "shipped", "delivered"];
 
@@ -81,35 +79,19 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, shipments, shipmentsTotal, freight, spending] =
+  const [lots, charges, freight, spending] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
-      listLots({ images: true }),
+      listLots({ images: true, description: true }),
       listCustomerCharges(customer.id),
-      listCustomerShipments(customer.id),
-      countCustomerShipments(customer.id),
       getCustomerFreightState(customer.id),
       getCustomerSpendingSummary(customer.id),
     ]);
 
-  // A home é de ação: só o último leilão. O resto fica em /painel/historico.
-  const latestAuctionDay = lots.reduce<string | null>(
-    (acc, lot) => (acc === null || lot.auction_date > acc ? lot.auction_date : acc),
-    null,
-  );
-  const recentLots = latestAuctionDay
-    ? lots.filter((lot) => lot.auction_date === latestAuctionDay)
-    : [];
+  const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
+  const recentLots = selectHomeLots(lots,today);
   const olderLotsCount = lots.length - recentLots.length;
 
-  // A home de pagamentos é do dia: só cobranças do leilão vigente + as que
-  // em aberto (pendentes de qualquer dia, para o cliente poder pagar).
-  // Pagas/canceladas/expiradas de dias anteriores ficam em /painel/historico.
-  // Data "hoje" em São Paulo — o form do lote grava auction_date no fuso do
-  // admin, então comparar com a data local evita errar após as 21h (UTC-3).
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  }).format(new Date());
   const activeCharge = charges.find((charge) => isChargeActive(charge)) ?? null;
   const homeCharges = charges
     .filter(
@@ -126,15 +108,6 @@ export default async function ClientHomePage() {
   const paidLotsCount = lots.filter((lot) =>
     PAID_LOT_STATUSES.includes(lot.status),
   ).length;
-  const upcomingShipments = shipments.filter(
-    (shipment) => shipment.status !== "cancelled" && shipment.status !== "delivered",
-  );
-  const nextBatchDate = upcomingShipments.reduce<string | null>(
-    (acc, shipment) =>
-      acc === null || shipment.batch_date < acc ? shipment.batch_date : acc,
-    null,
-  );
-
   // "A Pagar": vale o Pix aberto; sem Pix, a soma dos lotes aguardando
   // pagamento + frete da semana em aberto (o cliente deve ver o total
   // mesmo antes de gerar o cobrança).
@@ -159,12 +132,7 @@ export default async function ClientHomePage() {
       : "Tudo em dia";
   const owedActive = Boolean(activeCharge) || owedTotal > 0;
 
-  const lotsSubtitle =
-    lots.length === 0
-      ? null
-      : latestAuctionDay
-        ? `${recentLots.length} ${recentLots.length === 1 ? "lote arrematado" : "lotes arrematados"} no leilão de ${formatDateBR(latestAuctionDay)}.`
-        : `${lots.length} ${lots.length === 1 ? "lote arrematado" : "lotes arrematados"} por você.`;
+  const lotsSubtitle = `Lotes do leilão de ${formatDateBR(today)} e todos os pendentes de pagamento.`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -188,7 +156,7 @@ export default async function ClientHomePage() {
           </span>
         </div>
 
-        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <KpiCard
             label="A Pagar"
             value={owedValue}
@@ -208,12 +176,6 @@ export default async function ClientHomePage() {
             icon={<Medal className="size-3.5 text-amarelo" />}
           />
           <KpiCard
-            label="Envios"
-            value={String(shipmentsTotal).padStart(2, "0")}
-            sub={nextBatchDate ? `Saída ${formatDateBR(nextBatchDate)}` : "Sem saída"}
-            icon={<Truck className="size-3.5 text-ouro-ink" />}
-          />
-          <KpiCard
             label="Total pago"
             value={formatBRL(spending.paidTotal)}
             sub="somente lotes; frete separado"
@@ -222,10 +184,10 @@ export default async function ClientHomePage() {
         </div>
       </section>
 
-      <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} />
+      <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} showFreightStatus={false} />
 
       <ClientLotsList
-        lots={recentLots.length > 0 ? recentLots : lots}
+        lots={recentLots}
         subtitle={lotsSubtitle ?? undefined}
       />
       {olderLotsCount > 0 && (
@@ -235,13 +197,12 @@ export default async function ClientHomePage() {
             href="/painel/historico"
             className="underline transition hover:text-foreground"
           >
-            histórico ({lots.length})
+            histórico ({olderLotsCount})
           </Link>
           .
         </p>
       )}
 
-      <ClientShipmentsCard shipments={shipments} total={shipmentsTotal} />
     </div>
   );
 }

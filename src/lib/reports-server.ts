@@ -3,8 +3,8 @@ import "server-only";
 import { type LotStatus } from "@/lib/lots";
 import { loadNotes } from "@/lib/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { freightPeriodForDate } from "@/lib/freight";
 import { isChargeActive } from "@/lib/charges";
+import { createClient } from "@/lib/supabase/server";
 
 /** Lotes por página, abaixo do limite padrão do PostgREST. */
 const REPORT_LOTS_PAGE_SIZE = 500;
@@ -31,6 +31,7 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
+  storeOrders?: {id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
   phone_e164: string;
@@ -115,27 +116,9 @@ export async function getSeparationReport(
   for (const charge of activeCharges ?? []) {
     if (isChargeActive(charge as never)) blockedCustomers.add(charge.customer_id);
   }
-  const periods = [...new Set(rows.map((row) => freightPeriodForDate(row.auction_date)))];
-  const { data: charges, error: chargesError } = await admin
-    .from("charges").select("customer_id, freight_period, freight_amount, status, expires_at")
-    .in("customer_id", candidateIds).in("freight_period", periods).gt("freight_amount", 0);
-  if (chargesError) throw new Error(`Falha ao conferir cobranças: ${chargesError.message}`);
-  const chargeStates = new Map<string, { paid: boolean; active: boolean }>();
-  for (const charge of charges ?? []) {
-    if (!charge.freight_period) continue;
-    const key = `${charge.customer_id}:${charge.freight_period}`;
-    const state = chargeStates.get(key) ?? { paid: false, active: false };
-    state.paid ||= charge.status === "approved";
-    state.active ||= isChargeActive(charge as never);
-    chargeStates.set(key, state);
-  }
-  for (const row of rows) {
-    const customerId = row.customers?.id;
-    if (!customerId) continue;
-    const period = freightPeriodForDate(row.auction_date);
-    const state = chargeStates.get(`${customerId}:${period}`);
-    if (!state?.paid || state.active) blockedCustomers.add(customerId);
-  }
+  const {data: freightStates,error: freightError}=await admin.rpc('shipping_freight_states',{p_customers:candidateIds});
+  if(freightError)throw new Error('Não foi possível conferir os pagamentos de frete.');
+  for(const state of freightStates ?? [])if(state.status!=='paid')blockedCustomers.add(state.customer_id);
   const eligibleRows = rows.filter((row) => row.customers && !blockedCustomers.has(row.customers.id));
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();
@@ -188,6 +171,14 @@ export async function getSeparationReport(
 
     entry.lots.push(lot);
     byCustomer.set(customer.id, entry);
+  }
+
+  const db = await createClient();
+  const { data: storeRows, error: storeError } = await db.rpc('get_store_fulfillment', { p_day: shippingDate });
+  if (storeError) throw new Error('Não foi possível conferir os pedidos da loja para a separação.');
+  for (const order of (storeRows ?? []) as (NonNullable<SeparationCustomer['storeOrders']>[number] & {customer_id:string;physical:boolean})[]) {
+    const entry = byCustomer.get(order.customer_id);
+    if (entry && order.physical) entry.storeOrders = [...(entry.storeOrders ?? []), order];
   }
 
   // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.

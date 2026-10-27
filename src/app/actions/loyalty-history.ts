@@ -28,7 +28,7 @@ export async function getCartProducts(ids:unknown):Promise<ActionResult<StorePro
  try{const {customer}=await requireCustomer();const parsed=z.array(z.uuid()).max(50).safeParse(ids);if(!parsed.success)return {ok:false,error:'Carrinho inválido.'};
  if(!parsed.data.length)return {ok:true,data:[]};
  if(!await allow('loyalty-read',customer.id))return {ok:false,error:'Aguarde antes de consultar o carrinho.'};
- const db=await createClient();const {data,error}=await db.from('loyalty_rewards').select('id,name,description,image_path,image_paths,stock,points_cost,cash_price,mixed_cash_price,mixed_points_cost,sku,category').in('id',parsed.data).eq('active',true).eq('archived',false);
+ const db=await createClient();const {data,error}=await db.from('loyalty_rewards').select('id,name,description,image_path,image_paths,stock,points_cost,cash_price,mixed_cash_price,mixed_points_cost,sku,category,delivery_kind').in('id',parsed.data).eq('active',true).eq('archived',false);
  if(error)return {ok:false,error:'Não foi possível atualizar os produtos do carrinho.'};return {ok:true,data:data??[]};
  }catch(e){rethrowIfRedirect(e);return {ok:false,error:'Não foi possível atualizar o carrinho.'};}
 }
