@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { LogoMark } from "@/components/brand/logo";
 import type { ComponentType, ReactNode } from "react";
 import {
   ArrowRightIcon,
@@ -170,7 +169,6 @@ export default async function DashboardPage({
     <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <LogoMark className="size-14 shrink-0" />
           <div>
             <h2 className="text-xl font-semibold tracking-tight">
               Visão geral
