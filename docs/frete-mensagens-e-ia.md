@@ -30,6 +30,8 @@ Variáveis somente de servidor: `GEMINI_API_KEY` e `GEMINI_MODEL` (modelo que su
 
 O botão “Analisar com IA” envia ao Google até três fotos e apenas o catálogo de jogadores/cores. Não envia cliente, telefone, pagamentos ou quantidade de estoque. Há limite de 8 análises/hora por membro, timeout de 40 segundos e validação de formato/tamanho. Fotos já salvas são conferidas contra o lote antes de baixar do storage; não se aceita URL arbitrária.
 
+Falhas temporárias HTTP 500/502/503/504 têm até duas novas tentativas automáticas com espera progressiva, dentro do mesmo limite total de 40 segundos. Uma análise pode, portanto, fazer até três requisições ao provedor e consumir a cota correspondente. Erros de chave, modelo, permissão e cota (400/401/403/404/429) não são repetidos automaticamente.
+
 O resultado é validado contra os IDs reais do estoque e mostrado como sugestão. Itens incertos são sinalizados; a equipe pode corrigir jogadores, cores e quantidades antes de “Aprovar e aplicar itens”. Alterar as fotos invalida a aprovação da sugestão anterior. O lote só é salvo pelo formulário normal e a baixa de estoque continua na movimentação para a caixa.
 
 Sem as variáveis, o cadastro manual continua disponível. Nenhuma chamada real ao Gemini ou compra de etiqueta é necessária para compilar. A qualidade do reconhecimento deve ser avaliada com fotos representativas após configurar o provedor.

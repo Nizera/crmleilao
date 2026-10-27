@@ -10,6 +10,6 @@ export function geminiFailure(status:number,payload:unknown){
  if(status===404||/not found|not supported.*generatecontent/.test(message))return `${tag}: o modelo não está disponível para esta chave. Confira GEMINI_MODEL e os modelos liberados no Google AI Studio.`;
  if(status===429){if(/limit:?\s*0\b|quota.*\b0\b/.test(message))return `${tag}: este projeto está sem cota para o modelo escolhido. Confira os limites no Google AI Studio antes de tentar novamente.`;return `${tag}: limite de uso do Gemini atingido. Aguarde e confira as cotas do seu projeto.`;}
  if(status===400)return `${tag}: o Google rejeitou o formato da análise. Confira se o modelo suporta imagens e saída JSON estruturada.`;
- if(status>=500)return `${tag}: o Gemini está indisponível no momento. Tente novamente mais tarde.`;
+ if(status>=500)return `${tag}: o Google continua indisponível após as tentativas automáticas. Aguarde alguns minutos e tente novamente. O preenchimento manual continua disponível.`;
  return `${tag}: a análise foi recusada pelo provedor. Você pode continuar preenchendo manualmente.`;
 }
