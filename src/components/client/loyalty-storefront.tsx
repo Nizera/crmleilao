@@ -11,6 +11,7 @@ import { checkoutStoreAction } from "@/app/actions/store";
 import { cartCheckoutSchema, cartTotals, coinNumber, priceLabel, productPrices, storeBRL, type CartLine, type PriceMode, type StoreProduct } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { STORE_PREVIEW_ONLY } from '@/lib/store-availability';
 
 type Cart = { items: CartLine[]; requestKey: string };
 const emptyCart: Cart = { items: [], requestKey: "" };
@@ -109,6 +110,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     update(other ? rest.map((row) => row === other ? { ...row, quantity: row.quantity + item.quantity, expected_cash: price.cash, expected_coins: price.coins } : row) : [...rest,{ ...item,mode,expected_cash:price.cash,expected_coins:price.coins }]);
   };
   const checkout = () => {
+    if (STORE_PREVIEW_ONLY) return;
     if (submitting.current) return;
     submitting.current = true;
     startTransition(async () => {
@@ -125,7 +127,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
       finally { submitting.current = false; }
     });
   };
-  return <section className="grid gap-4" aria-labelledby="catalogo-loja">
+  return <fieldset disabled={STORE_PREVIEW_ONLY} className="min-w-0"><section className="grid gap-4" aria-labelledby="catalogo-loja">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-wider text-ouro-ink">Explore e aproveite</p><h2 id="catalogo-loja" className="text-xl font-bold">Produtos da loja</h2></div><Button onClick={() => setOpen(true)} variant="outline"><ShoppingCart /> Carrinho <span className="rounded-full bg-amarelo/20 px-2 text-xs">{totals.quantity}</span></Button></div>
     <form key={JSON.stringify(catalogFilters)} action="/painel/loja" className="grid grid-cols-2 items-end gap-3"><input type="hidden" name="tab" value="products"/>
       <label className="col-span-2 grid gap-1 text-xs">Buscar produtos<div className="relative"><Search className="absolute left-3 top-3 size-4 text-muted-foreground"/><input name="q" defaultValue={catalogFilters.q} maxLength={100} placeholder="O que você procura?" className="h-11 w-full rounded-xl border bg-background pl-10 pr-3 text-sm"/></div></label>
@@ -153,5 +155,5 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
         <Button className="w-full" disabled={pending || cartLoading || !!cartError || !cart.items.length || missing > 0 || hasOpenOrder || hasStaleItems || overStock} onClick={checkout}>{pending ? "Preparando pedido…" : totals.cash > 0 ? `Gerar Pix de ${storeBRL(totals.cash / 100)}` : "Confirmar compra com Caracoins"}</Button>
       </div>
     </SheetContent></Sheet>
-  </section>;
+  </section></fieldset>;
 }

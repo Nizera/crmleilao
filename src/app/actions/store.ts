@@ -9,6 +9,7 @@ import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { cartCheckoutSchema, isStoreOrderOpen, type StoreOrder } from "@/lib/store";
 import { ensureStorePix, getOwnStoreOrder, reconcileStoreOrders, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
 import { cancelPixOrder } from "@/lib/mercadopago";
+import { STORE_PREVIEW_ONLY, STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
 
 function invalidateStore() {
   revalidatePath("/painel", "layout");
@@ -26,6 +27,7 @@ const domainError = (message: string) => /^(Você já tem|A loja está|Saldo de 
 export async function checkoutStoreAction(input: unknown): Promise<ActionResult<StoreOrder>> {
   try {
     const { customer } = await requireCustomer();
+    if (STORE_PREVIEW_ONLY) return {ok:false,error:STORE_PREVIEW_MESSAGE};
     const parsed = cartCheckoutSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: "Revise os produtos e quantidades do carrinho." };
     if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };

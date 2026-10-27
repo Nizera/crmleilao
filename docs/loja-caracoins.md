@@ -1,5 +1,11 @@
 # Loja, carrinho e Caracoins
 
+## Prévia temporária — 0033
+
+Novas compras/resgates estão bloqueados por `STORE_PREVIEW_ONLY` no cliente e nas Server Actions. O catálogo continua visível, com aviso de prévia e controles desabilitados. Pedidos existentes, pagamentos já gerados, histórico e extrato continuam acessíveis; administração, recebimento de webhooks e reconciliação não são interrompidos.
+
+Aplicar `0033_store_preview_only.sql` para completar o bloqueio também no acesso direto à API Supabase. A função original de checkout é preservada com outro nome e sem permissão de execução para clientes, anon ou service role; a função pública recusa novas compras. Não são alterados pedidos/saldos/reservas existentes. Reativar o programa nas configurações não remove essa trava: a liberação futura exige revisão explícita do código e nova migration para restaurar a função/permissões.
+
 ## Atualização 0032 — frete único do envio acumulado
 
 Aplicar `supabase/migrations/0032_freight_per_accumulated_shipment.sql` após 0031 e antes do deploy desta versão. Esta regra substitui a cobrança antiga por semana: o pacote acumulado custa R$20, mesmo com lotes de vários períodos. Frete pago ainda sem etiqueta ativa pode ser usado por novos lotes antes da emissão. Uma etiqueta consome um pagamento de frete; cancelá-la torna esse pagamento disponível de novo. Outro pacote exige outro frete de R$20, inclusive na mesma semana.

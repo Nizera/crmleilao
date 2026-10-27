@@ -167,5 +167,16 @@ test('Schema atual: migrations 0024–0028/0031, histórico, atendimento, estoqu
    await asCustomer(b);await assert.rejects(db.query('select get_admin_order_history()'),/Acesso negado/);await assert.rejects(db.query('select get_store_dashboard()'),/Acesso negado/);
    const catalog=await scalar('select get_customer_store_catalog()');assert.ok(catalog.total>=2);
   });
+  await t.test('prévia bloqueia novos pedidos e acesso direto ao checkout original, preservando histórico e saldos',async()=>{
+   await asOwner();const before=await scalar('select count(*)::int from store_orders');
+   const balance=await scalar('select sum(points)::text from loyalty_ledger where customer_id=$1',[a]);
+   await db.exec(await read('../supabase/migrations/0033_store_preview_only.sql'));
+   await asCustomer();await assert.rejects(checkout(),/prévia/);
+   await assert.rejects(db.query('select checkout_store_cart_live($1,$2::jsonb)',[crypto.randomUUID(),JSON.stringify([line()])]),/permission denied/);
+   const history=await scalar('select get_customer_order_history()');assert.ok(history.total>0);
+   await asOwner();assert.equal(await scalar('select count(*)::int from store_orders'),before);
+   assert.equal(await scalar('select sum(points)::text from loyalty_ledger where customer_id=$1',[a]),balance);
+   await service();await assert.rejects(db.query('select checkout_store_cart_live($1,$2::jsonb)',[crypto.randomUUID(),JSON.stringify([line()])]),/permission denied/);
+  });
  }finally{await db.close();}
 });
