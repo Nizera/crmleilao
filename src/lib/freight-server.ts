@@ -13,8 +13,8 @@ import {
  * Agregados do frete da semana para o card do dashboard:
  * - pago = cobranças aprovadas com frete cujo `paid_at` cai no período
  *   (terça→terça, fuso de São Paulo) — soma e total por dia;
- * - pendentes = clientes com lote no período que ainda não pagaram o frete
- *   daquele período (dedup por `freight_period`).
+ * - pendentes = clientes com lote não cancelado no período cujo envio
+ *   acumulado tem frete devido ou aguardando pagamento (mesma regra de envios).
  */
 export async function getFreightWeekStats(): Promise<FreightWeekStats> {
   const admin = createAdminClient();
@@ -54,35 +54,26 @@ export async function getFreightWeekStats(): Promise<FreightWeekStats> {
   }
   stats.paidCount = paidCustomers.size;
 
-  // Pendentes: tem lote no período e o frete do período não foi aprovado.
-  const [lotsRes, coveredRes] = await Promise.all([
-    admin
+  const lotsRes = await admin
       .from("lots")
       .select("customer_id")
+      .neq("status", "cancelled")
       .gte("auction_date", periodStart)
-      .lt("auction_date", periodEnd),
-    admin
-      .from("charge_freight_periods")
-      .select("customer_id")
-      .gt("freight_amount", 0)
-      .eq("freight_period", periodStart)
-      .eq("status", "approved"),
-  ]);
+      .lt("auction_date", periodEnd);
 
   if (lotsRes.error) {
     throw new Error(`Falha ao contar lotes do período: ${lotsRes.error.message}`);
   }
-  if (coveredRes.error) {
-    throw new Error(
-      `Falha ao contar fretes pagos do período: ${coveredRes.error.message}`,
-    );
+  const customerIds = [...new Set((lotsRes.data ?? []).map(row => row.customer_id as string))];
+  if (customerIds.length > 0) {
+    const { data: states, error } = await admin.rpc("shipping_freight_states", {
+      p_customers: customerIds,
+    });
+    if (error) throw new Error(`Falha ao contar fretes pendentes: ${error.message}`);
+    stats.pendingCount = (states ?? []).filter(
+      (row: { status: string }) => row.status === "due" || row.status === "awaiting",
+    ).length;
   }
-
-  const withLots = new Set((lotsRes.data ?? []).map((row) => row.customer_id as string));
-  const covered = new Set(
-    (coveredRes.data ?? []).map((row) => row.customer_id as string),
-  );
-  stats.pendingCount = [...withLots].filter((id) => !covered.has(id)).length;
 
   // BRL com 2 casas (somas de numeric chegam como string/number misto).
   stats.total = Math.round(stats.total * 100) / 100;

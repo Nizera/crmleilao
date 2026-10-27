@@ -137,9 +137,6 @@ function ClosingPanel({ initialDate }: { initialDate?: string }) {
   const summary = useMemo(() => {
     if (!data) return "";
     const paid = data.staff.filter((member) => member.payment).length;
-    const missing = data.staff
-      .filter((member) => !member.payment)
-      .map((member) => member.name?.split(" ")[0] ?? "sem nome");
     return [
       `Fechamento ${formatDateBR(data.date)}`,
       `Recebido: ${formatBRL(data.receivedOn)} (${data.entries.length} lote(s))`,
@@ -157,11 +154,7 @@ function ClosingPanel({ initialDate }: { initialDate?: string }) {
             ),
           ].join("\n")
         : "Lotes pendentes de pagamento: nenhum",
-      `Pagamentos: ${paid} de ${data.staff.length}${
-        missing.length > 0
-          ? ` (falta: ${missing.join(", ")})`
-          : " — tudo pago"
-      }`,
+      `Pagamentos da equipe: ${paid} registrado(s)`,
     ].join("\n");
   }, [data]);
 
@@ -349,7 +342,7 @@ function ClosingPanel({ initialDate }: { initialDate?: string }) {
         )}
       </Section>
 
-      <Section title="Pagamentos da equipe" hint={`${paidCount} de ${data.staff.length}`}>
+      <Section title="Pagamentos da equipe" hint={`${paidCount} registrado(s)`}>
         {data.staff.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Nenhum membro na equipe.

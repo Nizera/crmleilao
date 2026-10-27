@@ -60,3 +60,49 @@ test('dia de São Paulo inclui pendentes, exclui cancelados e separa recebimento
   assert.equal(result.revenue.day, 70);
   assert.equal(result.closing.receivedOn, 60);
 });
+
+test('frete não cria pendência para cancelados ou crédito de pacote acumulado', async () => {
+  let allPaid = false;
+  const candidates = [
+    { customer_id: 'paid-current', status: 'paid' },
+    { customer_id: 'paid-old-credit', status: 'paid' },
+    { customer_id: 'cancelled-only', status: 'cancelled' },
+    { customer_id: 'due', status: 'paid' },
+    { customer_id: 'awaiting', status: 'pending_payment' },
+    { customer_id: 'paid-current', status: 'paid' },
+  ];
+  const client = {
+    from(table) {
+      let rows = table === 'lots' ? candidates : [
+        { customer_id: 'paid-current', freight_amount: 20, paid_at: '2026-10-27T15:00:00Z' },
+      ];
+      const query = new Proxy({}, { get: (_, key) => {
+        if (key === 'then') return resolve => Promise.resolve({ data: rows, error: null }).then(resolve);
+        if (key === 'neq') return (column, value) => { rows = rows.filter(row => row[column] !== value); return query; };
+        return () => query;
+      } });
+      return query;
+    },
+    async rpc(name, args) {
+      assert.equal(name, 'shipping_freight_states');
+      assert.deepEqual([...args.p_customers].sort(), ['awaiting','due','paid-current','paid-old-credit']);
+      return { data: args.p_customers.map(customer_id => ({
+        customer_id, status: !allPaid && ['due','awaiting'].includes(customer_id) ? customer_id : 'paid',
+      })), error: null };
+    },
+  };
+  const freight = load('src/lib/freight-server.ts', {
+    'server-only': {},
+    '@/lib/supabase/admin': { createAdminClient: () => client },
+    '@/lib/freight': {
+      freightPeriodStart: () => '2026-10-27', freightPeriodEnd: () => '2026-11-03',
+      spWeekdayKey: () => 'ter',
+    },
+  });
+  const result = await freight.getFreightWeekStats();
+  assert.equal(result.pendingCount, 2);
+  assert.equal(result.total, 20);
+  assert.equal(result.paidCount, 1);
+  allPaid = true;
+  assert.equal((await freight.getFreightWeekStats()).pendingCount, 0);
+});

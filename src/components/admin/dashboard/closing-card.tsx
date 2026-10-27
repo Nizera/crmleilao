@@ -31,9 +31,6 @@ type Props = {
 export function ClosingCard({ closing, ready, date, dateLabel }: Props) {
   const [open, setOpen] = useState(false);
 
-  const pendingCount = Math.max(closing.staffTotal - closing.staffPaid, 0);
-  const fullyPaid = ready && closing.staffTotal > 0 && pendingCount === 0;
-
   return (
     <>
       <Card>
@@ -59,17 +56,14 @@ export function ClosingCard({ closing, ready, date, dateLabel }: Props) {
             </p>
             {ready && closing.staffTotal > 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
-                Pagamentos: {closing.staffPaid} de {closing.staffTotal}
-                {fullyPaid
-                  ? " · tudo pago"
-                  : pendingCount > 0
-                    ? ` · falta ${pendingCount}`
-                    : ""}
+                Equipe: {closing.staffPaid} {closing.staffPaid === 1
+                  ? "pagamento registrado"
+                  : "pagamentos registrados"}
               </p>
             )}
           </div>
           <Button onClick={() => setOpen(true)} disabled={!ready}>
-            {fullyPaid ? "Ver fechamento" : "Abrir fechamento"}
+            Abrir fechamento
           </Button>
         </CardContent>
       </Card>
