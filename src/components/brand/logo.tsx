@@ -6,13 +6,9 @@ export function LogoMark({ className }: { className?: string }) {
   return <Image src="/brand/crest-v2.webp" alt="" aria-hidden="true" width={434} height={512} className={cn("size-10 object-contain", className)} />;
 }
 
-/** Marca compacta com texto nítido em ambos os temas. */
+/** Logo horizontal aprovada, com fundo transparente. */
 export function Logo({ className }: { className?: string }) {
-  return <span className={cn("inline-flex max-w-full items-center gap-2", className)}>
-    <LogoMark className="h-12 w-10 shrink-0" />
-    <span className="text-[11px] font-extrabold uppercase leading-tight tracking-wide text-foreground sm:text-xs">
-      <span className="block whitespace-nowrap">Os Caras</span>
-      <span className="block whitespace-nowrap">das Legends</span>
-    </span>
+  return <span className={cn("inline-flex w-44 max-w-full shrink-0 items-center", className)}>
+    <Image src="/brand/logo-horizontal-v2.webp" alt="Os Caras das Legends" width={1400} height={700} className="h-auto w-full object-contain" />
   </span>;
 }

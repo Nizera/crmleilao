@@ -83,7 +83,6 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 <LogoMark className="hidden size-8 shrink-0 group-data-[collapsible=icon]:block" />
                 <div className="grid min-w-0 gap-1 group-data-[collapsible=icon]:hidden">
                   <Logo className="w-44" />
-                  <span className="text-xs text-muted-foreground">Painel ADM</span>
                 </div>
               </Link>
             </SidebarMenuButton>
