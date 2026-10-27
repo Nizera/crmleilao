@@ -28,6 +28,12 @@ const labels: Record<string, string> = {
   "/admin/envios": "Envios",
   "/admin/relatorios": "Relatórios",
   "/admin/configuracao": "Configuração",
+  "/admin/fidelidade": "Loja · Visão geral",
+  "/admin/fidelidade/recompensas": "Loja · Produtos",
+  "/admin/fidelidade/resgates": "Loja · Pedidos",
+  "/admin/fidelidade/extrato": "Loja · Caracoins",
+  "/admin/fidelidade/configuracao": "Loja · Configurações",
+  "/admin/rifa": "Rifa",
 };
 
 type Props = {
@@ -39,7 +45,7 @@ export function AdminHeader({ name, role }: Props) {
   const pathname = usePathname();
   const current =
     labels[pathname] ??
-    Object.entries(labels).find(([k]) => pathname.startsWith(`${k}/`))?.[1] ??
+    Object.entries(labels).sort(([a], [b]) => b.length - a.length).find(([k]) => pathname.startsWith(`${k}/`))?.[1] ??
     "Painel";
 
   const initials = name
