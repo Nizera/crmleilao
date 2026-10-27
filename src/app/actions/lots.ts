@@ -22,6 +22,7 @@ import {
   type LotStatus,
 } from "@/lib/lots";
 import { createClient } from "@/lib/supabase/server";
+import { prepareLotFinancialChange } from "@/lib/lot-payment-guard";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -132,12 +133,30 @@ export async function saveLot(
     const previous = values.id
       ? await supabase
           .from("lots")
-          .select("id, images, moved_at")
+          .select("id, images, moved_at, status, paid_at, charge_id, customer_id, arremate_value")
           .eq("id", values.id)
           .maybeSingle()
       : null;
 
     if (values.id && !previous?.data) return failure("Lote não encontrado.");
+
+    const financialChange = previous?.data && (
+      Number(previous.data.arremate_value) !== Number(values.arremate_value.replace(",", ".")) ||
+      previous.data.customer_id !== customer_id ||
+      (previous.data.status !== values.status && (previous.data.status === "pending_payment" || ["cancelled", "pending_payment"].includes(values.status)))
+    );
+    if (financialChange && previous?.data) {
+      try {
+        await prepareLotFinancialChange(previous.data);
+      } finally {
+        // A consulta ao provedor pode ter confirmado um pagamento mesmo
+        // quando a edição foi recusada.
+        updateTag("dashboard");
+        revalidatePath("/admin/cobrancas");
+        revalidatePath("/admin/lotes");
+        revalidatePath("/painel", "layout");
+      }
+    }
 
     const previousImages: string[] = previous?.data?.images ?? [];
     let wasMoved = false;
@@ -179,10 +198,19 @@ export async function saveLot(
     let code: string;
 
     if (values.id) {
-      const { data, error } = await supabase
+      let update = supabase
         .from("lots")
         .update(row)
         .eq("id", values.id)
+        .eq("status", previous!.data!.status)
+        .eq("arremate_value", previous!.data!.arremate_value)
+        .eq("customer_id", previous!.data!.customer_id);
+      if (financialChange && previous?.data) {
+        // Se outra requisição cobrar ou pagar o lote durante a edição,
+        // a atualização falha em vez de sobrescrever o novo estado.
+        update = update.eq("status", previous.data.status).is("charge_id", null).is("paid_at", null);
+      }
+      const { data, error } = await update
         .select("id, code")
         .single();
 
@@ -301,6 +329,7 @@ export async function saveLot(
     revalidatePath("/admin/lotes");
     revalidatePath("/admin/estoque");
     revalidatePath("/admin/clientes");
+    revalidatePath("/painel", "layout");
     revalidatePath(`/painel/lotes/${code}`);
 
     return { ok: true, data: { id: lotId, code, inviteUrl } };
@@ -326,11 +355,22 @@ export async function setLotStatus(
     const supabase = await createClient();
     const { data: lot } = await supabase
       .from("lots")
-      .select("id, code, paid_at, shipped_at")
+      .select("id, code, paid_at, shipped_at, status, charge_id")
       .eq("id", id)
       .maybeSingle();
 
     if (!lot) return failure("Lote não encontrado.");
+    const financialChange = lot.status !== status && (lot.status === "pending_payment" || ["pending_payment", "cancelled"].includes(status));
+    if (financialChange) {
+      try {
+        await prepareLotFinancialChange(lot);
+      } finally {
+        updateTag("dashboard");
+        revalidatePath("/admin/cobrancas");
+        revalidatePath("/admin/lotes");
+        revalidatePath("/painel", "layout");
+      }
+    }
 
     // Estoque primeiro: se falhar, o status não muda e o admin pode repetir.
     const { data: itemRows, error: itemsError } = await supabase
@@ -372,12 +412,16 @@ export async function setLotStatus(
       patch.moved_at = null;
     }
 
-    const { error } = await supabase.from("lots").update(patch).eq("id", id);
+    let update = supabase.from("lots").update(patch).eq("id", id).eq("status", lot.status);
+    if (financialChange) update = update.eq("status", lot.status).is("charge_id", null).is("paid_at", null);
+    const { data: updated, error } = await update.select("id");
     if (error) return failure(`Falha ao atualizar status: ${error.message}`);
+    if (!updated?.length) return failure("O lote mudou durante a operação. Atualize a tela e tente novamente.");
 
     updateTag("dashboard");
     revalidatePath("/admin/lotes");
     revalidatePath("/admin/estoque");
+    revalidatePath("/painel", "layout");
     revalidatePath(`/painel/lotes/${lot.code}`);
 
     return { ok: true, data: { status } };

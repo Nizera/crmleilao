@@ -131,6 +131,9 @@ export function LotsView({
 
   const changeStatus = (lot: Lot, next: LotStatus) => {
     if (next === lot.status) return;
+    if (lot.charge_id && lot.status === "pending_payment" && !window.confirm(
+      "Esta alteração encerrará o Pix aberto no Mercado Pago, incluindo os outros lotes dessa cobrança. O cliente poderá gerar um novo Pix com o total atualizado. Continuar?",
+    )) return;
     startTransition(async () => {
       const result = await setLotStatus(lot.id, next);
       if (!result.ok) toast.error(result.error);

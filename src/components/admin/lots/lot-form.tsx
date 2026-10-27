@@ -91,6 +91,7 @@ export function LotFormSheet({
           </SheetTitle>
           <SheetDescription>
             Lance o arremate, as fotos e a data de envio.
+            {lot && " Ao alterar valor ou cliente, ou cancelar um lote não pago, o Pix aberto será encerrado no Mercado Pago. O cliente poderá gerar um novo com o total atualizado. Lotes pagos exigem ajuste/reembolso antes de alterações financeiras."}
           </SheetDescription>
         </SheetHeader>
 
@@ -238,6 +239,10 @@ function LotForm({
 
   const submit = form.handleSubmit((values) => {
     setServerError(null);
+    if (lot?.charge_id && lot.status === "pending_payment" && (
+      Number(values.arremate_value.replace(",", ".")) !== Number(lot.arremate_value) ||
+      values.customer_id !== lot.customer_id || values.status !== lot.status
+    ) && !window.confirm("Esta alteração encerrará o Pix aberto deste cliente no Mercado Pago, incluindo os demais lotes dessa cobrança. Depois, o cliente poderá gerar um novo Pix com o total atualizado. Continuar?")) return;
 
     // Teto da Vercel para o corpo da requisição: 4,5 MB e não tem como
     // levantar isso. Conferir aqui devolve uma mensagem em vez de um 413.

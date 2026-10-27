@@ -63,8 +63,10 @@ function transitionMessage(reason: string | undefined): string {
   }
   if (reason === "not_found") return "Cobrança não encontrada.";
   if (reason === "no_order") {
-    return "Esta cobrança não tem ordem registrada no Mercado Pago. Gere o Pix de novo.";
+    return "O Pix ainda não tem ordem confirmada. Aguarde e sincronize a cobrança antes de tentar novamente.";
   }
+  if (reason === "cancellation_unconfirmed") return "O Mercado Pago ainda não confirmou o encerramento do Pix. A cobrança foi mantida; tente novamente.";
+  if (reason === "cancellation_processing") return "O Pix está em processamento no Mercado Pago. Aguarde a confirmação antes de cancelar ou alterar os lotes.";
   if (reason === "order_not_found") {
     return "O Mercado Pago não conhece esta ordem — ela pode ter sido cancelada no painel de lá.";
   }
@@ -224,9 +226,8 @@ export async function cancelSelfChargeAction(id: string): Promise<ActionResult> 
     if (!own.ok) return own;
 
     const result = await cancelCharge(own.data.id);
-    if (!result.ok) return failure(transitionMessage(result.reason));
-
     revalidateChargePaths();
+    if (!result.ok) return failure(transitionMessage(result.reason));
     return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);
@@ -324,9 +325,8 @@ export async function cancelChargeAction(id: string): Promise<ActionResult> {
     }
 
     const result = await cancelCharge(id);
-    if (!result.ok) return failure(transitionMessage(result.reason));
-
     revalidateChargePaths();
+    if (!result.ok) return failure(transitionMessage(result.reason));
     return { ok: true, data: null };
   } catch (error) {
     rethrowIfRedirect(error);

@@ -445,7 +445,11 @@ async function applyTransition(
       .eq("charge_id", charge.id);
 
     if (unlinkError) {
-      console.error("[charges] falha ao liberar lotes:", unlinkError);
+      // Mantém a cobrança recuperável: o próximo cancelamento consultará
+      // novamente o estado terminal no provedor e repetirá a liberação.
+      await admin.from("charges").update({ status: charge.status })
+        .eq("id", charge.id).eq("status", target);
+      throw new Error("O Pix foi encerrado, mas não foi possível liberar os lotes. Tente novamente.");
     }
   }
 
@@ -515,7 +519,35 @@ export async function markChargePaid(chargeId: string): Promise<TransitionResult
 export async function cancelCharge(chargeId: string): Promise<TransitionResult> {
   const charge = await getChargeById(chargeId);
   if (!charge) return { ok: false, reason: "not_found" };
-  return applyTransition(charge, "cancelled");
+  if (!isChargeOpen(charge.status)) return { ok: false, reason: `already_${charge.status}` };
+  // Sem ordem confirmada, pode haver uma criação em andamento. Não liberar
+  // os lotes com base em ausência de ID, timeout ou resposta 404.
+  if (!charge.mp_payment_id) return { ok: false, reason: "no_order" };
+  const order = await getOrder(charge.mp_payment_id);
+  if (!order) return { ok: false, reason: "order_not_found" };
+  if (order.externalReference !== charge.external_reference) return { ok: false, reason: "reference_mismatch" };
+
+  const settle = async (current: NonNullable<typeof order>): Promise<TransitionResult> => {
+    const target = targetChargeStatus(current.status, current.statusDetail);
+    if (!target) return { ok: false, reason: "cancellation_unconfirmed" };
+    const result = await applyTransition(charge, target, {
+      mpPaymentId: current.id, amount: current.amount, paidAt: current.dateApproved,
+    });
+    return target === "approved" && result.ok
+      ? { ok: false, reason: "already_approved" }
+      : result;
+  };
+  if (targetChargeStatus(order.status, order.statusDetail)) return settle(order);
+  if (!["created", "action_required"].includes(order.status)) {
+    return { ok: false, reason: "cancellation_processing" };
+  }
+  // Mesmo que o POST falhe, consultar novamente: o pagamento ou cancelamento
+  // pode ter sido concluído durante a requisição.
+  await cancelPixOrder(order.id);
+  const confirmed = await getOrder(order.id);
+  if (!confirmed) return { ok: false, reason: "cancellation_unconfirmed" };
+  if (confirmed.externalReference !== charge.external_reference) return { ok: false, reason: "reference_mismatch" };
+  return settle(confirmed);
 }
 
 /**
