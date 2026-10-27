@@ -1,10 +1,12 @@
-import { Award, Bolt, CircleDollarSign, Medal } from "lucide-react";
+import { Award, Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
+  countCustomerShipments,
   getCustomerSpendingSummary,
   getCustomerFreightState,
   listCustomerCharges,
+  listCustomerShipments,
   listLots,
   requireCustomer,
 } from "@/lib/dal";
@@ -79,18 +81,23 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, freight, spending] =
+  const [lots, charges, freight, spending, shipments, shipmentsTotal] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ images: true, description: true }),
       listCustomerCharges(customer.id),
       getCustomerFreightState(customer.id),
       getCustomerSpendingSummary(customer.id),
+      listCustomerShipments(customer.id),
+      countCustomerShipments(customer.id),
     ]);
 
   const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
   const recentLots = selectHomeLots(lots,today);
   const olderLotsCount = lots.length - recentLots.length;
+  const nextBatchDate = shipments
+    .filter(shipment => shipment.status !== 'cancelled' && shipment.status !== 'delivered')
+    .reduce<string | null>((day, shipment) => day === null || shipment.batch_date < day ? shipment.batch_date : day, null);
 
   const activeCharge = charges.find((charge) => isChargeActive(charge)) ?? null;
   const homeCharges = charges
@@ -156,7 +163,7 @@ export default async function ClientHomePage() {
           </span>
         </div>
 
-        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <KpiCard
             label="A Pagar"
             value={owedValue}
@@ -175,6 +182,14 @@ export default async function ClientHomePage() {
             }
             icon={<Medal className="size-3.5 text-amarelo" />}
           />
+          <Link href="/painel/envios" className="rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ouro [&>div]:h-full" aria-label="Ver todos os envios e rastreios">
+            <KpiCard
+              label="Envios"
+              value={String(shipmentsTotal).padStart(2, "0")}
+              sub={nextBatchDate ? `Saída ${formatDateBR(nextBatchDate)}` : "Sem saída prevista"}
+              icon={<Truck className="size-3.5 text-ouro-ink" />}
+            />
+          </Link>
           <KpiCard
             label="Total pago"
             value={formatBRL(spending.paidTotal)}
