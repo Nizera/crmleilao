@@ -321,7 +321,6 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     { id: string; name: string; lots: number; total: number }
   >();
   for (const lot of lots) {
-    if(lot.status!=='cancelled'&&spDayOf(lot.created_at)===day){dayRevenue+=Number(lot.arremate_value);dayLots+=1;}
     if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
     if (Date.parse(lot.paid_at) >= dayEndMs) continue;
     const entry =
