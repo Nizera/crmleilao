@@ -1,16 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { refreshSession } from "@/lib/supabase/proxy";
 
-const hasSupabaseSession = (request: NextRequest) =>
-  request.cookies.getAll().some((c) => c.name.startsWith("sb-") && !!c.value);
-
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const response = NextResponse.next({ request });
-  await refreshSession(request, response);
+  const { user } = await refreshSession(request, response);
 
-  const authenticated = hasSupabaseSession(request);
+  const authenticated = !!user;
+  const redirectWithCookies = (url: URL) => {
+    const redirected = NextResponse.redirect(url);
+    for (const cookie of response.cookies.getAll()) {
+      redirected.cookies.set(cookie);
+    }
+    return redirected;
+  };
 
   const isAdminArea = pathname.startsWith("/admin");
   const isClientArea = pathname.startsWith("/painel");
@@ -23,14 +27,14 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
-    return NextResponse.redirect(url);
+    return redirectWithCookies(url);
   }
 
   if (isClientArea && !publicClientPaths.has(pathname) && !authenticated) {
     const url = request.nextUrl.clone();
     url.pathname = "/painel/login";
     url.search = "";
-    return NextResponse.redirect(url);
+    return redirectWithCookies(url);
   }
 
   // Com sessão: não volta para as telas de login.
@@ -41,7 +45,7 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = pathname === "/login" ? "/admin" : "/painel";
     url.search = "";
-    return NextResponse.redirect(url);
+    return redirectWithCookies(url);
   }
 
   return response;

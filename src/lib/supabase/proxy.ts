@@ -6,8 +6,7 @@ import { supabasePublishableKey, supabaseUrl } from "./env";
  * Refresca la sessão de Supabase no proxy (Next 16: substituto do middleware).
  * Retorna a resposta com os cookies atualizados.
  *
- * O proxy só faz checagens *otimistas* (leitura de cookie). A autorização
- * real acontece na camada de dados, em `src/lib/dal.ts` + RLS.
+ * Valida a sessão no Auth. A autorização de perfil continua no DAL e no RLS.
  */
 export async function refreshSession(
   request: NextRequest,
@@ -29,7 +28,7 @@ export async function refreshSession(
     },
   });
 
-  await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  return response;
+  return { response, user };
 }
