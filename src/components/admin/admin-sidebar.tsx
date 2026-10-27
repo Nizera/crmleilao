@@ -17,7 +17,7 @@ import {
   History,
 } from "lucide-react";
 
-import { LogoMark } from "@/components/brand/logo";
+import { Logo, LogoMark } from "@/components/brand/logo";
 import {
   Sidebar,
   SidebarContent,
@@ -78,19 +78,12 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
+            <SidebarMenuButton size="lg" className="h-auto min-h-12 py-2" asChild>
               <Link href="/admin/dashboard">
-                <div className="flex aspect-square size-8 shrink-0 items-center justify-center">
-                  <LogoMark className="size-full" />
-                </div>
-                <div className="grid flex-1 text-left leading-tight">
-                  <span className="text-xs font-extrabold uppercase tracking-wide">
-                    <span className="block">Os Caras</span>
-                    <span className="block">das Legends</span>
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    Painel ADM
-                  </span>
+                <LogoMark className="hidden size-8 shrink-0 group-data-[collapsible=icon]:block" />
+                <div className="grid min-w-0 gap-1 group-data-[collapsible=icon]:hidden">
+                  <Logo className="w-44" />
+                  <span className="text-xs text-muted-foreground">Painel ADM</span>
                 </div>
               </Link>
             </SidebarMenuButton>

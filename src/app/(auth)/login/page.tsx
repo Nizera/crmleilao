@@ -8,7 +8,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
       <Link href="/">
-        <Logo tileClassName="size-8" />
+        <Logo className="w-64" />
       </Link>
       <div className="w-full max-w-sm md:max-w-md">
         <LoginForm />

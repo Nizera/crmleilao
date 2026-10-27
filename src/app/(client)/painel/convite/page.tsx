@@ -40,7 +40,7 @@ export default async function ConvitePage({
       <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
         <div className="flex w-full max-w-sm flex-col items-center gap-6 text-center">
           <Link href="/">
-            <Logo tileClassName="size-8" />
+            <Logo className="w-64" />
           </Link>
           <div className="rounded-lg border bg-card p-6">
             <h1 className="text-lg font-semibold">{copy.title}</h1>
@@ -63,7 +63,7 @@ export default async function ConvitePage({
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
         <Link href="/">
-          <Logo tileClassName="size-8" />
+          <Logo className="w-64" />
         </Link>
         <InviteAcceptForm
           token={token}

@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { adminSignIn, type AuthFormState } from "@/app/actions/auth";
-import { LogoMark } from "@/components/brand/logo";
+import { Logo } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,9 +31,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
           <form action={action} className="grid gap-6">
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <span className="flex size-14 items-center justify-center">
-                  <LogoMark className="size-full" />
-                </span>
+                <Logo className="w-60" />
                 <h1 className="text-2xl font-bold">Painel interno</h1>
                 <p className="text-balance text-muted-foreground">
                   Entre com as credenciais da equipe dos Caras das Legends

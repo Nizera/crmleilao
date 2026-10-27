@@ -10,7 +10,7 @@ export default function ClientLoginPage() {
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
         <Link href="/">
-          <Logo tileClassName="size-8" />
+          <Logo className="w-64" />
         </Link>
         <ClientLoginForm className="w-full" />
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

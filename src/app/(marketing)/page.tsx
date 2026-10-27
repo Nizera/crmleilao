@@ -111,9 +111,9 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
+        <div className="mx-auto flex min-h-20 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
           <Link href="/">
-            <Logo />
+            <Logo className="w-28 sm:w-44" />
           </Link>
           <nav className="ml-auto hidden items-center gap-1 md:flex">
             <Button variant="ghost" size="sm" asChild>
@@ -140,19 +140,7 @@ export default function LandingPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 md:px-6">
         {/* Hero */}
         <section className="flex flex-col items-center gap-6 py-16 text-center md:py-24">
-          <div className="flex flex-col items-center gap-2">
-            <Image
-              src="/brand/app-emblem.webp"
-              alt="Escudo preto e dourado de Os Caras das Legends"
-              width={384}
-              height={384}
-              className="h-40 w-40 object-contain"
-            />
-            <p className="text-center text-2xl font-black uppercase leading-tight tracking-wide sm:text-3xl">
-              <span className="block text-ouro-ink">Os Caras</span>
-              <span className="block">das Legends</span>
-            </p>
-          </div>
+          <Logo className="w-full max-w-xl p-4 sm:p-6" />
           <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground">
             Leilão diário · Legends da Copa 2026
           </span>
