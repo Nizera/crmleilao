@@ -15,7 +15,6 @@ import { CoinHistoryView } from '@/components/shared/coin-history';
 import { HistoryPagination } from '@/components/shared/history-pagination';
 import { Button } from '@/components/ui/button';
 import { RetryButton } from '@/components/shared/retry-button';
-import { STORE_PREVIEW_ONLY, STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
 export const metadata={title:'Loja dos Caras'};
 const path='/painel/loja';
 function Unavailable({label}:{label:string}){return <div role="alert" className="grid gap-3 rounded-xl border p-5 text-sm"><p>Não foi possível carregar {label}. Isso não significa que seu saldo ou histórico esteja vazio.</p><RetryButton/></div>;}
@@ -44,7 +43,6 @@ export default async function ClientStorePage({searchParams}:PageProps<'/painel/
    {settings.error||balance===null?<Unavailable label="a loja e seu saldo"/>:!settings.data?.active?<p className="rounded-xl border p-5 text-sm text-muted-foreground">A loja está em preparação. Você pode acompanhar suas compras em Meus pedidos.</p>:!catalog||open.error?<Unavailable label="os produtos da loja"/>:<><LoyaltyStorefront rewards={catalog.items} balance={balance} customerId={customer.id} hasOpenOrder={!!open.data} catalog={catalog} catalogFilters={{q:filters.q,category,mode,sort}}/><HistoryPagination path={path} params={params} data={catalog}/></>}</>;
  }
  return <div className="grid min-w-0 gap-5"><header><Button asChild size="sm" variant="ghost" className="-ml-2"><Link href="/painel"><ArrowLeft/>Voltar ao painel</Link></Button><h1 className="mt-3 text-2xl font-bold">Loja dos Caras</h1><p className="mt-1 text-sm text-muted-foreground">Produtos, pedidos e suas Caracoins.</p></header>
- {STORE_PREVIEW_ONLY && <div role="status" className="rounded-xl border border-ouro/40 bg-amarelo/10 p-4 text-sm"><p className="font-semibold">Em breve · loja em prévia</p><p className="mt-1 text-muted-foreground">{STORE_PREVIEW_MESSAGE}</p></div>}
  <div className="flex items-center gap-3 rounded-2xl border border-ouro/30 bg-amarelo/10 p-4"><Coins className="size-6 shrink-0 text-ouro-ink"/><div><p className="text-xs text-muted-foreground">Caracoins disponíveis</p><p className="mt-1 text-2xl font-bold text-ouro-ink">{balance===null?'Saldo indisponível':coinNumber(balance)}</p></div></div>
  <nav aria-label="Seções da loja" className="grid grid-cols-3 gap-1 rounded-xl border bg-card p-1">{([['products','Produtos'],['orders','Meus pedidos'],['ledger','Extrato']] as const).map(([key,label])=><Link key={key} href={`${path}?tab=${key}`} aria-current={tab===key?'page':undefined} className={`rounded-lg px-2 py-3 text-center text-xs font-semibold ${tab===key?'bg-amarelo/15 text-ouro-ink':'text-muted-foreground'}`}>{label}</Link>)}</nav>
  {content}</div>;
