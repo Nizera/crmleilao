@@ -35,8 +35,8 @@ function Stepper({ status }: { status: ShipmentStatus }) {
   const allDone = done === STEPS.length;
 
   return (
-    <div className="mt-3 flex flex-col gap-2 border-t pt-3">
-      <div className="flex items-center justify-between text-[10px] font-bold uppercase">
+    <div className="mt-3 flex min-w-0 flex-col gap-2 border-t pt-3">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] font-bold uppercase min-[400px]:grid-cols-4">
         {STEPS.map((step, index) => {
           const isDone = index < done;
           const isCurrent = !allDone && index === done;
@@ -45,7 +45,7 @@ function Stepper({ status }: { status: ShipmentStatus }) {
             <span
               key={step}
               className={cn(
-                "flex items-center gap-0.5",
+                "flex min-w-0 items-center gap-1",
                 isDone
                   ? "text-ouro-ink"
                   : isCurrent
@@ -54,9 +54,9 @@ function Stepper({ status }: { status: ShipmentStatus }) {
               )}
             >
               {isDone ? (
-                <Check className="size-3" />
+                <Check className="size-3 shrink-0" />
               ) : isCurrent ? (
-                <span className="relative flex size-1.5">
+                <span className="relative flex size-1.5 shrink-0">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amarelo opacity-75" />
                   <span className="relative inline-flex size-1.5 rounded-full bg-amarelo" />
                 </span>
@@ -114,11 +114,11 @@ export function ClientShipmentsCard({
   }
 
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex min-w-0 flex-col gap-3">
       <div className="flex items-end justify-between gap-2">
         <div className="flex min-w-0 flex-col">
           <h2 className="text-base font-bold tracking-tight">Seus Envios</h2>
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="text-xs leading-relaxed text-muted-foreground">
             {count === 0
               ? "Quando seus lotes pagos forem postados (às terças), o código de rastreio aparece aqui."
               : `${count} ${count === 1 ? "envio" : "envios"} em andamento ou entregues.`}
@@ -137,39 +137,40 @@ export function ClientShipmentsCard({
         />
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-3">
         {shipments.map((shipment) => (
           <div
             key={shipment.id}
-            className="flex flex-col rounded-xl bg-card p-4 shadow-sm ring-1 ring-foreground/10"
+            className="flex min-w-0 max-w-full flex-col rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10 sm:p-4"
           >
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amarelo/15 text-ouro-ink">
                   <Truck className="size-[18px]" />
                 </span>
                 <div className="min-w-0">
-                  <span className="block truncate text-sm font-bold">
+                  <span className="block text-sm font-bold [overflow-wrap:anywhere]">
                     {shipment.carrier ?? shipment.service_name ?? "Envio"}
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block text-xs leading-relaxed text-muted-foreground">
                     Pacote com {shipment.lots?.length ?? 0} {(shipment.lots?.length ?? 0) === 1 ? "lote" : "lotes"}
-                    {shipment.tracking_code ? ` · Rastreio ${shipment.tracking_code}` : ` · Previsto ${formatDateBR(shipment.batch_date)}`}
+                    {` · Previsto ${formatDateBR(shipment.batch_date)}`}
                   </span>
                 </div>
               </div>
               <ShipmentStatusBadge status={shipment.status} />
             </div>
+            {shipment.tracking_code && <p className="mt-3 min-w-0 rounded-lg bg-muted/50 p-2.5 text-xs text-muted-foreground">Código de rastreio<span className="mt-1 block break-all font-mono font-semibold text-foreground">{shipment.tracking_code}</span></p>}
 
-            {(shipment.storeOrders?.length ?? 0)>0 && <div className="mt-3 grid gap-2 rounded-lg border p-3 text-xs"><p className="font-semibold">Produtos da loja neste pacote</p>{shipment.storeOrders?.map(order=><div key={order.id}><p className="font-medium">{order.code}</p>{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity}× {item.name}</p>)}</div>)}</div>}
+            {(shipment.storeOrders?.length ?? 0)>0 && <div className="mt-3 grid min-w-0 gap-2 rounded-lg border p-3 text-xs [overflow-wrap:anywhere]"><p className="font-semibold">Produtos da loja neste pacote</p>{shipment.storeOrders?.map(order=><div key={order.id} className="min-w-0"><p className="font-medium">{order.code}</p>{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity}× {item.name}</p>)}</div>)}</div>}
             {(shipment.lots?.length ?? 0) > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 grid min-w-0 gap-1.5 sm:flex sm:flex-wrap">
                 {(expanded.includes(shipment.id) ? shipment.lots : shipment.lots?.slice(0, 3))?.map((lot) => (
                   <Link
                     key={lot.id}
                     href={`/painel/lotes/${lot.code}`}
                     title={`${lot.code} · ${lot.title}`}
-                    className="rounded bg-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground transition hover:text-foreground"
+                    className="min-w-0 max-w-full rounded bg-muted px-2 py-2 font-mono text-[10px] leading-relaxed tracking-wide text-muted-foreground transition [overflow-wrap:anywhere] hover:text-foreground"
                   >
                     {lot.code} • {lot.title}
                   </Link>
@@ -185,13 +186,13 @@ export function ClientShipmentsCard({
             <Stepper status={shipment.status} />
 
             {(
-              <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3">
-                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+              <div className="mt-3 flex min-w-0 flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
                   Referência OCDL <span className="font-mono font-semibold">{shipment.code}</span>
                 </span>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 {shipment.tracking_code && (
-                  <button type="button" onClick={() => void copyTracking(shipment.tracking_code!)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground" aria-label={`Copiar rastreio ${shipment.tracking_code}`}>
+                  <button type="button" onClick={() => void copyTracking(shipment.tracking_code!)} className="inline-flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground" aria-label={`Copiar rastreio ${shipment.tracking_code}`}>
                     <Copy className="size-3.5" /> {copied === shipment.tracking_code ? "Copiado" : "Copiar código"}
                   </button>
                 )}
@@ -201,14 +202,14 @@ export function ClientShipmentsCard({
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`Rastrear o envio ${shipment.code}`}
-                    className="flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground"
+                    className="flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-bold uppercase tracking-wider text-ouro-ink transition hover:text-foreground"
                   >
                     Rastrear
                     <ExternalLink className="size-3.5" />
                   </a>
                 )}
                 {!shipment.tracking_url && !shipment.tracking_code && (
-                  <button type="button" disabled className="cursor-not-allowed text-[11px] text-muted-foreground" title="O código de rastreio ainda não está disponível.">
+                  <button type="button" disabled className="col-span-2 min-h-11 cursor-not-allowed rounded-lg border px-2 text-[11px] text-muted-foreground" title="O código de rastreio ainda não está disponível.">
                     Rastrear · indisponível
                   </button>
                 )}
