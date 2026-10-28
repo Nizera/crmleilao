@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 
 import { getDashboardStats } from "@/lib/analytics";
-import { getFreightWeekStats } from "@/lib/freight-server";
 import { PIPELINE_COLORS } from "@/lib/chart-colors";
 import { requireAdmin } from "@/lib/dal";
 import {
@@ -38,7 +37,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DashboardDatePicker } from "@/components/admin/dashboard/dashboard-date-picker";
-import { FreightWeekCard } from "@/components/admin/dashboard/freight-week-card";
+import { FreightPeriodCard } from "@/components/admin/dashboard/freight-week-card";
 import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { ClosingCard } from "@/components/admin/dashboard/closing-card";
@@ -117,14 +116,10 @@ export default async function DashboardPage({
   }
   const day = period.day;
 
-  const [stats, freightStats] = await Promise.all([
-    getDashboardStats(day, period.from, period.to),
-    getFreightWeekStats(),
-  ]);
-  const s = stats;
+  const s = await getDashboardStats(day, period.from, period.to);
 
-  const monthLabel = spMonthLabel(day);
-  const prevMonthLabel = spPrevMonthLabel(day);
+  const monthLabel = spMonthLabel(today);
+  const prevMonthLabel = spPrevMonthLabel(today);
   const dayCap =
     spDayLongLabel(day).charAt(0).toUpperCase() + spDayLongLabel(day).slice(1);
 
@@ -191,7 +186,7 @@ export default async function DashboardPage({
       </div>
       <DashboardDatePicker key={period.from + period.to} period={period} today={today} />
       {periodError && <p role="alert" className="text-sm text-destructive">{periodError} Mostrando o dia completo de {formatDateBR(day)}.</p>}
-      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Faturamento e fechamento consideram os lotes cadastrados nesse intervalo. Os demais indicadores são gerais; os mensais usam o mês de início.</p>
+      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Todos os indicadores, listas e fretes consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
 
       {/* KPIs financeiros */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -214,7 +209,7 @@ export default async function DashboardPage({
                 {Math.abs(s.revenue.deltaPct)}% vs. {prevMonthLabel}
               </span>
             ) : (
-              deltaHint ?? "—"
+              `${monthLabel} · recebimentos confirmados${deltaHint ? ` · ${deltaHint}` : ""}`
             )
           }
         />
@@ -232,21 +227,21 @@ export default async function DashboardPage({
           label="Ticket médio"
           value={s.ready.lots ? formatBRL(s.revenue.ticket) : "—"}
           icon={TrendingUpIcon}
-          hint="por lote pago"
+          hint="por lote pago do período"
         />
         <KpiCard
-          label="Cobranças em aberto"
+          label="A receber do período"
           value={s.ready.charges ? formatBRL(s.charges.openAmount) : "—"}
           icon={ClockIcon}
           hint={
             s.ready.charges
-              ? s.charges.openCount > 0
-                ? `${s.charges.openCount} aberta(s)${
+              ? s.charges.pendingLotsCount > 0
+                ? `${s.charges.pendingLotsCount} lote(s) pendente(s) · ${s.charges.openCount} Pix aberto(s)${
                     s.charges.expiring24h > 0
                       ? ` · ${s.charges.expiring24h} vencem em 24h`
                       : ""
                   }`
-                : "nenhuma cobrança aberta"
+                : "nenhum lote pendente no período"
               : "aplique a migração 0005_charges.sql"
           }
         />
@@ -266,8 +261,8 @@ export default async function DashboardPage({
             !s.ready.charges
               ? "aplique a migração 0005_charges.sql"
               : s.charges.approvalRate === null
-                ? "sem cobranças nos últimos 30 dias"
-                : `${s.charges.recentApproved} de ${s.charges.recentCreated} cobranças pagas (30d)`
+                ? "sem Pix vinculado aos lotes do período"
+                : `${s.charges.recentApproved} de ${s.charges.recentCreated} Pix dos lotes do período pagos`
           }
         />
         <KpiCard
@@ -276,7 +271,7 @@ export default async function DashboardPage({
           icon={UsersIcon}
           hint={
             s.ready.customers
-              ? `${s.customers.newInMonth} novo(s) em ${monthLabel}`
+              ? `${s.customers.total} participante(s) · ${s.customers.newInPeriod} novo(s) no período`
               : "falha ao consultar"
           }
         />
@@ -312,16 +307,16 @@ export default async function DashboardPage({
           key={period.from + period.to}
           period={period}
         />
-        <FreightWeekCard stats={freightStats} />
+        <FreightPeriodCard stats={s.freight} period={period} ready={s.ready.freight} />
       </div>
 
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Faturamento por mês</CardTitle>
+            <CardTitle>Recebido dos lotes do período</CardTitle>
             <CardDescription>
-              Últimos 6 meses · lotes com pagamento confirmado
+              Agrupado pelo mês de cadastro dos lotes selecionados · só pagamentos confirmados
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -337,7 +332,7 @@ export default async function DashboardPage({
         <Card>
           <CardHeader>
             <CardTitle>Pipeline de lotes</CardTitle>
-            <CardDescription>Distribuição por status</CardDescription>
+            <CardDescription>Lotes cadastrados no período selecionado</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <PipelineChart
@@ -378,7 +373,7 @@ export default async function DashboardPage({
         <Card>
           <CardHeader>
             <CardTitle>Top clientes</CardTitle>
-            <CardDescription>Maior faturamento acumulado</CardDescription>
+            <CardDescription>Maior valor pago em lotes do período</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {s.ranking.length === 0 && (
@@ -417,7 +412,7 @@ export default async function DashboardPage({
         <Card>
           <CardHeader>
             <CardTitle>Últimos pagamentos</CardTitle>
-            <CardDescription>Mais recentes primeiro</CardDescription>
+            <CardDescription>Lotes do período · mais recentes primeiro</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {s.recentPayments.length === 0 && (
@@ -455,7 +450,7 @@ export default async function DashboardPage({
         <Card>
           <CardHeader>
             <CardTitle>Pendências</CardTitle>
-            <CardDescription>O que precisa da sua atenção</CardDescription>
+            <CardDescription>Pendências dos lotes do período</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {alerts.length === 0 && (

@@ -16,6 +16,7 @@ import {
   type ClosingPendingCharge,
 } from "@/lib/staff-payments";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchScopeRows } from "@/lib/dashboard-scope-server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -37,18 +38,22 @@ export async function getClosingDataAction(
     const period = resolveAuctionPeriod(asOf, input);
     const db = createAdminClient();
     const entries: ClosingEntry[] = [];
+    const pendingChargeAmounts = new Map<string, number>();
     for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
       const { data, error } = await db.from("lots")
-        .select("id, code, title, arremate_value, status, created_at, paid_at, customer:customers(name)")
+        .select("id, code, title, arremate_value, status, created_at, paid_at, charge_id, customer:customers(name)")
         .neq("status", "cancelled")
         .gte("created_at", period.startUtc).lt("created_at", period.endUtc)
         .order("created_at", { ascending: true }).order("id", { ascending: true })
         .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
       if (error) throw new Error("Não foi possível carregar os lotes do período.");
       const page = (data ?? []) as unknown as {
-        code: string; title: string; arremate_value: number | string; status: string;
+        code: string; title: string; arremate_value: number | string; status: string; charge_id: string | null;
         created_at: string; paid_at: string | null; customer: { name: string | null } | null;
       }[];
+      for (const lot of page) if (lot.status === "pending_payment" && lot.charge_id) {
+        pendingChargeAmounts.set(lot.charge_id, (pendingChargeAmounts.get(lot.charge_id) ?? 0) + Number(lot.arremate_value));
+      }
       entries.push(...page.map(lot => ({
         code: lot.code, title: lot.title, customer: lot.customer?.name?.trim() || "Sem nome",
         value: Number(lot.arremate_value), status: lot.status, createdAt: lot.created_at,
@@ -56,47 +61,20 @@ export async function getClosingDataAction(
       })));
       if (page.length < PENDING_LOTS_PAGE_SIZE) break;
     }
-    // Mantém o resumo de todas as pendências, independentemente do leilão.
-    const pendingLots: ClosingPendingLot[] = [];
-    for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
-      const { data, error } = await db.from("lots")
-        .select("code, title, arremate_value, customer:customers(name)")
-        .eq("status", "pending_payment")
-        .order("created_at", { ascending: false }).order("id", { ascending: false })
-        .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
-      if (error) throw new Error("Não foi possível carregar as pendências.");
-      const page = (data ?? []) as unknown as {
-        code: string; title: string; arremate_value: number | string;
-        customer: { name: string | null } | null;
-      }[];
-      pendingLots.push(...page.map(lot => ({
-        code: lot.code, title: lot.title, customerName: lot.customer?.name?.trim() || "Sem nome",
-        amount: Number(lot.arremate_value),
-      })));
-      if (page.length < PENDING_LOTS_PAGE_SIZE) break;
-    }
-    const pendingCharges: ClosingPendingCharge[] = [];
-    const now = new Date();
-    for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
-      const { data, error } = await db.from("charges")
-        .select("id, code, amount, status, expires_at, ticket_url, customer:customers(name, phone_e164)")
-        .in("status", ["pending", "in_process"])
-        .order("created_at", { ascending: false }).order("id", { ascending: false })
-        .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
-      if (error) throw new Error("Não foi possível carregar as cobranças abertas.");
-      const page = (data ?? []) as unknown as {
-        id: string; code: string; amount: number | string; status: ChargeStatus;
-        expires_at: string | null; ticket_url: string | null;
-        customer: { name: string | null; phone_e164: string } | null;
-      }[];
-      pendingCharges.push(...page.filter(charge => isChargeActive(charge, now)).map(charge => ({
-        id: charge.id, code: charge.code, amount: Number(charge.amount),
-        customerName: charge.customer?.name?.trim() || null,
-        phone_e164: charge.customer?.phone_e164 ?? "", ticketUrl: charge.ticket_url,
-        expiresAt: charge.expires_at,
-      })));
-      if (page.length < PENDING_LOTS_PAGE_SIZE) break;
-    }
+    const pendingLots: ClosingPendingLot[] = entries.filter(entry => entry.status === "pending_payment").map(entry => ({
+      code: entry.code, title: entry.title, customerName: entry.customer, amount: entry.value,
+    }));
+    const charges = await fetchScopeRows<{
+      id: string; code: string; amount: number | string; status: ChargeStatus;
+      expires_at: string | null; ticket_url: string | null;
+      customer: { name: string | null; phone_e164: string } | null;
+    }>(db, "charges", "id", [...pendingChargeAmounts.keys()], "id, code, amount, status, expires_at, ticket_url, customer:customers(name, phone_e164)");
+    if (charges.error) throw new Error("Não foi possível carregar as cobranças do período.");
+    const pendingCharges: ClosingPendingCharge[] = charges.data.filter(charge => isChargeActive(charge)).map(charge => ({
+      id: charge.id, code: charge.code, amount: pendingChargeAmounts.get(charge.id) ?? 0,
+      customerName: charge.customer?.name?.trim() || null, phone_e164: charge.customer?.phone_e164 ?? "",
+      ticketUrl: charge.ticket_url, expiresAt: charge.expires_at,
+    }));
     const paid = entries.filter(entry => ["paid", "shipped", "delivered"].includes(entry.status) && entry.paidAt);
     const pending = entries.filter(entry => entry.status === "pending_payment");
     return { ok: true, data: {
