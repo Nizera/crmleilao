@@ -1,4 +1,4 @@
-import { Award, Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
+import { Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -20,6 +20,8 @@ import {
 import { formatBRL, formatDateBR, type LotStatus } from "@/lib/lots";
 import { cn } from "@/lib/utils";
 import { selectHomeLots } from "@/lib/client-home";
+import { getCustomerRankPoints } from "@/lib/loyalty";
+import { CustomerTierBadge } from "@/components/client/customer-tier-badge";
 
 const PAID_LOT_STATUSES: LotStatus[] = ["paid", "shipped", "delivered"];
 
@@ -81,7 +83,7 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, freight, spending, shipments, shipmentsTotal] =
+  const [lots, charges, freight, spending, shipments, shipmentsTotal, rankPoints] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ images: true, description: true }),
@@ -90,6 +92,7 @@ export default async function ClientHomePage() {
       getCustomerSpendingSummary(customer.id),
       listCustomerShipments(customer.id),
       countCustomerShipments(customer.id),
+      getCustomerRankPoints(customer.id),
     ]);
 
   const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
@@ -143,7 +146,7 @@ export default async function ClientHomePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Hero: saudação + chips de status + chip de raridade (placeholder). */}
+      {/* Saudação e elo pessoal calculado pela mesma pontuação do ranking. */}
       <section className="flex flex-col gap-2 pt-1">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-col">
@@ -155,12 +158,7 @@ export default async function ClientHomePage() {
               Acompanhe seus lotes, pagamentos e envios do leilão.
             </p>
           </div>
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-amarelo/15 px-2.5 py-1 text-ouro-ink ring-1 ring-ouro/30">
-            <Award className="size-4 text-amarelo" />
-            <span className="text-[10px] font-bold uppercase tracking-wider">
-              Ouro NV.4
-            </span>
-          </span>
+          <CustomerTierBadge rankPoints={rankPoints} />
         </div>
 
         <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">

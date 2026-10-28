@@ -46,6 +46,16 @@ export const getCustomerCaracoinsBalance = cache(async (customerId: string): Pro
   return error ? null : Number(data ?? 0);
 });
 
+export const getCustomerRankPoints = cache(async (customerId: string): Promise<number | null> => {
+  const db = await createClient();
+  const { data, error } = await db.rpc("get_customer_loyalty_earned_points", {
+    p_customer_id: customerId,
+  });
+  if (error || data === null) return null;
+  const points = Number(data);
+  return Number.isFinite(points) && points >= 0 ? points : null;
+});
+
 export async function getCustomerLoyaltyRankingData(customerId: string) {
   const supabase = await createClient();
   const [{ data: settings,error:settingsError }, { data: customer,error:customerError }] = await Promise.all([
@@ -60,15 +70,12 @@ export async function getCustomerLoyaltyRankingData(customerId: string) {
     if (error) throw error;
     tierLeaders = (data ?? []) as LoyaltyTierLeader[];
   }
-  const { data: earnedPoints, error: earnedPointsError } = await supabase.rpc(
-    "get_customer_loyalty_earned_points",
-    { p_customer_id: customerId },
-  );
-  if (earnedPointsError) throw earnedPointsError;
+  const rankPoints = await getCustomerRankPoints(customerId);
+  if (rankPoints === null) throw new Error("Não foi possível carregar seus pontos de ranking.");
   return {
     settings: resolvedSettings,
     rankVisible: customer?.loyalty_rank_visible ?? false,
     tierLeaders,
-    rankPoints: Number(earnedPoints ?? 0),
+    rankPoints,
   };
 }
