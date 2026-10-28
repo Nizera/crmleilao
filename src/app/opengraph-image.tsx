@@ -7,6 +7,12 @@ export const size = {
 };
 export const contentType = "image/png";
 
+// Versão no caminho da imagem: permite aos serviços de compartilhamento
+// distinguir esta prévia da arte antiga já armazenada em cache.
+export function generateImageMetadata() {
+  return [{ id: "colecionaveis-v2", alt, size, contentType }];
+}
+
 const MARK_PATH =
   "M6 3H16.5L21 7.5V18A3 3 0 0 1 18 21H6A3 3 0 0 1 3 18V6A3 3 0 0 1 6 3ZM12 7.4L13.23 10.7L16.76 10.85L14 13.05L14.94 16.45L12 14.5L9.06 16.45L10 13.05L7.24 10.85L10.77 10.7Z";
 

@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.oscarasdaslegends.com.br"),
   title: {
     default: "Os Caras das Legends — Leilão diário de colecionáveis",
     template: "%s · Os Caras das Legends",
