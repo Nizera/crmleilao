@@ -142,7 +142,7 @@ export default function LandingPage() {
         <section className="flex flex-col items-center gap-6 py-16 text-center md:py-24">
           <Logo className="w-full max-w-xl p-4 sm:p-6" />
           <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground">
-            Leilão diário · Legends da Copa 2026
+            Leilão diário de colecionáveis
           </span>
           <h1 className="max-w-3xl text-balance text-4xl font-bold tracking-tight md:text-5xl">
             Todo dia tem leilão de Legend na Copa 2026
@@ -362,7 +362,7 @@ export default function LandingPage() {
 
       <footer className="border-t py-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-muted-foreground sm:flex-row md:px-6">
-          <span>Os Caras das Legends · Leilão de Legends da Copa 2026</span>
+          <span>Os Caras das Legends · Leilão diário de colecionáveis</span>
           <nav className="flex items-center gap-4">
             <a
               href={INSTAGRAM_URL}

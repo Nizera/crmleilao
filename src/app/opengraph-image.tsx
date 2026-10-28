@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Os Caras das Legends — leilão diário de Legends da Copa 2026";
+export const alt = "Os Caras das Legends — Leilão diário de colecionáveis";
 export const size = {
   width: 1200,
   height: 630,
@@ -48,7 +48,7 @@ export default function OpengraphImage() {
             color: "#737373",
           }}
         >
-          Leilão diário de Legends da Copa 2026
+          Leilão diário de colecionáveis
         </div>
         <div
           style={{

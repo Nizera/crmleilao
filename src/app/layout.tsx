@@ -18,11 +18,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Os Caras das Legends — Leilão diário de Legends da Copa 2026",
+    default: "Os Caras das Legends — Leilão diário de colecionáveis",
     template: "%s · Os Caras das Legends",
   },
   description:
-    "Leilão diário de figurinhas da Copa 2026: lotes, arremates, estoque, cobranças e envios.",
+    "Leilão diário de colecionáveis",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
