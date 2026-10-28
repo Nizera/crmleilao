@@ -56,6 +56,7 @@ import {
 } from "@/lib/lots";
 import type { Player, StockItem } from "@/lib/stock";
 import type { AppSettings } from "@/lib/settings";
+import { spDayOf, spTimeOf } from "@/lib/dates";
 
 const ALL = "all";
 
@@ -254,6 +255,7 @@ export function LotsView({
           <TableHeader>
             <TableRow>
               <TableHead>Código</TableHead>
+              <TableHead className="whitespace-nowrap">Data/hora do cadastro</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Lote</TableHead>
               <TableHead className="hidden text-right md:table-cell">
@@ -269,6 +271,12 @@ export function LotsView({
             {lots.map((lot) => (
               <TableRow key={lot.id}>
                 <TableCell className="font-mono text-xs">{lot.code}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
+                  <time dateTime={lot.created_at} title="Horário de São Paulo">
+                    <span className="block text-sm">{formatDateBR(spDayOf(lot.created_at))}</span>
+                    <span className="block text-xs text-muted-foreground">{spTimeOf(lot.created_at)}</span>
+                  </time>
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-medium">
@@ -349,7 +357,7 @@ export function LotsView({
 
             {lots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center">
+                <TableCell colSpan={9} className="h-32 text-center">
                   <span className="text-muted-foreground">
                     {total === 0 && !q && status === ALL
                       ? "Cadastre o primeiro arremate com o botão “Novo lote”."
