@@ -18,7 +18,7 @@ function load(path, dependencies = {}) {
 
 const dates = load('src/lib/dates.ts');
 const periods = load('src/lib/auction-period.ts', { '@/lib/dates': dates });
-const scope = load('src/lib/dashboard-scope.ts');
+const scope = load('src/lib/dashboard-scope.ts', { '@/lib/freight': load('src/lib/freight.ts') });
 const scopeServer = load('src/lib/dashboard-scope-server.ts', { 'server-only': {} });
 function statsFor(lots, from, to, extra = {}) {
   const tables = { lots, ...extra };
@@ -211,8 +211,8 @@ test('todas as KPIs seguem o leilão; mensal/acumulado não sofrem corte e Pix m
   ];
   const extra = {
     charges: [
-      { id: 'mixed', customer_id: 'a', status: 'approved', amount: 90, freight_amount: 20 },
-      { id: 'b', customer_id: 'b', status: 'approved', amount: 70, freight_amount: 20 },
+      { id: 'mixed', customer_id: 'a', status: 'approved', amount: 90, freight_amount: 20, paid_at: '2026-10-28T02:59:59Z' },
+      { id: 'b', customer_id: 'b', status: 'approved', amount: 70, freight_amount: 20, paid_at: '2026-10-28T03:00:00Z' },
       { id: 'pending', customer_id: 'c', status: 'pending', amount: 150, freight_amount: 20, expires_at: null },
       { id: 'outside', customer_id: 'outside', status: 'approved', amount: 120, freight_amount: 20 },
     ],
@@ -250,11 +250,15 @@ test('todas as KPIs seguem o leilão; mensal/acumulado não sofrem corte e Pix m
   assert.equal(result.freight.paidCount, 1);
   assert.equal(result.freight.carriedCount, 1);
   assert.equal(result.freight.pendingCount, 2);
+  assert.equal(result.freight.byDay.qua, 20);
+  assert.equal(result.freight.byDay.ter, 0);
   const other = await statsFor(rows, '2026-10-27T00:00', '2026-10-27T12:00', extra);
   assert.equal(other.revenue.month, 220);
   assert.equal(other.revenue.total, 220);
   assert.equal(other.revenue.day, 40);
   assert.equal(other.freight.total, 20);
+  assert.equal(other.freight.byDay.ter, 20);
+  assert.equal(other.freight.byDay.qua, 0);
   const empty = await statsFor(rows, '2026-10-26T00:00', '2026-10-26T12:00', extra);
   assert.equal(empty.revenue.total, 220);
   assert.equal(empty.customers.total, 0);

@@ -151,7 +151,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
       delivered: [...shipments.values()].filter(s => s.status === "delivered").length,
     },
     freight: chargesRes.error || linksRes.error || usageRes.error || freightRes.error || lotsError
-      ? { total: 0, paidCount: 0, carriedCount: 0, pendingCount: 0 }
+      ? { total: 0, byDay: { ter: 0, qua: 0, qui: 0, sex: 0, sab: 0, dom: 0, seg: 0 }, paidCount: 0, carriedCount: 0, pendingCount: 0 }
       : computePeriodFreight(allLots, active, chargesRes.data, linksRes.data, usageRes.data, freightRes.data),
     closing: { receivedOn: sum(paid), paidLotsOn: paid.length },
     pipeline, ranking: [...rankMap.values()].sort((a, b) => b.total - a.total).slice(0, 5),

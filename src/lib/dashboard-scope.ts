@@ -1,4 +1,5 @@
 import type { LotStatus } from "@/lib/lots";
+import { spWeekdayKey, type FreightDayKey } from "@/lib/freight";
 
 export type ScopeLot = {
   id: string; code: string; title: string; status: LotStatus;
@@ -13,7 +14,7 @@ export type ScopeCharge = {
 export type ScopeShipment = { lot_id: string; shipment_id: string; shipment: { id: string; status: string } | null };
 export type ScopeFreightUsage = { charge_id: string; shipment_id: string; shipment: { status: string } | null };
 export type ScopeFreightItem = { charge_id: string; first_lot_id: string | null; freight_period: string; freight_amount: number | string };
-export type PeriodFreightStats = { total: number; paidCount: number; carriedCount: number; pendingCount: number };
+export type PeriodFreightStats = { total: number; byDay: Record<FreightDayKey, number>; paidCount: number; carriedCount: number; pendingCount: number };
 
 /** Valores de Pix podem reunir vários leilões: o dashboard soma somente sua parcela em lotes. */
 export function pendingAmountByCharge(lots: ScopeLot[]) {
@@ -41,9 +42,16 @@ export function computePeriodFreight(
     if (lot.charge_id && lot.status !== "cancelled" && !firstByCharge.has(lot.charge_id)) firstByCharge.set(lot.charge_id, lot.id);
   }
   const paidCustomers = new Set<string>();
+  let total = 0;
+  const byDay: Record<FreightDayKey, number> = { ter: 0, qua: 0, qui: 0, sex: 0, sab: 0, dom: 0, seg: 0 };
+  const addPaid = (charge: ScopeCharge, amount: number) => {
+    total += amount;
+    paidCustomers.add(charge.customer_id);
+    const day = charge.paid_at ? spWeekdayKey(charge.paid_at) : null;
+    if (day) byDay[day] += amount;
+  };
   const itemsByCharge = new Map<string, ScopeFreightItem[]>();
   for (const item of items) itemsByCharge.set(item.charge_id, [...(itemsByCharge.get(item.charge_id) ?? []), item]);
-  let total = 0;
   for (const charge of approved.values()) {
     const parts = itemsByCharge.get(charge.id) ?? [];
     if (parts.length) {
@@ -52,11 +60,11 @@ export function computePeriodFreight(
         if (seen.has(part.freight_period)) continue;
         seen.add(part.freight_period);
         if (selected.has(part.first_lot_id ?? firstByCharge.get(charge.id) ?? "")) {
-          total += Number(part.freight_amount); paidCustomers.add(charge.customer_id);
+          addPaid(charge, Number(part.freight_amount));
         }
       }
     } else if (selected.has(firstByCharge.get(charge.id) ?? "")) {
-      total += Number(charge.freight_amount); paidCustomers.add(charge.customer_id);
+      addPaid(charge, Number(charge.freight_amount));
     }
   }
   const uncovered = new Set<string>();
@@ -70,6 +78,7 @@ export function computePeriodFreight(
   }
   return {
     total: Math.round(total * 100) / 100, paidCount: paidCustomers.size,
+    byDay: Object.fromEntries(Object.entries(byDay).map(([day, amount]) => [day, Math.round(amount * 100) / 100])) as Record<FreightDayKey, number>,
     carriedCount: [...customers].filter(id => !uncovered.has(id) && !paidCustomers.has(id)).length,
     pendingCount: uncovered.size,
   };

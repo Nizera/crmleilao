@@ -307,7 +307,7 @@ export default async function DashboardPage({
           key={period.from + period.to}
           period={period}
         />
-        <FreightPeriodCard stats={s.freight} period={period} ready={s.ready.freight} />
+        <FreightPeriodCard key={period.from + period.to} stats={s.freight} period={period} ready={s.ready.freight} />
       </div>
 
       {/* Gráficos */}
