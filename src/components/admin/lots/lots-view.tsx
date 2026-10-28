@@ -191,7 +191,7 @@ export function LotsView({
   const hasAccess = (lot: Lot) => Boolean(lot.customer?.auth_user_id);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Lotes</h2>
@@ -208,8 +208,8 @@ export function LotsView({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <form onSubmit={search} className="flex min-w-56 flex-1 items-center gap-2">
-          <div className="relative min-w-56 flex-1">
+        <form onSubmit={search} className="flex min-w-0 basis-full items-center gap-2 sm:flex-1 sm:basis-0">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
@@ -236,7 +236,7 @@ export function LotsView({
         </form>
 
         <Select value={status} onValueChange={changeFilter}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-full shrink-0 sm:w-56">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -250,20 +250,20 @@ export function LotsView({
         </Select>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
+      <div className="min-w-0 rounded-md border">
+        <Table className="min-w-[940px] table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead>Código</TableHead>
-              <TableHead className="whitespace-nowrap">Data/hora do cadastro</TableHead>
-              <TableHead>Cliente</TableHead>
+              <TableHead className="w-[72px]">Código</TableHead>
+              <TableHead className="w-[104px]" title="Data e hora do cadastro, no horário de São Paulo">Cadastro</TableHead>
+              <TableHead className="w-[22%]">Cliente</TableHead>
               <TableHead>Lote</TableHead>
-              <TableHead className="hidden text-right md:table-cell">
+              <TableHead className="hidden w-20 text-right text-xs md:table-cell">
                 Figurinhas
               </TableHead>
-              <TableHead className="text-right">Arremate</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="hidden md:table-cell">Envio</TableHead>
+              <TableHead className="w-[88px] text-right">Arremate</TableHead>
+              <TableHead className="w-[152px]">Status</TableHead>
+              <TableHead className="hidden w-24 md:table-cell">Envio</TableHead>
               <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
@@ -277,18 +277,18 @@ export function LotsView({
                     <span className="block text-xs text-muted-foreground">{spTimeOf(lot.created_at)}</span>
                   </time>
                 </TableCell>
-                <TableCell>
-                  <div className="flex flex-col">
-                    <span className="font-medium">
+                <TableCell className="whitespace-normal">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="line-clamp-2 break-words font-medium" title={lot.customer?.name ?? "Sem nome"}>
                       {lot.customer?.name ?? "Sem nome"}
                     </span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="truncate text-xs text-muted-foreground">
                       {lot.customer?.phone_e164 ?? "—"}
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="max-w-56">
-                  <span className="block truncate">{lot.title}</span>
+                <TableCell className="whitespace-normal">
+                  <span className="line-clamp-2 break-words" title={lot.title}>{lot.title}</span>
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
                   {formatQty(qtyByLot.get(lot.id))}
@@ -296,8 +296,8 @@ export function LotsView({
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatBRL(lot.arremate_value)}
                 </TableCell>
-                <TableCell>
-                  <LotStatusBadge status={lot.status} />
+                <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
+                  <LotStatusBadge status={lot.status} size="sm" />
                 </TableCell>
                 <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                   {formatDateBR(lot.shipping_date)}
@@ -308,6 +308,7 @@ export function LotsView({
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="size-8"
                         disabled={pending}
                         aria-label={`Ações do lote ${lot.code}`}
                       >

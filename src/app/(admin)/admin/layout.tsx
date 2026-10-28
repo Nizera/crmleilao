@@ -18,12 +18,12 @@ export default async function AdminLayout({
   return (
     <SidebarProvider>
       <AdminSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <AdminHeader
           name={profile.name ?? "Equipe"}
           role={profile.role}
         />
-        <div className="flex flex-1 flex-col">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
