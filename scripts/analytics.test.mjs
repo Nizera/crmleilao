@@ -17,7 +17,8 @@ function load(path, dependencies = {}) {
 }
 
 const dates = load('src/lib/dates.ts');
-function statsFor(lots) {
+const periods = load('src/lib/auction-period.ts', { '@/lib/dates': dates });
+function statsFor(lots, from, to) {
   const client = { from(table) {
     const result = { data: table === 'lots' ? lots : [], count: 0, error: null };
     const query = new Proxy({}, { get: (_, key) => key === 'then'
@@ -30,9 +31,10 @@ function statsFor(lots) {
     'next/cache': { unstable_cache: fn => fn },
     '@/lib/charges': { isChargeActive: () => false },
     '@/lib/dates': dates,
+    '@/lib/auction-period': periods,
     '@/lib/lots': { LOT_STATUS_LABELS: {} },
     '@/lib/supabase/admin': { createAdminClient: () => client },
-  }).getDashboardStats('2026-10-27');
+  }).getDashboardStats('2026-10-27', from, to);
 }
 
 const lot = (value, overrides = {}) => ({ code: 'TEST', title: 'Teste', status: 'paid',
@@ -58,7 +60,82 @@ test('dia de São Paulo inclui pendentes, exclui cancelados e separa recebimento
   ]);
   assert.equal(result.revenue.dayLots, 2);
   assert.equal(result.revenue.day, 70);
-  assert.equal(result.closing.receivedOn, 60);
+  assert.equal(result.closing.receivedOn, 40);
+});
+
+test('leilão atravessa meia-noite e recebimento posterior continua no fechamento correto', async () => {
+  const result = await statsFor([
+    lot(10, { created_at: '2026-10-27T14:59:59Z' }),
+    lot(30, { created_at: '2026-10-27T15:00:00Z', paid_at: '2026-10-29T18:00:00Z' }),
+    lot(50, { created_at: '2026-10-28T03:29:59Z', paid_at: null, status: 'pending_payment' }),
+    lot(80, { created_at: '2026-10-28T03:30:00Z' }),
+  ], '2026-10-27T12:00', '2026-10-28T00:30');
+  assert.equal(result.revenue.dayLots, 2);
+  assert.equal(result.revenue.day, 80);
+  assert.equal(result.closing.receivedOn, 30);
+  assert.equal(result.closing.paidLotsOn, 1);
+});
+
+test('datas/horas SP, intervalos adjacentes e limites inválidos', () => {
+  const period = periods.resolveAuctionPeriod('2026-10-28', { from: '2026-10-28T12:00', to: '2026-10-29T00:30' });
+  assert.equal(period.startUtc, '2026-10-28T15:00:00.000Z');
+  assert.equal(period.endUtc, '2026-10-29T03:30:00.000Z');
+  assert.equal(periods.isInAuctionPeriod(period.endUtc, period), false);
+  const next = periods.resolveAuctionPeriod(undefined, { from: period.to, to: '2026-10-29T12:00' });
+  assert.equal(periods.isInAuctionPeriod(period.endUtc, next), true);
+  for (const input of [
+    { from: '2026-02-30T12:00', to: '2026-03-01T12:00' },
+    { from: '2026-10-28T25:00', to: '2026-10-29T12:00' },
+    { from: '2026-10-28T12:60', to: '2026-10-29T12:00' },
+    { from: '2026-10-29T12:00', to: '2026-10-28T12:00' },
+    { from: '2026-10-28T12:00', to: '2026-10-28T12:00' },
+    { from: '2026-10-28T12:00', to: '2027-01-01T12:00' },
+    { from: '2026-10-28T12:00' },
+  ]) assert.throws(() => periods.resolveAuctionPeriod(undefined, input));
+});
+
+test('fechamento pagina todos os lotes, mantém pendências gerais e exige dono', async () => {
+  const rows = Array.from({ length: 1005 }, (_, index) => ({
+    ...lot(1, { created_at: '2026-10-28T03:29:59Z', paid_at: '2026-10-29T18:00:00Z' }),
+    id: String(index), code: 'LOT' + index,
+  }));
+  rows.push({ ...lot(100, { created_at: '2026-10-28T03:30:00Z', status: 'pending_payment', paid_at: null }), id: 'out', code: 'OUT' });
+  rows.push({ ...lot(500, { created_at: '2026-10-28T03:00:00Z', status: 'cancelled', paid_at: null }), id: 'cancel', code: 'CANCEL' });
+  let role = 'owner', reads = 0;
+  const client = { from(table) {
+    assert.ok(['lots', 'charges'].includes(table)); reads++;
+    let filtered = table === 'lots' ? [...rows] : [], from = 0, to = Infinity;
+    const query = {
+      select() { return this; },
+      eq(key, value) { filtered = filtered.filter(row => row[key] === value); return this; },
+      in(key, values) { filtered = filtered.filter(row => values.includes(row[key])); return this; },
+      neq(key, value) { filtered = filtered.filter(row => row[key] !== value); return this; },
+      gte(key, value) { filtered = filtered.filter(row => Date.parse(row[key]) >= Date.parse(value)); return this; },
+      lt(key, value) { filtered = filtered.filter(row => Date.parse(row[key]) < Date.parse(value)); return this; },
+      order() { return this; },
+      range(start, end) { from = start; to = end; return this; },
+      then(resolve) { return Promise.resolve({ data: filtered.slice(from, to + 1), error: null }).then(resolve); },
+    };
+    return query;
+  } };
+  const action = load('src/app/actions/staff-payments.ts', {
+    'next/cache': {}, '@/lib/dal': { requireAdmin: async () => ({ profile: { role } }) },
+    '@/lib/charges': { isChargeActive: () => true },
+    '@/lib/dates': dates, '@/lib/auction-period': periods,
+    '@/lib/result': { rethrowIfRedirect: () => {} }, '@/lib/staff-payments': {},
+    '@/lib/supabase/admin': { createAdminClient: () => client },
+  }).getClosingDataAction;
+  const result = await action('2026-10-27', { from: '2026-10-27T12:00', to: '2026-10-28T00:30' });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.totalLots, 1005);
+  assert.equal(result.data.registeredOn, 1005);
+  assert.equal(result.data.receivedOn, 1005);
+  assert.equal(result.data.pendingLots.length, 1);
+  assert.equal(result.data.periodPendingTotal, 0);
+  assert.equal('staff' in result.data, false);
+  role = 'viewer'; reads = 0;
+  assert.equal((await action()).ok, false);
+  assert.equal(reads, 0);
 });
 
 test('frete não cria pendência para cancelados ou crédito de pacote acumulado', async () => {

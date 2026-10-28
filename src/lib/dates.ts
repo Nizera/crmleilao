@@ -47,7 +47,7 @@ export function isoDayAdd(isoDay: string, days: number): string {
 
 /** `true` quando a string é uma data civil válida (YYYY-MM-DD real). */
 export function isIsoDay(value: string | null | undefined): value is string {
-  if (!value || !ISO_DAY.test(value)) return false;
+  if (typeof value !== "string" || !ISO_DAY.test(value)) return false;
   const [y, m, d] = value.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
   return (
@@ -95,6 +95,22 @@ export function spDayStartUtc(isoDay: string): string {
 /** Fim do dia civil SP em UTC (ISO, exclusivo) — o corte `lt`. */
 export function spDayEndUtc(isoDay: string): string {
   return spDayStartUtc(isoDayAdd(isoDay, 1));
+}
+
+/** Converte um datetime-local de São Paulo em UTC, sem usar o fuso do navegador. */
+export function spDateTimeToUtc(value: string): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) || !isIsoDay(value.slice(0, 10))) {
+    throw new Error("Informe uma data e hora válidas.");
+  }
+  const [hour, minute] = value.slice(11).split(":").map(Number);
+  if (hour > 23 || minute > 59) throw new Error("Informe uma hora válida.");
+  const wallClock = Date.parse(`${value}:00Z`);
+  let instant = new Date(wallClock);
+  for (let attempt = 0; attempt < 3; attempt++) instant = new Date(wallClock - spOffsetMs(instant));
+  if (spDayOf(instant) !== value.slice(0, 10) || spTimeOf(instant) !== value.slice(11)) {
+    throw new Error("Esse horário não existe no fuso de São Paulo. Escolha outro horário.");
+  }
+  return instant.toISOString();
 }
 
 /** Início do mês civil SP em UTC (ISO, inclusivo) — corte `gte` por mês. */

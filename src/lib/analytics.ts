@@ -7,7 +7,6 @@ import {
   isoDayAdd,
   isIsoDay,
   spDayEndUtc,
-  spDayOf,
   spDayStartUtc,
   spMonthOf,
   spMonthStartUtc,
@@ -15,6 +14,7 @@ import {
 } from "@/lib/dates";
 import { LOT_STATUS_LABELS, type LotStatus } from "@/lib/lots";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isInAuctionPeriod, resolveAuctionPeriod } from "@/lib/auction-period";
 
 /**
  * Estatísticas agregadas do dashboard (F5).
@@ -118,8 +118,6 @@ export type DashboardStats = {
   closing: {
     receivedOn: number;
     paidLotsOn: number;
-    staffPaid: number;
-    staffTotal: number;
   };
   pipeline: { status: LotStatus; label: string; count: number; value: number }[];
   ranking: { id: string; name: string; lots: number; total: number }[];
@@ -140,7 +138,8 @@ export type DashboardStats = {
  * Cobranças vêm de um recorte (abertas ∪ 30 dias até o dia-alvo) e clientes/
  * envios vêm de contagens `head` — nada de varrer tabela inteira a cada visita.
  */
-async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
+async function computeDashboardStats(asOf: string, from?: string, to?: string): Promise<DashboardStats> {
+  const period = resolveAuctionPeriod(asOf, { from, to });
   const supabase = createAdminClient();
   const now = new Date();
   const today = spToday();
@@ -163,8 +162,6 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     shipmentsOpenRes,
     shipmentsPostedRes,
     shipmentsDeliveredRes,
-    staffTotalRes,
-    staffPaidOnRes,
   ] = await Promise.all([
     fetchAllLots(supabase),
     // Abertas (qualquer data) + criadas na janela de 30 dias até o dia-alvo.
@@ -198,13 +195,6 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
       .from("shipments")
       .select("id", { count: "exact", head: true })
       .eq("status", "delivered"),
-    supabase
-      .from("admin_profiles")
-      .select("id", { count: "exact", head: true }),
-    supabase
-      .from("staff_payments")
-      .select("id", { count: "exact", head: true })
-      .eq("payment_date", day),
   ]);
 
   for (const [name, res] of [
@@ -216,8 +206,6 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     ["envios-abertos", shipmentsOpenRes],
     ["envios-postados", shipmentsPostedRes],
     ["envios-entregues", shipmentsDeliveredRes],
-    ["equipe", staffTotalRes],
-    ["pagamentos-dia", staffPaidOnRes],
   ] as const) {
     if (res.error) console.error(`[dashboard] falha em ${name}: ${res.error.message}`);
   }
@@ -248,12 +236,18 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
   let dayReceivedLots = 0;
   let dayLots = 0;
   for (const lot of lots) {
-    if(lot.status!=='cancelled'&&spDayOf(lot.created_at)===day){dayRevenue+=Number(lot.arremate_value);dayLots+=1;}
+    const inPeriod = isInAuctionPeriod(lot.created_at, period);
+    if (lot.status !== "cancelled" && inPeriod) {
+      dayRevenue += Number(lot.arremate_value);
+      dayLots += 1;
+    }
     if (!REVENUE_STATUSES.has(lot.status) || !lot.paid_at) continue;
     const value = Number(lot.arremate_value);
+    // Fechamento por leilão: recebimentos dos lotes cadastrados no período,
+    // mesmo quando o cliente confirma o pagamento depois do encerramento.
+    if (inPeriod) { dayReceived += value; dayReceivedLots += 1; }
     // Recorte de dinheiro: só o que já tinha acontecido no fim do dia-alvo.
     if (Date.parse(lot.paid_at) >= dayEndMs) continue;
-    if(spDayOf(lot.paid_at)===day){dayReceived+=value;dayReceivedLots+=1;}
     totalRevenue += value;
     paidLots += 1;
     const bucket = monthIndex.get(spMonthOf(lot.paid_at));
@@ -391,7 +385,7 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
         shipmentsOpenRes.error === null &&
         shipmentsPostedRes.error === null &&
         shipmentsDeliveredRes.error === null,
-      closing: staffTotalRes.error === null && staffPaidOnRes.error === null,
+      closing: lotsRes.error === null,
     },
     revenue: {
       day: dayRevenue,
@@ -421,8 +415,6 @@ async function computeDashboardStats(asOf: string): Promise<DashboardStats> {
     closing: {
       receivedOn: dayReceived,
       paidLotsOn: dayReceivedLots,
-      staffPaid: staffPaidOnRes.count ?? 0,
-      staffTotal: staffTotalRes.count ?? 0,
     },
     pipeline,
     ranking,

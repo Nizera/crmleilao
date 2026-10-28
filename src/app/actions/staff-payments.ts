@@ -2,35 +2,23 @@
 
 import { revalidatePath, updateTag } from "next/cache";
 
+import { requireAdmin } from "@/lib/dal";
 import { isChargeActive, type ChargeStatus } from "@/lib/charges";
-import { listTeam, requireAdmin } from "@/lib/dal";
-import {
-  isoDayAdd,
-  isIsoDay,
-  spDayEndUtc,
-  spDayOf,
-  spDayStartUtc,
-  spToday,
-} from "@/lib/dates";
+import { spToday } from "@/lib/dates";
+import { resolveAuctionPeriod, type AuctionPeriodInput } from "@/lib/auction-period";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import {
   parseMoney,
   staffPaymentSchema,
   type ClosingData,
   type ClosingEntry,
-  type ClosingHistoryDay,
-  type ClosingPendingCharge,
   type ClosingPendingLot,
-  type ClosingStaffMember,
+  type ClosingPendingCharge,
 } from "@/lib/staff-payments";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
-/** Status que contam como recebido — mesma lista do dashboard. */
-const REVENUE_CHARGE_LOTS = ["paid", "shipped", "delivered"] as const;
-
-const HISTORY_DAYS = 7;
 const PENDING_LOTS_PAGE_SIZE = 1000;
 
 function revalidateClosing() {
@@ -38,206 +26,92 @@ function revalidateClosing() {
   revalidatePath("/admin/dashboard");
 }
 
-/**
- * Contexto do fechamento de um dia: entradas recebidas, cobranças em aberto,
- * equipe com o que foi pago naquela data e histórico recente. Só o dono.
- *
- * `asOf` é a data civil em America/Sao_Paulo (YYYY-MM-DD); sem parâmetro usa
- * hoje. Datas inválidas caem em hoje.
- */
+/** Relatório dos lotes cadastrados no período. Não registra pagamentos da equipe. */
 export async function getClosingDataAction(
   asOf?: string,
+  input: AuctionPeriodInput = {},
 ): Promise<ActionResult<ClosingData>> {
   try {
     const { profile } = await requireAdmin();
-    if (profile.role !== "owner") {
-      return failure("Apenas o dono faz o fechamento do dia.");
-    }
-
-    const supabase = createAdminClient();
-    const now = new Date();
-    const date = isIsoDay(asOf) ? asOf : spToday();
-    const historyFrom = isoDayAdd(date, -(HISTORY_DAYS - 1));
-    // Janela exata do dia-alvo em UTC (fim do dia 19 em SP = 03:00Z do dia 20).
-    const paidFrom = spDayStartUtc(date);
-    const paidTo = spDayEndUtc(date);
-
-    const [lotsRes, chargesRes, paymentsRes, historyRes, team] =
-      await Promise.all([
-        supabase
-          .from("lots")
-          .select(
-            "code, title, arremate_value, paid_at, customer:customers(name)",
-          )
-          .in("status", [...REVENUE_CHARGE_LOTS])
-          .gte("paid_at", paidFrom)
-          .lt("paid_at", paidTo)
-          .order("paid_at", { ascending: false })
-          .limit(100),
-        supabase
-          .from("charges")
-          .select(
-            "id, code, amount, status, expires_at, ticket_url, customer:customers(name, phone_e164)",
-          )
-          .or("status.in.(pending,in_process)")
-          .order("created_at", { ascending: false })
-          .limit(100),
-        supabase
-          .from("staff_payments")
-          .select("staff_id, amount, notes")
-          .eq("payment_date", date),
-        supabase
-          .from("staff_payments")
-          .select("payment_date, amount")
-          .gte("payment_date", historyFrom)
-          .lte("payment_date", date)
-          .order("payment_date", { ascending: false })
-          .limit(200),
-        listTeam().catch(() => null),
-      ]);
-
-    const pendingLots: ClosingPendingLot[] = [];
+    if (profile.role !== "owner") return failure("Apenas o dono acessa o fechamento.");
+    const period = resolveAuctionPeriod(asOf, input);
+    const db = createAdminClient();
+    const entries: ClosingEntry[] = [];
     for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("lots")
-        .select("code, title, arremate_value, customer:customers(name)")
-        .eq("status", "pending_payment")
-        .order("auction_date", { ascending: false })
-        .order("created_at", { ascending: false })
+      const { data, error } = await db.from("lots")
+        .select("id, code, title, arremate_value, status, created_at, paid_at, customer:customers(name)")
+        .neq("status", "cancelled")
+        .gte("created_at", period.startUtc).lt("created_at", period.endUtc)
+        .order("created_at", { ascending: true }).order("id", { ascending: true })
         .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
-
-      if (error) throw new Error(error.message);
-
-      type PendingLotRow = {
-        code: string;
-        title: string;
-        arremate_value: number | string;
-        customer: { name: string | null } | null;
-      };
-      const page = (data ?? []) as unknown as PendingLotRow[];
-      pendingLots.push(
-        ...page.map((lot) => ({
-          code: lot.code,
-          title: lot.title,
-          customerName: lot.customer?.name?.trim() || "Sem nome",
-          amount: Number(lot.arremate_value),
-        })),
-      );
+      if (error) throw new Error("Não foi possível carregar os lotes do período.");
+      const page = (data ?? []) as unknown as {
+        code: string; title: string; arremate_value: number | string; status: string;
+        created_at: string; paid_at: string | null; customer: { name: string | null } | null;
+      }[];
+      entries.push(...page.map(lot => ({
+        code: lot.code, title: lot.title, customer: lot.customer?.name?.trim() || "Sem nome",
+        value: Number(lot.arremate_value), status: lot.status, createdAt: lot.created_at,
+        paidAt: lot.paid_at,
+      })));
       if (page.length < PENDING_LOTS_PAGE_SIZE) break;
     }
-
-    if (lotsRes.error) throw new Error(lotsRes.error.message);
-    if (chargesRes.error) throw new Error(chargesRes.error.message);
-    if (paymentsRes.error) throw new Error(paymentsRes.error.message);
-    if (historyRes.error) throw new Error(historyRes.error.message);
-
-    type LotRow = {
-      code: string;
-      title: string;
-      arremate_value: number | string;
-      paid_at: string | null;
-      customer: { name: string | null } | null;
-    };
-    type ChargeRow = {
-      id: string;
-      code: string;
-      amount: number | string;
-      status: ChargeStatus;
-      expires_at: string | null;
-      ticket_url: string | null;
-      customer: { name: string | null; phone_e164: string } | null;
-    };
-
-    // O banco já corta o dia exato em UTC (paidFrom/paidTo); o filtro por
-    // fuso aqui é só defesa extra contra qualquer paid_at fora do padrão.
-    const entries: ClosingEntry[] = ((lotsRes.data ?? []) as unknown as LotRow[])
-      .filter((lot) => lot.paid_at && spDayOf(lot.paid_at) === date)
-      .map((lot) => ({
-        code: lot.code,
-        title: lot.title,
-        customer: lot.customer?.name?.trim() || "Sem nome",
-        value: Number(lot.arremate_value),
-        paidAt: lot.paid_at ?? "",
-      }));
-
-    const pendingCharges: ClosingPendingCharge[] = (
-      (chargesRes.data ?? []) as unknown as ChargeRow[]
-    )
-      .filter((charge) => isChargeActive(charge, now))
-      .slice(0, 50)
-      .map((charge) => ({
-        id: charge.id,
-        code: charge.code,
-        amount: Number(charge.amount),
+    // Mantém o resumo de todas as pendências, independentemente do leilão.
+    const pendingLots: ClosingPendingLot[] = [];
+    for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
+      const { data, error } = await db.from("lots")
+        .select("code, title, arremate_value, customer:customers(name)")
+        .eq("status", "pending_payment")
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
+      if (error) throw new Error("Não foi possível carregar as pendências.");
+      const page = (data ?? []) as unknown as {
+        code: string; title: string; arremate_value: number | string;
+        customer: { name: string | null } | null;
+      }[];
+      pendingLots.push(...page.map(lot => ({
+        code: lot.code, title: lot.title, customerName: lot.customer?.name?.trim() || "Sem nome",
+        amount: Number(lot.arremate_value),
+      })));
+      if (page.length < PENDING_LOTS_PAGE_SIZE) break;
+    }
+    const pendingCharges: ClosingPendingCharge[] = [];
+    const now = new Date();
+    for (let offset = 0; ; offset += PENDING_LOTS_PAGE_SIZE) {
+      const { data, error } = await db.from("charges")
+        .select("id, code, amount, status, expires_at, ticket_url, customer:customers(name, phone_e164)")
+        .in("status", ["pending", "in_process"])
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(offset, offset + PENDING_LOTS_PAGE_SIZE - 1);
+      if (error) throw new Error("Não foi possível carregar as cobranças abertas.");
+      const page = (data ?? []) as unknown as {
+        id: string; code: string; amount: number | string; status: ChargeStatus;
+        expires_at: string | null; ticket_url: string | null;
+        customer: { name: string | null; phone_e164: string } | null;
+      }[];
+      pendingCharges.push(...page.filter(charge => isChargeActive(charge, now)).map(charge => ({
+        id: charge.id, code: charge.code, amount: Number(charge.amount),
         customerName: charge.customer?.name?.trim() || null,
-        phone_e164: charge.customer?.phone_e164 ?? "",
-        ticketUrl: charge.ticket_url,
+        phone_e164: charge.customer?.phone_e164 ?? "", ticketUrl: charge.ticket_url,
         expiresAt: charge.expires_at,
-      }));
-
-    const paymentByStaff = new Map<
-      string,
-      { amount: number; notes: string | null }
-    >();
-    for (const row of (paymentsRes.data ?? []) as {
-      staff_id: string;
-      amount: number | string;
-      notes: string | null;
-    }[]) {
-      paymentByStaff.set(row.staff_id, {
-        amount: Number(row.amount),
-        notes: row.notes,
-      });
+      })));
+      if (page.length < PENDING_LOTS_PAGE_SIZE) break;
     }
-
-    const staff: ClosingStaffMember[] = (team ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.role,
-      payment: paymentByStaff.get(member.id) ?? null,
-    }));
-
-    const historyMap = new Map<string, ClosingHistoryDay>();
-    for (const row of (historyRes.data ?? []) as {
-      payment_date: string;
-      amount: number | string;
-    }[]) {
-      const entry = historyMap.get(row.payment_date) ?? {
-        date: row.payment_date,
-        amount: 0,
-        count: 0,
-      };
-      entry.amount += Number(row.amount);
-      entry.count += 1;
-      historyMap.set(row.payment_date, entry);
-    }
-    const history = [...historyMap.values()].sort((a, b) =>
-      b.date.localeCompare(a.date),
-    );
-
-    return {
-      ok: true,
-      data: {
-        date,
-        receivedOn: entries.reduce((sum, entry) => sum + entry.value, 0),
-        entries,
-        pendingCharges,
-        pendingTotal: pendingCharges.reduce(
-          (sum, charge) => sum + charge.amount,
-          0,
-        ),
-        pendingLots,
-        staff,
-        history,
-      },
-    };
+    const paid = entries.filter(entry => ["paid", "shipped", "delivered"].includes(entry.status) && entry.paidAt);
+    const pending = entries.filter(entry => entry.status === "pending_payment");
+    return { ok: true, data: {
+      date: period.day, period, entries, pendingLots, pendingCharges,
+      pendingTotal: pendingCharges.reduce((sum, charge) => sum + charge.amount, 0),
+      registeredOn: entries.reduce((sum, entry) => sum + entry.value, 0),
+      totalLots: entries.length,
+      receivedOn: paid.reduce((sum, entry) => sum + entry.value, 0),
+      paidLotsOn: paid.length,
+      periodPendingTotal: pending.reduce((sum, entry) => sum + entry.value, 0),
+      periodPendingCount: pending.length,
+    } };
   } catch (error) {
     rethrowIfRedirect(error);
-    return failure(
-      error instanceof Error
-        ? error.message
-        : "Não foi possível carregar o fechamento.",
-    );
+    return failure(error instanceof Error ? error.message : "Não foi possível carregar o fechamento.");
   }
 }
 

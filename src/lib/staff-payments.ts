@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AuctionPeriod } from "@/lib/auction-period";
 
 /**
  * Fechamento do dia: registro manual do pagamento a cada membro da equipe.
@@ -46,7 +47,9 @@ export type ClosingEntry = {
   title: string;
   customer: string;
   value: number;
-  paidAt: string;
+  paidAt: string | null;
+  createdAt: string;
+  status: string;
 };
 
 export type ClosingPendingCharge = {
@@ -81,12 +84,16 @@ export type ClosingHistoryDay = {
 
 export type ClosingData = {
   date: string;
-  /** Recebimentos do dia-alvo (SP), usados no fechamento e pagamento da equipe. */
+  period: AuctionPeriod;
+  registeredOn: number;
+  totalLots: number;
+  /** Valor já recebido dos lotes cadastrados no período, mesmo se pago depois. */
   receivedOn: number;
+  paidLotsOn: number;
+  periodPendingTotal: number;
+  periodPendingCount: number;
   entries: ClosingEntry[];
   pendingCharges: ClosingPendingCharge[];
   pendingTotal: number;
   pendingLots: ClosingPendingLot[];
-  staff: ClosingStaffMember[];
-  history: ClosingHistoryDay[];
 };

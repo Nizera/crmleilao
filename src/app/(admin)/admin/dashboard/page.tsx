@@ -42,6 +42,7 @@ import { FreightWeekCard } from "@/components/admin/dashboard/freight-week-card"
 import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { ClosingCard } from "@/components/admin/dashboard/closing-card";
+import { resolveAuctionPeriod } from "@/lib/auction-period";
 
 export const metadata = { title: "Dashboard" };
 
@@ -102,16 +103,22 @@ const ALERT_COLOR: Record<Alert["tone"], string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ d?: string }>;
+  searchParams: Promise<{ d?: string; from?: string; to?: string }>;
 }) {
   await requireAdmin();
-  const { d } = await searchParams;
+  const { d, from, to } = await searchParams;
   const today = spToday();
-  const day = isIsoDay(d) ? d : today;
-  const isToday = day === today;
+  let period = resolveAuctionPeriod(isIsoDay(d) ? d : today);
+  let periodError: string | null = null;
+  try {
+    period = resolveAuctionPeriod(isIsoDay(d) ? d : today, { from, to });
+  } catch (error) {
+    periodError = error instanceof Error ? error.message : "Período inválido.";
+  }
+  const day = period.day;
 
   const [stats, freightStats] = await Promise.all([
-    getDashboardStats(day),
+    getDashboardStats(day, period.from, period.to),
     getFreightWeekStats(),
   ]);
   const s = stats;
@@ -174,21 +181,17 @@ export default async function DashboardPage({
               Visão geral
             </h2>
             <p className="text-sm text-muted-foreground">
-              Leilões de figurinhas da Copa 2026 — Os Caras das Legends
+              Leilão diário de colecionáveis — Os Caras das Legends
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="secondary">{dayCap}</Badge>
-          <DashboardDatePicker value={day} today={today} />
         </div>
       </div>
-      {!isToday && (
-        <p className="-mt-3 text-xs text-muted-foreground">
-          Mostrando o dia {formatDateBR(day)}. Dinheiro e histórico seguem a
-          data; pipeline, envios e cobranças em aberto são o estado atual.
-        </p>
-      )}
+      <DashboardDatePicker key={period.from + period.to} period={period} today={today} />
+      {periodError && <p role="alert" className="text-sm text-destructive">{periodError} Mostrando o dia completo de {formatDateBR(day)}.</p>}
+      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Faturamento e fechamento consideram os lotes cadastrados nesse intervalo. Os demais indicadores são gerais; os mensais usam o mês de início.</p>
 
       {/* KPIs financeiros */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -288,14 +291,14 @@ export default async function DashboardPage({
           }
         />
         <KpiCard
-          label="Faturamento do dia"
+          label="Faturamento do período"
           value={s.ready.lots ? formatBRL(s.revenue.day) : "—"}
           icon={SunIcon}
           hint={
             s.ready.lots
               ? `${s.revenue.dayLots} ${
                   s.revenue.dayLots === 1 ? "lote cadastrado" : "lotes cadastrados"
-                } em ${formatDateBR(day)}`
+                } no período selecionado`
               : "aplique a migração 0002_lots.sql"
           }
         />
@@ -306,8 +309,8 @@ export default async function DashboardPage({
         <ClosingCard
           closing={s.closing}
           ready={s.ready.closing}
-          date={day}
-          dateLabel={formatDateBR(day)}
+          key={period.from + period.to}
+          period={period}
         />
         <FreightWeekCard stats={freightStats} />
       </div>
