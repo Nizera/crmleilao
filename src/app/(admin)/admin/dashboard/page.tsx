@@ -304,10 +304,10 @@ export default async function DashboardPage({
         <ClosingCard
           closing={s.closing}
           ready={s.ready.closing}
-          key={period.from + period.to}
+          key={`closing:${period.from}/${period.to}`}
           period={period}
         />
-        <FreightPeriodCard key={period.from + period.to} stats={s.freight} period={period} ready={s.ready.freight} />
+        <FreightPeriodCard key={`freight:${period.from}/${period.to}`} stats={s.freight} period={period} ready={s.ready.freight} />
       </div>
 
       {/* Gráficos */}

@@ -302,3 +302,34 @@ test('consultas do escopo dividem IDs e paginam sem duplicar ou truncar dados', 
   await scopeServer.fetchScopeRows(db, 'charges', 'customer_id', [], 'id');
   assert.equal(requests, 3);
 });
+
+test('fechamento e frete têm identidades distintas ao trocar o período', () => {
+  const path = 'src/app/(admin)/admin/dashboard/page.tsx';
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const printer = ts.createPrinter();
+  const groups = [];
+  function visit(node) {
+    if (ts.isJsxElement(node)) {
+      const cards = node.children.filter(child => ts.isJsxSelfClosingElement(child)
+        && ['ClosingCard','FreightPeriodCard'].includes(child.tagName.getText(source)));
+      if (cards.length) groups.push(cards);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].length, 2);
+  const expressions = groups[0].map(card => {
+    const key = card.attributes.properties.find(attribute => ts.isJsxAttribute(attribute) && attribute.name.getText(source) === 'key');
+    assert.ok(key?.initializer && ts.isJsxExpression(key.initializer) && key.initializer.expression);
+    return printer.printNode(ts.EmitHint.Expression, key.initializer.expression, source);
+  });
+  const periods = [
+    { from: '2026-10-27T00:00', to: '2026-10-28T01:00' },
+    { from: '2026-10-28T00:00', to: '2026-10-29T00:00' },
+  ];
+  const identities = periods.map(period => expressions.map(expression => vm.runInNewContext(expression, { period })));
+  for (const keys of identities) assert.equal(new Set(keys).size, 2, 'componentes irmãos não podem compartilhar a mesma chave');
+  assert.notEqual(identities[0][0], identities[1][0], 'fechamento deve reiniciar ao trocar de período');
+  assert.notEqual(identities[0][1], identities[1][1], 'filtro do frete deve reiniciar ao trocar de período');
+});
