@@ -19,6 +19,7 @@ import {
 import { hashInviteToken } from "@/lib/invites";
 import { loadNotes } from "@/lib/notes";
 import { customerIssueExpression, type CustomerIssue } from "@/lib/admin-list-filters";
+import { LOT_SORTS, normalizeLotSort, type LotSort } from "@/lib/lot-sort";
 import type { Shipment, ShipmentStatus } from "@/lib/shipments";
 import type { CustomerNotification } from "@/lib/notifications";
 import {
@@ -212,6 +213,7 @@ export async function listLotsPage(params: {
   startUtc?: string;
   endUtc?: string;
   shippingDate?: string;
+  sort?: LotSort;
 }): Promise<LotPage> {
   const supabase = await createClient();
   const pageSize = Math.min(Math.max(params.pageSize ?? 25, 1), 100);
@@ -251,10 +253,11 @@ export async function listLotsPage(params: {
   }
 
   const from = (page - 1) * pageSize;
-  const { data, count, error } = await query
-    .order("auction_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(from, from + pageSize - 1);
+  const ordering = LOT_SORTS[normalizeLotSort(params.sort)];
+  query = query.order(ordering.column, { ascending: ordering.ascending, nullsFirst: false });
+  if (ordering.column !== "created_at") query = query.order("created_at", { ascending: false });
+  // Desempate estável: nomes, valores e timestamps repetidos não trocam de página.
+  const { data, count, error } = await query.order("id", { ascending: false }).range(from, from + pageSize - 1);
 
   if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
 

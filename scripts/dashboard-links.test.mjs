@@ -12,6 +12,7 @@ function compile(source, dependencies = {}) {
   return exports;
 }
 const filters = compile(readFileSync('src/lib/admin-list-filters.ts', 'utf8'), { URLSearchParams });
+const sorting = compile(readFileSync('src/lib/lot-sort.ts', 'utf8'));
 const source = ts.createSourceFile('dal.ts', readFileSync('src/lib/dal.ts', 'utf8'), ts.ScriptTarget.Latest, true);
 const selected = source.statements.filter(node => ts.isFunctionDeclaration(node) && ['listCustomersPage', 'listLotsPage', 'listCharges'].includes(node.name?.text));
 const dalSource = selected.map(node => node.getText(source)).join('\n');
@@ -27,6 +28,7 @@ function databaseQueries() {
     createClient: async () => db, loadNotes: async () => new Map(),
     CUSTOMER_COLUMNS: 'id,name,email', CHARGE_LIST_COLUMNS: 'id,lots:lots(id)', CUSTOMER_MATCH_CAP: 300,
     lotColumns: () => 'id,created_at', customerIssueExpression: filters.customerIssueExpression,
+    LOT_SORTS: sorting.LOT_SORTS, normalizeLotSort: sorting.normalizeLotSort,
   });
   return { dal, requests };
 }
@@ -93,4 +95,31 @@ test('Sem e-mail inclui NULL/vazio/espaços; cliente com vários lotes é contad
       select 1 from lots l where l.customer_id=c.id and l.created_at >= $2 and l.created_at < $3 and l.status<>'cancelled') order by c.id`, [pattern, utc.start, utc.end]);
     assert.deepEqual(result.rows.map(row => row.id), [1,2,3]);
   } finally { await db.close(); }
+});
+
+test('Ordenação de lotes é aplicada no banco antes de paginar, mantém filtros e usa desempate estável', async () => {
+  for (const [sort, column, direction] of [
+    ['customer_asc','customer(name)','asc'], ['phone_desc','customer(phone_e164)','desc'],
+    ['oldest','created_at','asc'], ['value_desc','arremate_value','desc'], ['shipping_asc','shipping_date','asc'],
+  ]) {
+    const { dal, requests } = databaseQueries();
+    await dal.listLotsPage({ sort, page: 3, status: 'paid', shippingDate: '2026-11-03', startUtc: utc.start, endUtc: utc.end });
+    const url = requests[0].url;
+    assert.ok(url.searchParams.get('order').startsWith(`${column}.${direction}.nullslast`));
+    assert.ok(url.searchParams.get('order').endsWith('id.desc'));
+    assert.equal(url.searchParams.get('offset'),'50');
+    assert.equal(url.searchParams.get('limit'),'25');
+    assert.equal(url.searchParams.get('status'),'eq.paid');
+    assert.equal(url.searchParams.get('shipping_date'),'eq.2026-11-03');
+    assert.deepEqual(url.searchParams.getAll('created_at'),['gte.'+utc.start,'lt.'+utc.end]);
+  }
+});
+
+test('Ordenação desconhecida ou manipulada volta para cadastro mais recente', async () => {
+  for (const sort of ['__proto__','customer(name).desc,arremate_value','invalid',undefined]) {
+    assert.equal(sorting.normalizeLotSort(sort),'newest');
+    const { dal, requests } = databaseQueries();
+    await dal.listLotsPage({ sort });
+    assert.equal(requests[0].url.searchParams.get('order'),'created_at.desc.nullslast,id.desc');
+  }
 });

@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   Search,
+  ArrowDownUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,6 +28,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
@@ -59,6 +62,7 @@ import type { AppSettings } from "@/lib/settings";
 import { spDayOf, spTimeOf, spToday } from "@/lib/dates";
 import { LOT_SHIFTS, lotShiftRange, parseLotRange } from "@/lib/lot-filters";
 import { adminListHref } from "@/lib/admin-list-filters";
+import { LOT_SORTS, normalizeLotSort, type LotSort } from "@/lib/lot-sort";
 
 const ALL = "all";
 
@@ -79,6 +83,7 @@ export function LotsView({
   dateTo = "",
   filterError = "",
   shippingDate = "",
+  sort = "newest",
 }: {
   lots: Lot[];
   total: number;
@@ -94,6 +99,7 @@ export function LotsView({
   dateTo?: string;
   filterError?: string;
   shippingDate?: string;
+  sort?: LotSort;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
@@ -108,7 +114,7 @@ export function LotsView({
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number, range = { from: dateFrom, to: dateTo }) => {
+  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number, range = { from: dateFrom, to: dateTo }, nextSort = sort) => {
     const params = new URLSearchParams();
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
     if (nextStatus !== ALL) params.set("status", nextStatus);
@@ -116,6 +122,7 @@ export function LotsView({
     if (range.from) params.set("from", range.from);
     if (range.to) params.set("to", range.to);
     if (shippingDate) params.set("shipping", shippingDate);
+    if (nextSort !== "newest") params.set("sort", nextSort);
     const search = params.toString();
     return `/admin/lotes${search ? `?${search}` : ""}`;
   };
@@ -266,6 +273,16 @@ export function LotsView({
             ))}
           </SelectContent>
         </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="outline" title={`Ordenação: ${LOT_SORTS[sort].label}`}><ArrowDownUp className="size-4" />Ordenar{sort !== "newest" ? " · ativo" : ""}</Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-[min(70vh,420px)] overflow-y-auto">
+            <DropdownMenuLabel>Ordenar todos os resultados</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup value={sort} onValueChange={value => router.replace(buildHref(query, status, 1, { from: dateFrom, to: dateTo }, normalizeLotSort(value)))}>
+              {Object.entries(LOT_SORTS).map(([value, option]) => <DropdownMenuRadioItem key={value} value={value}>{option.label}</DropdownMenuRadioItem>)}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="outline" aria-expanded={advanced} onClick={() => {
           if (!advanced && !from && !to) { const range = lotShiftRange(day, shift); setFrom(range.from); setTo(range.to); }
           setAdvanced(!advanced);
@@ -317,7 +334,7 @@ export function LotsView({
       {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
       {shippingDate && <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
         <p>Envio previsto: {formatDateBR(shippingDate)}.</p>
-        <Button asChild size="sm" variant="outline"><Link href={adminListHref("/admin/lotes", { q, status: status === ALL ? undefined : status, from: dateFrom, to: dateTo })}>Remover filtro de envio</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link href={adminListHref("/admin/lotes", { q, status: status === ALL ? undefined : status, from: dateFrom, to: dateTo, sort: sort === "newest" ? undefined : sort })}>Remover filtro de envio</Link></Button>
       </div>}
 
       <div className="min-w-0 rounded-md border">
