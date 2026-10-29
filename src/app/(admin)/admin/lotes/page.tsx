@@ -8,6 +8,7 @@ import {
   requireAdmin,
 } from "@/lib/dal";
 import { LOT_STATUSES, type LotStatus } from "@/lib/lots";
+import { parseLotRange } from "@/lib/lot-filters";
 
 export const metadata = { title: "Lotes" };
 
@@ -26,12 +27,13 @@ export default async function LotesPage({
   const rawStatus = first(params.status) || "all";
   const status = VALID_STATUS.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
+  const range = parseLotRange(first(params.from), first(params.to));
 
   const [{ settings }, lotsPage, players, stock] = await Promise.all([
     getAppSettings(),
     // Lista magra paginada: itens/fotos/descrição ficam no detalhe
     // (getLotDetailAction); qtyByLot cobre só as linhas da página.
-    listLotsPage({ q, status: status as LotStatus | "all", page, notes: true }),
+    range.error ? Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }) : listLotsPage({ q, status: status as LotStatus | "all", page, notes: true, startUtc: range.startUtc, endUtc: range.endUtc }),
     listPlayers(),
     listStock(),
   ]);
@@ -39,12 +41,16 @@ export default async function LotesPage({
 
   return (
     <LotsView
+      key={`${q}/${status}/${range.from}/${range.to}/${range.error}`}
       lots={lotsPage.rows}
       total={lotsPage.total}
       page={lotsPage.page}
       pageSize={lotsPage.pageSize}
       q={q}
       status={status}
+      dateFrom={range.from}
+      dateTo={range.to}
+      filterError={range.error}
       players={players}
       stock={stock}
       settings={settings}

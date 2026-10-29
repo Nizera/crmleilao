@@ -56,7 +56,8 @@ import {
 } from "@/lib/lots";
 import type { Player, StockItem } from "@/lib/stock";
 import type { AppSettings } from "@/lib/settings";
-import { spDayOf, spTimeOf } from "@/lib/dates";
+import { spDayOf, spTimeOf, spToday } from "@/lib/dates";
+import { LOT_SHIFTS, lotShiftRange, parseLotRange } from "@/lib/lot-filters";
 
 const ALL = "all";
 
@@ -73,6 +74,9 @@ export function LotsView({
   stock,
   settings,
   qtyByLot,
+  dateFrom = "",
+  dateTo = "",
+  filterError = "",
 }: {
   lots: Lot[];
   total: number;
@@ -84,20 +88,30 @@ export function LotsView({
   stock: StockItem[];
   settings: AppSettings;
   qtyByLot: Map<string, number>;
+  dateFrom?: string;
+  dateTo?: string;
+  filterError?: string;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
+  const [advanced, setAdvanced] = useState(Boolean(dateFrom || filterError));
+  const [from, setFrom] = useState(dateFrom);
+  const [to, setTo] = useState(dateTo);
+  const [day, setDay] = useState(dateFrom.slice(0, 10) || spToday());
+  const [shift, setShift] = useState<keyof typeof LOT_SHIFTS>("day");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
   const [pending, startTransition] = useTransition();
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number) => {
+  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number, range = { from: dateFrom, to: dateTo }) => {
     const params = new URLSearchParams();
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
     if (nextStatus !== ALL) params.set("status", nextStatus);
     if (nextPage > 1) params.set("p", String(nextPage));
+    if (range.from) params.set("from", range.from);
+    if (range.to) params.set("to", range.to);
     const search = params.toString();
     return `/admin/lotes${search ? `?${search}` : ""}`;
   };
@@ -197,8 +211,8 @@ export function LotsView({
           <h2 className="text-xl font-semibold tracking-tight">Lotes</h2>
           <p className="text-sm text-muted-foreground">
             {total === 0
-              ? "Nenhum arremate registrado ainda."
-              : `${total} ${total === 1 ? "lote registrado" : "lotes registrados"} no leilão.`}
+              ? "Nenhum lote encontrado."
+              : `${total} ${total === 1 ? "lote encontrado" : "lotes encontrados"}${dateFrom ? " no período selecionado" : ""}.`}
           </p>
         </div>
         <Button onClick={openNew}>
@@ -248,7 +262,55 @@ export function LotsView({
             ))}
           </SelectContent>
         </Select>
+        <Button variant="outline" aria-expanded={advanced} onClick={() => {
+          if (!advanced && !from && !to) { const range = lotShiftRange(day, shift); setFrom(range.from); setTo(range.to); }
+          setAdvanced(!advanced);
+        }}>
+          Filtros avançados{dateFrom ? " · ativo" : ""}
+        </Button>
       </div>
+
+      {advanced && (
+        <form className="min-w-0 space-y-4 rounded-lg border bg-muted/20 p-4" onSubmit={(event) => {
+          event.preventDefault();
+          const range = parseLotRange(from, to);
+          if (range.error) return toast.error(range.error);
+          router.replace(buildHref(query, status, 1, range));
+        }}>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="min-w-0 space-y-1 text-sm">Dia do cadastro
+              <Input type="date" value={day} onChange={(event) => {
+                setDay(event.target.value);
+                if (event.target.value) { const range = lotShiftRange(event.target.value, shift); setFrom(range.from); setTo(range.to); }
+              }} />
+            </label>
+            <label className="min-w-0 space-y-1 text-sm">Atalho de período
+              <select className="h-9 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={shift} onChange={(event) => {
+                const value = event.target.value as keyof typeof LOT_SHIFTS;
+                setShift(value);
+                if (day) { const range = lotShiftRange(day, value); setFrom(range.from); setTo(range.to); }
+              }}>
+                {Object.entries(LOT_SHIFTS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <Button type="button" variant="outline" className="self-end" onClick={() => {
+              const range = lotShiftRange(spToday(), "day"); setDay(spToday()); setShift("day"); setFrom(range.from); setTo(range.to);
+            }}>Hoje</Button>
+            <label className="min-w-0 space-y-1 text-sm">Início
+              <Input type="datetime-local" required value={from} onChange={(event) => setFrom(event.target.value)} className="min-w-0" />
+            </label>
+            <label className="min-w-0 space-y-1 text-sm">Fim
+              <Input type="datetime-local" required value={to} onChange={(event) => setTo(event.target.value)} className="min-w-0" />
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">Horário de São Paulo. Filtra pela data/hora do cadastro. O início é incluído e o horário final fica para o próximo período. Você pode ajustar os horários livremente.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit">Aplicar filtros</Button>
+            <Button type="button" variant="outline" onClick={() => { setFrom(""); setTo(""); setQuery(""); router.replace("/admin/lotes"); }}>Limpar todos os filtros</Button>
+          </div>
+        </form>
+      )}
+      {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
 
       <div className="min-w-0 rounded-md border">
         <Table className="min-w-[940px] table-fixed">

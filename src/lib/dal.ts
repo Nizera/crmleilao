@@ -208,12 +208,16 @@ export async function listLotsPage(params: {
   page?: number;
   pageSize?: number;
   notes?: boolean;
+  startUtc?: string;
+  endUtc?: string;
 }): Promise<LotPage> {
   const supabase = await createClient();
   const pageSize = Math.min(Math.max(params.pageSize ?? 25, 1), 100);
   const page = Math.max(1, params.page ?? 1);
 
   let query = supabase.from("lots").select(lotColumns(), { count: "exact" });
+  if (params.startUtc) query = query.gte("created_at", params.startUtc);
+  if (params.endUtc) query = query.lt("created_at", params.endUtc);
 
   const status = params.status && params.status !== "all" ? params.status : null;
   if (status) query = query.eq("status", status);
