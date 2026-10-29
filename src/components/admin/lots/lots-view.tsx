@@ -275,11 +275,11 @@ export function LotsView({
         </Select>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="outline" title={`Ordenação: ${LOT_SORTS[sort].label}`}><ArrowDownUp className="size-4" />Ordenar{sort !== "newest" ? " · ativo" : ""}</Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-[min(70vh,420px)] overflow-y-auto">
-            <DropdownMenuLabel>Ordenar todos os resultados</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="max-h-[min(520px,var(--radix-dropdown-menu-content-available-height))] w-80 max-w-[calc(100vw-24px)] overflow-y-auto p-2">
+            <DropdownMenuLabel className="px-3 py-2">Ordenar todos os resultados</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup value={sort} onValueChange={value => router.replace(buildHref(query, status, 1, { from: dateFrom, to: dateTo }, normalizeLotSort(value)))}>
-              {Object.entries(LOT_SORTS).map(([value, option]) => <DropdownMenuRadioItem key={value} value={value}>{option.label}</DropdownMenuRadioItem>)}
+              {Object.entries(LOT_SORTS).map(([value, option]) => <DropdownMenuRadioItem key={value} value={value} className="min-h-9 py-2 pr-8 pl-3 leading-5">{option.label}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
