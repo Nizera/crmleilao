@@ -42,6 +42,7 @@ import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { ClosingCard } from "@/components/admin/dashboard/closing-card";
 import { resolveAuctionPeriod } from "@/lib/auction-period";
+import { dashboardPendingLinks } from "@/lib/admin-list-filters";
 
 export const metadata = { title: "Dashboard" };
 
@@ -127,11 +128,12 @@ export default async function DashboardPage({
     s.pipeline.find((row) => row.status === "pending_payment")?.count ?? 0;
 
   const alerts: Alert[] = [];
+  const pendingLinks = dashboardPendingLinks({ from: period.from, to: period.to }, s.nextBatch?.shippingDate);
   if (s.ready.customers && s.customers.withoutEmail > 0) {
     alerts.push({
       tone: "amber",
       text: `${s.customers.withoutEmail} cliente(s) sem e-mail — não conseguem gerar Pix.`,
-      href: "/admin/clientes",
+      href: pendingLinks.customers,
       action: "Completar ficha",
     });
   }
@@ -139,15 +141,15 @@ export default async function DashboardPage({
     alerts.push({
       tone: "amber",
       text: `${pendingLots} lote(s) aguardando pagamento.`,
-      href: "/admin/cobrancas",
-      action: "Gerar cobrança",
+      href: pendingLinks.lots,
+      action: "Ver lotes pendentes",
     });
   }
   if (s.ready.charges && s.charges.expiring24h > 0) {
     alerts.push({
       tone: "amber",
       text: `${s.charges.expiring24h} cobrança(s) vencem em até 24 horas.`,
-      href: "/admin/cobrancas",
+      href: pendingLinks.expiring,
       action: "Ver cobranças",
     });
   }
@@ -155,8 +157,8 @@ export default async function DashboardPage({
     alerts.push({
       tone: "info",
       text: `${s.nextBatch.count} lote(s) pagos entram na postagem de ${formatDateBR(s.nextBatch.shippingDate)}.`,
-      href: "/admin/envios",
-      action: "Ver envios",
+      href: pendingLinks.shipping,
+      action: "Ver lotes para envio",
     });
   }
 

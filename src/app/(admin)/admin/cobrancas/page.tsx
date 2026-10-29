@@ -6,6 +6,7 @@ import {
   mpWebhookConfigured,
 } from "@/lib/mercadopago";
 import type { ChargeStatus } from "@/lib/charges";
+import { parseLotRange } from "@/lib/lot-filters";
 
 export const metadata = { title: "Cobranças" };
 
@@ -32,16 +33,21 @@ export default async function CobrancasPage({
   const rawStatus = first(params.status) || "all";
   const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
+  const range = parseLotRange(first(params.from), first(params.to));
+  const expiring24h = first(params.expiring) === "24h";
 
   const { settings } = await getAppSettings();
 
   let data: ChargePage = { rows: [], total: 0, page, pageSize: 10 };
   let migrationReady = true;
   try {
-    data = await listCharges({
+    if (!range.error) data = await listCharges({
       q,
       status: status as ChargeStatus | "all",
       page,
+      lotStartUtc: range.startUtc,
+      lotEndUtc: range.endUtc,
+      expiring24h,
     });
   } catch (error) {
     if (error instanceof Error && /does not exist|charges/i.test(error.message)) {
@@ -53,9 +59,14 @@ export default async function CobrancasPage({
 
   return (
     <ChargesView
+      key={`${q}/${status}/${range.from}/${range.to}/${expiring24h}/${range.error}`}
       {...data}
       q={q}
       status={status}
+      dateFrom={range.from}
+      dateTo={range.to}
+      expiring24h={expiring24h}
+      filterError={range.error}
       paymentTemplate={settings.wa_payment_template}
       mpReady={mpConfigured()}
       webhookReady={mpWebhookConfigured()}

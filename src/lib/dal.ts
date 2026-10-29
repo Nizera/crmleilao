@@ -18,6 +18,7 @@ import {
 } from "@/lib/freight";
 import { hashInviteToken } from "@/lib/invites";
 import { loadNotes } from "@/lib/notes";
+import { customerIssueExpression, type CustomerIssue } from "@/lib/admin-list-filters";
 import type { Shipment, ShipmentStatus } from "@/lib/shipments";
 import type { CustomerNotification } from "@/lib/notifications";
 import {
@@ -210,6 +211,7 @@ export async function listLotsPage(params: {
   notes?: boolean;
   startUtc?: string;
   endUtc?: string;
+  shippingDate?: string;
 }): Promise<LotPage> {
   const supabase = await createClient();
   const pageSize = Math.min(Math.max(params.pageSize ?? 25, 1), 100);
@@ -218,6 +220,7 @@ export async function listLotsPage(params: {
   let query = supabase.from("lots").select(lotColumns(), { count: "exact" });
   if (params.startUtc) query = query.gte("created_at", params.startUtc);
   if (params.endUtc) query = query.lt("created_at", params.endUtc);
+  if (params.shippingDate) query = query.eq("shipping_date", params.shippingDate);
 
   const status = params.status && params.status !== "all" ? params.status : null;
   if (status) query = query.eq("status", status);
@@ -356,6 +359,9 @@ export async function listCustomersPage(params: {
   q?: string;
   page?: number;
   pageSize?: number;
+  issue?: CustomerIssue;
+  lotStartUtc?: string;
+  lotEndUtc?: string;
 }): Promise<CustomerPage> {
   const supabase = await createClient();
   const page = Math.max(1, params.page ?? 1);
@@ -372,16 +378,22 @@ export async function listCustomersPage(params: {
 
   let query = supabase
     .from("customers")
-    .select(CUSTOMER_COLUMNS, { count: "exact" })
+    .select(CUSTOMER_COLUMNS + (params.lotStartUtc && params.lotEndUtc ? ",scope_lots:lots!inner()" : ""), { count: "exact" })
     .order("name", { ascending: true, nullsFirst: false })
     .range(from, from + pageSize - 1);
 
   if (filters.length > 0) query = query.or(filters.join(","));
 
+  const issueExpression = customerIssueExpression(params.issue ?? "all");
+  if (issueExpression) query = query.or(issueExpression);
+  if (params.issue === "without_access") query = query.is("auth_user_id", null);
+  if (params.lotStartUtc && params.lotEndUtc) query = query.gte("scope_lots.created_at", params.lotStartUtc)
+    .lt("scope_lots.created_at", params.lotEndUtc).neq("scope_lots.status", "cancelled");
+
   const { data, count, error } = await query;
   if (error) throw new Error(`Falha ao listar clientes: ${error.message}`);
 
-  const rows = (data ?? []) as CustomerDetail[];
+  const rows = (data ?? []) as unknown as CustomerDetail[];
   const notes = await loadNotes(
     "customer",
     rows.map((row) => row.id),
@@ -948,6 +960,9 @@ export async function listCharges(params: {
   status?: ChargeStatus | "all";
   page?: number;
   pageSize?: number;
+  lotStartUtc?: string;
+  lotEndUtc?: string;
+  expiring24h?: boolean;
 }): Promise<ChargePage> {
   const supabase = await createClient();
   const page = Math.max(1, params.page ?? 1);
@@ -956,12 +971,19 @@ export async function listCharges(params: {
 
   let query = supabase
     .from("charges")
-    .select(CHARGE_LIST_COLUMNS, { count: "exact" })
+    .select(CHARGE_LIST_COLUMNS + (params.lotStartUtc && params.lotEndUtc ? ",scope_lots:lots!inner()" : ""), { count: "exact" })
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1);
 
   if (params.status && params.status !== "all") {
     query = query.eq("status", params.status);
+  }
+  if (params.lotStartUtc && params.lotEndUtc) query = query.gte("scope_lots.created_at", params.lotStartUtc)
+    .lt("scope_lots.created_at", params.lotEndUtc).neq("scope_lots.status", "cancelled");
+  if (params.expiring24h) {
+    const now = Date.now();
+    query = query.in("status", ["pending", "in_process"]).gte("expires_at", new Date(now).toISOString())
+      .lt("expires_at", new Date(now + 86_400_000).toISOString());
   }
 
   // Mesma sanitização do `name`: o valor entra dentro de `.or()` do PostgREST

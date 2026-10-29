@@ -58,6 +58,7 @@ import type { Player, StockItem } from "@/lib/stock";
 import type { AppSettings } from "@/lib/settings";
 import { spDayOf, spTimeOf, spToday } from "@/lib/dates";
 import { LOT_SHIFTS, lotShiftRange, parseLotRange } from "@/lib/lot-filters";
+import { adminListHref } from "@/lib/admin-list-filters";
 
 const ALL = "all";
 
@@ -77,6 +78,7 @@ export function LotsView({
   dateFrom = "",
   dateTo = "",
   filterError = "",
+  shippingDate = "",
 }: {
   lots: Lot[];
   total: number;
@@ -91,6 +93,7 @@ export function LotsView({
   dateFrom?: string;
   dateTo?: string;
   filterError?: string;
+  shippingDate?: string;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
@@ -112,6 +115,7 @@ export function LotsView({
     if (nextPage > 1) params.set("p", String(nextPage));
     if (range.from) params.set("from", range.from);
     if (range.to) params.set("to", range.to);
+    if (shippingDate) params.set("shipping", shippingDate);
     const search = params.toString();
     return `/admin/lotes${search ? `?${search}` : ""}`;
   };
@@ -311,6 +315,10 @@ export function LotsView({
         </form>
       )}
       {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
+      {shippingDate && <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+        <p>Envio previsto: {formatDateBR(shippingDate)}.</p>
+        <Button asChild size="sm" variant="outline"><Link href={adminListHref("/admin/lotes", { q, status: status === ALL ? undefined : status, from: dateFrom, to: dateTo })}>Remover filtro de envio</Link></Button>
+      </div>}
 
       <div className="min-w-0 rounded-md border">
         <Table className="min-w-[940px] table-fixed">

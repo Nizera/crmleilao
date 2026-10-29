@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import type { CustomerDetail } from "@/lib/dal";
 import { formatPhoneBR } from "@/lib/customers";
+import { formatDateBR } from "@/lib/lots";
+import { adminListHref, CUSTOMER_ISSUES, type CustomerIssue } from "@/lib/admin-list-filters";
 
 type Props = {
   rows: CustomerDetail[];
@@ -26,9 +28,13 @@ type Props = {
   page: number;
   pageSize: number;
   q: string;
+  issue?: CustomerIssue;
+  dateFrom?: string;
+  dateTo?: string;
+  filterError?: string;
 };
 
-export function CustomersView({ rows, total, page, pageSize, q }: Props) {
+export function CustomersView({ rows, total, page, pageSize, q, issue = "all", dateFrom = "", dateTo = "", filterError = "" }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -36,13 +42,9 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  const buildHref = (nextQuery: string, nextPage: number) => {
-    const params = new URLSearchParams();
-    if (nextQuery.trim()) params.set("q", nextQuery.trim());
-    if (nextPage > 1) params.set("p", String(nextPage));
-    const search = params.toString();
-    return `/admin/clientes${search ? `?${search}` : ""}`;
-  };
+  const buildHref = (nextQuery: string, nextPage: number, nextIssue = issue, range = { from: dateFrom, to: dateTo }) => adminListHref("/admin/clientes", {
+    q: nextQuery.trim(), p: nextPage > 1 ? nextPage : undefined, issue: nextIssue === "all" ? undefined : nextIssue, ...range,
+  });
 
   const search = (event: FormEvent) => {
     event.preventDefault();
@@ -60,14 +62,14 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Clientes</h2>
           <p className="text-sm text-muted-foreground">
             {total === 0
-              ? "Base vazia — cadastre quem já arrematou algo."
-              : `${total} ${total === 1 ? "cliente na base" : "clientes na base"}.`}
+              ? "Nenhum cliente encontrado."
+              : `${total} ${total === 1 ? "cliente encontrado" : "clientes encontrados"}.`}
           </p>
         </div>
         <Button onClick={openNew}>
@@ -77,7 +79,7 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
       </div>
 
       <form onSubmit={search} className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-56 flex-1">
+        <div className="relative min-w-0 basis-full flex-1 sm:basis-0">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -95,13 +97,25 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
             variant="ghost"
             onClick={() => {
               setQuery("");
-              router.replace("/admin/clientes");
+              router.replace(buildHref("", 1));
             }}
           >
             Limpar
           </Button>
         )}
+        <select aria-label="Pendência cadastral" className="h-9 max-w-full rounded-md border bg-background px-3 text-sm" value={issue} onChange={event => router.replace(buildHref(query, 1, event.target.value as CustomerIssue))}>
+          {Object.entries(CUSTOMER_ISSUES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        </select>
       </form>
+
+      {(dateFrom || issue !== "all") && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
+        <p>{issue !== "all" ? `Filtro: ${CUSTOMER_ISSUES[issue]}. ` : ""}{dateFrom ? `Clientes com lotes cadastrados de ${formatDateBR(dateFrom.slice(0, 10))} às ${dateFrom.slice(11)} até ${formatDateBR(dateTo.slice(0, 10))} às ${dateTo.slice(11)} (São Paulo).` : ""}</p>
+        <div className="flex flex-wrap gap-2">
+          {dateFrom && <Button asChild size="sm" variant="outline"><Link href={buildHref(q, 1, issue, { from: "", to: "" })}>Todos os períodos</Link></Button>}
+          <Button asChild size="sm" variant="ghost"><Link href="/admin/clientes">Limpar todos os filtros</Link></Button>
+        </div>
+      </div>}
+      {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
 
       <div className="overflow-x-auto rounded-md border">
         <Table>
@@ -125,6 +139,7 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
                   >
                     {customer.name || "Sem nome"}
                   </Link>
+                  {issue !== "all" && <span className="block text-xs text-amber-700 dark:text-amber-300">{CUSTOMER_ISSUES[issue]}</span>}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {formatPhoneBR(customer.phone_e164)}
@@ -155,7 +170,7 @@ export function CustomersView({ rows, total, page, pageSize, q }: Props) {
               <TableRow>
                 <TableCell colSpan={6} className="h-32 text-center">
                   <span className="text-muted-foreground">
-                    {q
+                    {q || issue !== "all" || dateFrom
                       ? "Nenhum cliente corresponde à busca."
                       : "Nenhum cliente ainda. Use “Novo cliente”."}
                   </span>

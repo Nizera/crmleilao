@@ -59,7 +59,8 @@ import {
   isChargeOpen,
   type Charge,
 } from "@/lib/charges";
-import { formatBRL } from "@/lib/lots";
+import { formatBRL, formatDateBR } from "@/lib/lots";
+import { adminListHref } from "@/lib/admin-list-filters";
 import { formatPhoneBR } from "@/lib/customers";
 
 type Props = {
@@ -75,6 +76,10 @@ type Props = {
   webhookReady: boolean;
   signatureReady: boolean;
   migrationReady: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  expiring24h?: boolean;
+  filterError?: string;
 };
 
 export function ChargesView({
@@ -90,6 +95,10 @@ export function ChargesView({
   webhookReady,
   signatureReady,
   migrationReady,
+  dateFrom = "",
+  dateTo = "",
+  expiring24h = false,
+  filterError = "",
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -109,14 +118,10 @@ export function ChargesView({
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number) => {
-    const params = new URLSearchParams();
-    if (nextQuery.trim()) params.set("q", nextQuery.trim());
-    if (nextStatus !== "all") params.set("status", nextStatus);
-    if (nextPage > 1) params.set("p", String(nextPage));
-    const search = params.toString();
-    return `/admin/cobrancas${search ? `?${search}` : ""}`;
-  };
+  const buildHref = (nextQuery: string, nextStatus: string, nextPage: number, expiring = expiring24h) => adminListHref("/admin/cobrancas", {
+    q: nextQuery.trim(), status: nextStatus === "all" ? undefined : nextStatus,
+    p: nextPage > 1 ? nextPage : undefined, from: dateFrom, to: dateTo, expiring: expiring ? "24h" : undefined,
+  });
 
   const search = (event: FormEvent) => {
     event.preventDefault();
@@ -124,7 +129,7 @@ export function ChargesView({
   };
 
   const changeStatus = (value: string) => {
-    router.replace(buildHref(query, value, 1));
+    router.replace(buildHref(query, value, 1, ["all", "pending", "in_process"].includes(value) && expiring24h));
   };
 
   const runAction = (charge: Charge, action: "paid" | "cancel") => {
@@ -320,6 +325,14 @@ export function ChargesView({
         </Select>
       </div>
 
+      {(dateFrom || expiring24h) && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
+        <p>{expiring24h ? "Somente cobranças em aberto que vencem nas próximas 24 horas. " : ""}{dateFrom ? `Vinculadas aos lotes cadastrados de ${formatDateBR(dateFrom.slice(0, 10))} às ${dateFrom.slice(11)} até ${formatDateBR(dateTo.slice(0, 10))} às ${dateTo.slice(11)} (São Paulo).` : ""}</p>
+        <div className="flex flex-wrap gap-2">
+          {expiring24h && <Button asChild size="sm" variant="outline"><Link href={buildHref(q, status, 1, false)}>Remover filtro de vencimento</Link></Button>}
+          <Button asChild size="sm" variant="ghost"><Link href="/admin/cobrancas">Limpar todos os filtros</Link></Button>
+        </div>
+      </div>}
+      {filterError && <p role="alert" className="text-sm text-destructive">{filterError}</p>}
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>

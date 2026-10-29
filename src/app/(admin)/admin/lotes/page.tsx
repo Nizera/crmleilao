@@ -9,6 +9,7 @@ import {
 } from "@/lib/dal";
 import { LOT_STATUSES, type LotStatus } from "@/lib/lots";
 import { parseLotRange } from "@/lib/lot-filters";
+import { isIsoDay } from "@/lib/dates";
 
 export const metadata = { title: "Lotes" };
 
@@ -28,12 +29,14 @@ export default async function LotesPage({
   const status = VALID_STATUS.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
   const range = parseLotRange(first(params.from), first(params.to));
+  const rawShipping = first(params.shipping);
+  const shippingDate = isIsoDay(rawShipping) ? rawShipping : "";
 
   const [{ settings }, lotsPage, players, stock] = await Promise.all([
     getAppSettings(),
     // Lista magra paginada: itens/fotos/descrição ficam no detalhe
     // (getLotDetailAction); qtyByLot cobre só as linhas da página.
-    range.error ? Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }) : listLotsPage({ q, status: status as LotStatus | "all", page, notes: true, startUtc: range.startUtc, endUtc: range.endUtc }),
+    range.error ? Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }) : listLotsPage({ q, status: status as LotStatus | "all", page, notes: true, startUtc: range.startUtc, endUtc: range.endUtc, shippingDate }),
     listPlayers(),
     listStock(),
   ]);
@@ -41,7 +44,7 @@ export default async function LotesPage({
 
   return (
     <LotsView
-      key={`${q}/${status}/${range.from}/${range.to}/${range.error}`}
+      key={`${q}/${status}/${range.from}/${range.to}/${range.error}/${shippingDate}`}
       lots={lotsPage.rows}
       total={lotsPage.total}
       page={lotsPage.page}
@@ -51,6 +54,7 @@ export default async function LotesPage({
       dateFrom={range.from}
       dateTo={range.to}
       filterError={range.error}
+      shippingDate={shippingDate}
       players={players}
       stock={stock}
       settings={settings}
