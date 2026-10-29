@@ -129,6 +129,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         <PrintButton variant="outline" disabled={customers.length === 0} />
       </div>
 
+      {(report.warnings ?? []).map(warning => <p key={warning} role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200 print:text-black">{warning}</p>)}
+
       <div className="flex flex-wrap items-end gap-3 print:hidden">
         <Field className="w-44">
           <FieldLabel htmlFor="separation-date">Data de envio</FieldLabel>

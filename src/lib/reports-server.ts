@@ -41,6 +41,7 @@ export type SeparationCustomer = {
 };
 
 export type SeparationReport = {
+  warnings?: string[];
   shippingDate: string;
   customers: SeparationCustomer[];
   totals: {
@@ -87,12 +88,21 @@ export async function getSeparationReport(
   // Não são arremates: a conferência não depende de pagamentos do cliente.
   type PendingRow = { id: string; code: string; title: string; quantity: number; reason: string; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
   const pendingRows: PendingRow[] = [];
+  const warnings: string[] = [];
+  let logisticsAvailable = true;
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
       .select("id,code,title,quantity,reason,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .lte("shipping_date", shippingDate).is("cancelled_at", null).is("shipment_id", null)
       .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
-    if (error) throw new Error("Não foi possível conferir as pendências logísticas. Confira a migration 0035.");
+    if (error) {
+      if (["PGRST205", "42P01"].includes(error.code)) {
+        logisticsAvailable = false;
+        warnings.push("As pendências logísticas não foram carregadas: aplique a migration 0035 no Supabase e atualize a tela. Este relatório contém somente os itens disponíveis; não use para concluir a separação de reposições.");
+        break;
+      }
+      throw new Error("Não foi possível conferir as pendências logísticas. Tente novamente antes de separar os envios.");
+    }
     const page = (data ?? []) as unknown as PendingRow[];
     pendingRows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
@@ -100,7 +110,7 @@ export async function getSeparationReport(
 
   // O histórico de separação mantém as reposições já vinculadas ao pacote
   // desta data, mesmo quando foram originalmente previstas para outro dia.
-  for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
+  for (let from = 0; logisticsAvailable; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
       .select("id,code,title,quantity,reason,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .eq("shipment.batch_date", shippingDate).is("cancelled_at", null)
@@ -130,7 +140,7 @@ export async function getSeparationReport(
     rows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
-  if (rows.length === 0 && pendingRows.length === 0) return { shippingDate, customers: [], totals: { customers: 0, lots: 0, excludedCustomers: 0 } };
+  if (rows.length === 0 && pendingRows.length === 0) return { shippingDate, warnings, customers: [], totals: { customers: 0, lots: 0, excludedCustomers: 0 } };
 
   const candidateIds = [...new Set(rows.map((row) => row.customers?.id).filter((id): id is string => Boolean(id)))];
   const paymentCandidateIds = candidateIds.length ? candidateIds : ["00000000-0000-0000-0000-000000000000"];
@@ -238,6 +248,7 @@ export async function getSeparationReport(
 
   return {
     shippingDate,
+    warnings,
     customers,
     totals: {
       customers: customers.length,
