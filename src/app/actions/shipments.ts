@@ -63,6 +63,7 @@ export async function searchShipmentCustomers(
 }
 
 export type ShipmentContext = {
+  logisticsPending: { id: string; title: string; quantity: number; moved_at: string | null }[];
   storeBlock: string | null;
   lots: EligibleShipmentLot[];
   /** Campos da ficha que faltam para emitir a etiqueta. */
@@ -115,16 +116,22 @@ export async function loadShipmentContext(
       .filter((date): date is string => Boolean(date))
       .sort();
     const defaultBatchDate = shippingDates[0] ?? null;
+    const { data: logisticsPending, error: logisticsError } = await supabase.from("logistics_pending")
+      .select("id,title,quantity,moved_at").eq("customer_id", customerId)
+      .lte("shipping_date", defaultBatchDate ?? todayISO()).is("shipment_id", null).is("cancelled_at", null)
+      .order("shipping_date").order("id");
+    if (logisticsError) return failure("Não foi possível conferir as pendências logísticas.");
 
     return {
       ok: true,
       data: {
         lots,
+        logisticsPending: logisticsPending ?? [],
         storeBlock: await storeShippingBlock(customerId, defaultBatchDate ?? todayISO()),
         missing,
         addressLine: addressParts.length > 0 ? addressParts.join(", ") : null,
         defaultBatchDate,
-        defaultVolume: defaultShipmentVolume(Math.max(1, lots.length)),
+        defaultVolume: defaultShipmentVolume(Math.max(1, lots.length + (logisticsPending?.length ?? 0))),
         originReady: (await getOrigin()) !== null,
         superfreteReady: sfConfigured(),
         sandbox: sfSandbox(),

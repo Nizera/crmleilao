@@ -22,6 +22,7 @@ import { ADMIN_ROLE_LABELS, type AdminRole } from "@/lib/roles";
 const labels: Record<string, string> = {
   "/admin/dashboard": "Dashboard",
   "/admin/lotes": "Lotes",
+  "/admin/pendencias": "Pendências logísticas",
   "/admin/clientes": "Clientes",
   "/admin/cobrancas": "Cobranças",
   "/admin/estoque": "Estoque",

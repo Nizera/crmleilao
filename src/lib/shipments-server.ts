@@ -105,7 +105,11 @@ export async function attachLots<T extends { id: string; lots?: unknown }>(
   }
 
   const storeByShipment = new Map<string, NonNullable<Shipment['storeOrders']>>();
+  const logisticsByShipment = new Map<string, NonNullable<Shipment['logisticsPending']>>();
   for (const piece of chunk(rows.map(row => row.id), 200)) {
+    const { data: issues, error: issuesError } = await admin.from("logistics_pending").select("id,code,title,quantity,shipment_id").in("shipment_id", piece);
+    if (issuesError) throw new Error("Não foi possível carregar as reposições incluídas no envio.");
+    for (const issue of issues ?? []) logisticsByShipment.set(issue.shipment_id, [...(logisticsByShipment.get(issue.shipment_id) ?? []), issue]);
     const {data, error} = await admin.from('store_orders').select('id,code,shipment_id,items:store_order_items(name,quantity,delivery_kind)').in('shipment_id',piece);
     if (error) throw new Error('Não foi possível carregar os produtos da loja no envio.');
     for (const order of data ?? []) storeByShipment.set(order.shipment_id,[...(storeByShipment.get(order.shipment_id) ?? []),order]);
@@ -114,6 +118,7 @@ export async function attachLots<T extends { id: string; lots?: unknown }>(
     ...row,
     lots: byShipment.get(row.id) ?? [],
     storeOrders: storeByShipment.get(row.id) ?? [],
+    logisticsPending: logisticsByShipment.get(row.id) ?? [],
   })) as never;
 }
 
@@ -803,6 +808,8 @@ export async function emitShipment(input: {
   await assertShipmentPayments(input.customerId);
   const {error: storeReadyError} = await admin.rpc('assert_store_shipping_ready', {p_customer:input.customerId,p_day:batchDate});
   if (storeReadyError) throw new Error(storeReadyError.message);
+  const logisticsBlock = await logisticsShippingBlock(input.customerId, batchDate);
+  if (logisticsBlock) throw new Error(logisticsBlock);
 
   const lotSubtotal = round2(
     picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
@@ -914,7 +921,15 @@ async function assertShipmentPayments(customerId:string){
 
 export async function storeShippingBlock(customerId:string, day:string) {
   const {error}=await createAdminClient().rpc('assert_store_shipping_ready',{p_customer:customerId,p_day:day});
-  return error ? error.message : null;
+  return error ? error.message : await logisticsShippingBlock(customerId, day);
+}
+
+async function logisticsShippingBlock(customerId: string, day: string): Promise<string | null> {
+  const { data, error } = await createAdminClient().from("logistics_pending").select("id")
+    .eq("customer_id", customerId).lte("shipping_date", day).is("shipment_id", null)
+    .is("cancelled_at", null).is("moved_at", null).limit(1);
+  if (error) throw new Error("Não foi possível conferir as pendências logísticas.");
+  return data?.length ? "Separe as pendências logísticas deste cliente antes de emitir a etiqueta." : null;
 }
 
 async function assertBoundStorePayments(shipmentId:string) {

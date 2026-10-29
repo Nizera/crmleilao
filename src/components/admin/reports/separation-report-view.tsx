@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
 import { handleStoreOrderAction } from "@/app/actions/store";
+import { handleLogisticsPendingAction } from "@/app/actions/logistics-pending";
 import { PrintButton } from "@/components/admin/reports/print-button";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -73,11 +74,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
   const customers = baseCustomers.map((customer) => ({
     ...customer,
+    logisticsPending: (customer.logisticsPending ?? []).filter(issue => movementFilter === MOVED ? !!issue.moved_at : movementFilter === ALL || !issue.moved_at),
     storeOrders: (customer.storeOrders ?? []).filter(order => movementFilter === MOVED ? !!order.boxed_at : movementFilter === ALL || !order.boxed_at),
     lots: customer.lots.filter((lot) =>
       movementFilter === MOVED ? Boolean(lot.movedAt) : movementFilter === ALL ? true : !lot.movedAt,
     ),
-  })).filter((customer) => customer.lots.length > 0 || customer.storeOrders.length > 0);
+  })).filter((customer) => customer.lots.length > 0 || customer.storeOrders.length > 0 || customer.logisticsPending.length > 0);
 
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
   const visibleIds = new Set(customers.flatMap((customer) => customer.lots.map((lot) => lot.id)));
@@ -121,7 +123,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Relatórios</h2>
           <p className="text-sm text-muted-foreground">
-            Separação de arremates e produtos da loja por dia de envio.
+            Separação de arremates, produtos da loja e pendências logísticas por dia de envio.
           </p>
         </div>
         <PrintButton variant="outline" disabled={customers.length === 0} />
@@ -179,7 +181,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
         {report.totals.excludedCustomers > 0 && (
           <p className="pb-2 text-sm text-amber-700 dark:text-amber-300">
-            {report.totals.excludedCustomers} cliente(s) oculto(s) por pagamento pendente.
+            Arremates de {report.totals.excludedCustomers} cliente(s) ocultos por pagamento pendente. Reposições gratuitas continuam disponíveis para conferência.
           </p>
         )}
         {selectedVisibleIds.length > 0 && (
@@ -212,12 +214,13 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           <p className="text-sm text-muted-foreground">
             {customers.length} {customers.length === 1 ? "cliente" : "clientes"}{" "}
             · {lotsCount} {lotsCount === 1 ? "lote" : "lotes"}
+            {" · "}{customers.reduce((sum, customer) => sum + customer.logisticsPending.length, 0)} pendência(s)
           </p>
         </header>
 
         {customers.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum lote com envio agendado para{" "}
+            Nenhum item para separar com envio previsto até{" "}
             {formatDateBR(report.shippingDate)}.
           </p>
         ) : (
@@ -250,6 +253,18 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                     if(!result.ok){toast.error(result.error);return;}
                     const refreshed=await getSeparationReportAction(date);if(refreshed.ok)setReport(refreshed.data);else toast.error(refreshed.error);
                   })}>{order.fulfillment_status==='awaiting'?'Iniciar separação':'Colocar na caixa do cliente'}</Button>}
+                </div>)}
+                {customer.logisticsPending.map(issue => <div key={issue.id} className="mb-3 rounded-md border border-amber-500/40 p-3 break-inside-avoid">
+                  <p className="text-sm font-semibold">Pendência logística — sem cobrança · {issue.code}</p>
+                  <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
+                  <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
+                  {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
+                    const result = await handleLogisticsPendingAction(issue.id, "box");
+                    if (!result.ok) { toast.error(result.error); return; }
+                    const refreshed = await getSeparationReportAction(date);
+                    if (refreshed.ok) setReport(refreshed.data); else toast.error(refreshed.error);
+                  })}>Colocar na caixa do cliente</Button>}
                 </div>)}
                 {customer.lots.map((lot) => (
                   <div
@@ -298,6 +313,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                 <p className="text-right text-xs text-muted-foreground">
                   {customer.lots.length}{" "}
                   {customer.lots.length === 1 ? "lote" : "lotes"}
+                  {" · "}{customer.logisticsPending.length} pendência(s)
                 </p>
               </section>
             );

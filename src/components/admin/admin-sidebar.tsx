@@ -18,6 +18,7 @@ import {
   Gavel,
   Store,
   Ticket,
+  ClipboardList,
 } from "lucide-react";
 
 import { Logo, LogoMark } from "@/components/brand/logo";
@@ -40,6 +41,7 @@ const auctionGroups = [
     items: [
       { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
       { title: "Lotes", url: "/admin/lotes", icon: Package },
+      { title: "Pendências", url: "/admin/pendencias", icon: ClipboardList },
       { title: "Envios", url: "/admin/envios", icon: CalendarClock },
       { title: "Relatórios", url: "/admin/relatorios", icon: FileText },
     ],

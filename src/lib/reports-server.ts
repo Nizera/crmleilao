@@ -31,6 +31,7 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
+  logisticsPending?: { id: string; code: string; title: string; quantity: number; reason: string; moved_at: string | null; shipmentCode?: string | null }[];
   storeOrders?: {id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
@@ -82,6 +83,34 @@ export async function getSeparationReport(
 ): Promise<SeparationReport> {
   const admin = createAdminClient();
 
+  // Reposições vencidas continuam na fila até entrarem em uma etiqueta.
+  // Não são arremates: a conferência não depende de pagamentos do cliente.
+  type PendingRow = { id: string; code: string; title: string; quantity: number; reason: string; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
+  const pendingRows: PendingRow[] = [];
+  for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
+    const { data, error } = await admin.from("logistics_pending")
+      .select("id,code,title,quantity,reason,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .lte("shipping_date", shippingDate).is("cancelled_at", null).is("shipment_id", null)
+      .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
+    if (error) throw new Error("Não foi possível conferir as pendências logísticas. Confira a migration 0035.");
+    const page = (data ?? []) as unknown as PendingRow[];
+    pendingRows.push(...page);
+    if (page.length < REPORT_LOTS_PAGE_SIZE) break;
+  }
+
+  // O histórico de separação mantém as reposições já vinculadas ao pacote
+  // desta data, mesmo quando foram originalmente previstas para outro dia.
+  for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
+    const { data, error } = await admin.from("logistics_pending")
+      .select("id,code,title,quantity,reason,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .eq("shipment.batch_date", shippingDate).is("cancelled_at", null)
+      .order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
+    if (error) throw new Error("Não foi possível carregar as reposições vinculadas ao envio.");
+    const page = (data ?? []) as unknown as PendingRow[];
+    pendingRows.push(...page);
+    if (page.length < REPORT_LOTS_PAGE_SIZE) break;
+  }
+
   const rows: LotRow[] = [];
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin
@@ -101,16 +130,17 @@ export async function getSeparationReport(
     rows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
-  if (rows.length === 0) return { shippingDate, customers: [], totals: { customers: 0, lots: 0, excludedCustomers: 0 } };
+  if (rows.length === 0 && pendingRows.length === 0) return { shippingDate, customers: [], totals: { customers: 0, lots: 0, excludedCustomers: 0 } };
 
   const candidateIds = [...new Set(rows.map((row) => row.customers?.id).filter((id): id is string => Boolean(id)))];
+  const paymentCandidateIds = candidateIds.length ? candidateIds : ["00000000-0000-0000-0000-000000000000"];
   const { data: pendingLots, error: pendingLotsError } = await admin
-    .from("lots").select("customer_id").in("customer_id", candidateIds).eq("status", "pending_payment");
+    .from("lots").select("customer_id").in("customer_id", paymentCandidateIds).eq("status", "pending_payment");
   if (pendingLotsError) throw new Error(`Falha ao conferir pagamentos pendentes: ${pendingLotsError.message}`);
   const blockedCustomers = new Set((pendingLots ?? []).map((row) => row.customer_id));
   const { data: activeCharges, error: activeChargesError } = await admin.from("charges")
     .select("customer_id, status, expires_at")
-    .in("customer_id", candidateIds)
+    .in("customer_id", paymentCandidateIds)
     .in("status", ["pending", "in_process"]);
   if (activeChargesError) throw new Error(`Falha ao conferir cobranças em aberto: ${activeChargesError.message}`);
   for (const charge of activeCharges ?? []) {
@@ -174,6 +204,21 @@ export async function getSeparationReport(
   }
 
   const db = await createClient();
+  for (const row of pendingRows) {
+    const customer = row.customers;
+    if (!customer) continue;
+    const entry: SeparationCustomer = byCustomer.get(customer.id) ?? {
+      customerId: customer.id, name: customer.name, phone_e164: customer.phone_e164,
+      address: { cep: customer.address_cep, street: customer.address_street, number: customer.address_number,
+        complement: customer.address_complement, district: customer.address_district, city: customer.address_city, state: customer.address_state },
+      lots: [],
+    };
+    entry.logisticsPending = [...(entry.logisticsPending ?? []), {
+      id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, moved_at: row.moved_at,
+      shipmentCode: row.shipment?.code ?? null,
+    }];
+    byCustomer.set(customer.id, entry);
+  }
   const { data: storeRows, error: storeError } = await db.rpc('get_store_fulfillment', { p_day: shippingDate });
   if (storeError) throw new Error('Não foi possível conferir os pedidos da loja para a separação.');
   for (const order of (storeRows ?? []) as (NonNullable<SeparationCustomer['storeOrders']>[number] & {customer_id:string;physical:boolean})[]) {

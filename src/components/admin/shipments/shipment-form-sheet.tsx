@@ -403,6 +403,11 @@ function ShipmentForm({
                 </div>
               )}
 
+              {context.logisticsPending.length > 0 && <div className="rounded-md border border-amber-500/40 p-3 text-sm">
+                <p className="font-medium">Pendências logísticas para este envio</p>
+                {context.logisticsPending.map(issue => <p key={issue.id} className="mt-1 break-words text-xs">{issue.quantity} × {issue.title} · {issue.moved_at ? "Na caixa" : "A separar no relatório"}</p>)}
+                <p className="mt-2 text-xs text-muted-foreground">Incluídas automaticamente após a separação, sem cobrança adicional. Confira as dimensões e o peso do pacote.</p>
+              </div>}
               {context.lots.length === 0 ? (
                 <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
                   Nenhum lote pago disponível: todos já estão em envio ou ainda
