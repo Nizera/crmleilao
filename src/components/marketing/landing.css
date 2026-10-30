@@ -58,7 +58,7 @@
 .landing-paymentCard .landing-statusDetail { color:#8ad6b0; }
 .landing-shippingCard { right:-30px; bottom:65px; transform:rotate(5deg); animation-delay:-3s; animation-duration:7s; }
 .landing-shippingCard .landing-statusIcon { color:#f1d060; background:#e6ba3020; border-color:#e6ba3035; }
-.landing-visualCaption { position:absolute; z-index:4; bottom:-8px; color:#b9b7a7; font-size:9px; letter-spacing:.08em; }
+.landing-visualCaption { position:absolute; z-index:4; top:100%; margin-top:16px!important; color:#b9b7a7; font-size:9px; letter-spacing:.08em; }
 .landing-section { padding-block:80px; }
 .landing-sectionTop { display:flex; justify-content:space-between; align-items:flex-end; gap:30px; margin-bottom:26px; }
 .landing-heading { font-size:clamp(29px,3vw,42px); font-weight:780; letter-spacing:-.045em; line-height:1.12; }
@@ -179,7 +179,8 @@
   .landing-statusDetail { display:none; }
   .landing-paymentCard { left:-6px; top:55px; transform:rotate(-5deg); }
   .landing-shippingCard { right:-6px; bottom:40px; transform:rotate(4deg); }
-  .landing-visualCaption { bottom:0; font-size:8px; }
+  .landing-visualCaption { top:100%; margin-top:14px!important; font-size:8px; }
+  .landing-heroVisual { margin-bottom:30px; }
   .landing-section { padding-block:48px; }
   .landing-sectionTop { display:block; margin-bottom:18px; }
   .landing-heading { font-size:30px; line-height:1.16; }
