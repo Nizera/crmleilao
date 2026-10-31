@@ -1,84 +1,29 @@
 import { ImageResponse } from "next/og";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
-export const alt = "Os Caras das Legends — Leilão diário de colecionáveis";
-export const size = {
-  width: 1200,
-  height: 630,
-};
+export const alt = "Os Caras das Legends — Leilão diário de colecionáveis. Lotes, Pix e envios no seu painel.";
+export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-// Versão no caminho da imagem: permite aos serviços de compartilhamento
-// distinguir esta prévia da arte antiga já armazenada em cache.
+// Caminho novo para diferenciar a arte da prévia antiga nos serviços de compartilhamento.
 export function generateImageMetadata() {
-  return [{ id: "colecionaveis-v2", alt, size, contentType }];
+  return [{ id: "colecionaveis-v3", alt, size, contentType }];
 }
 
-const MARK_PATH =
-  "M6 3H16.5L21 7.5V18A3 3 0 0 1 18 21H6A3 3 0 0 1 3 18V6A3 3 0 0 1 6 3ZM12 7.4L13.23 10.7L16.76 10.85L14 13.05L14.94 16.45L12 14.5L9.06 16.45L10 13.05L7.24 10.85L10.77 10.7Z";
-
-const RARITIES = ["#8B5CF6", "#B45309", "#94A3B8", "#EAB308"];
-
-export default function OpengraphImage() {
+export default async function OpengraphImage() {
+  const logo = await readFile(join(process.cwd(), "public/brand/logo-sharing-v3.png"));
   return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#FFFFFF",
-        }}
-      >
-        <svg width="200" height="200" viewBox="0 0 24 24">
-          <path fillRule="evenodd" fill="#0A0A0A" d={MARK_PATH} />
-        </svg>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 40,
-            fontSize: 80,
-            letterSpacing: -3,
-            color: "#0A0A0A",
-          }}
-        >
-          Os Caras das Legends
-        </div>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 16,
-            fontSize: 34,
-            color: "#737373",
-          }}
-        >
-          Leilão diário de colecionáveis
-        </div>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 36,
-            gap: 18,
-          }}
-        >
-          {RARITIES.map((color) => (
-            <div
-              key={color}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                background: color,
-              }}
-            />
-          ))}
-        </div>
+    <div style={{width:"100%",height:"100%",display:"flex",background:"#10110d",padding:28,color:"#f7f5eb"}}>
+      <div style={{display:"flex",width:"100%",height:"100%",border:"2px solid #8e752d",borderRadius:24,flexDirection:"column",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#1d1d12,#10110d)"}}>
+        {/* PNG local: preserva a logo aprovada e dispensa fetch remoto no gerador. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`data:image/png;base64,${logo.toString("base64")}`} alt="" width={720} height={360} />
+        <div style={{display:"flex",fontSize:43,fontWeight:700,letterSpacing:-1,color:"#f5cf43",marginTop:2}}>Leilão diário de colecionáveis</div>
+        <div style={{display:"flex",fontSize:25,color:"#dfdfd3",marginTop:20}}>Seus lotes, Pix e envios em um só lugar.</div>
+        <div style={{display:"flex",fontSize:20,color:"#b5b3a1",marginTop:27}}>oscarasdaslegends.com.br</div>
       </div>
-    ),
-    {
-      ...size,
-    },
+    </div>,
+    size,
   );
 }
