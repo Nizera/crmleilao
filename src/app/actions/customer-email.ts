@@ -13,7 +13,7 @@ export type EmailAccessState = { error?:string; notice?:string; email?:string; s
 const notice = "Se for possível continuar com este e-mail, você receberá um código. Confira também o spam. Se não chegar, fale com a equipe.";
 const unavailable = "Acesso por e-mail indisponível no momento. Use sua senha ou peça um convite à equipe.";
 const conflict = "Não foi possível vincular o cadastro. Fale com a equipe para conferir seu e-mail e WhatsApp. Seus lotes foram preservados.";
-function enabled() { return process.env.CUSTOMER_EMAIL_ACCESS_ENABLED === "true"; }
+function enabled() { return process.env.CUSTOMER_EMAIL_ACCESS_ENABLED?.trim().toLowerCase() === "true"; }
 
 export async function requestCustomerEmail(_previous:EmailAccessState, form:FormData):Promise<EmailAccessState> {
   if (!enabled()) return {error:unavailable};

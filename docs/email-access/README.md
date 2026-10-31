@@ -8,7 +8,7 @@ Implementação local pronta para confirmação por código do Supabase Auth, en
 2. Authentication → Email Templates: substituir **Confirm signup** pelo conteúdo de `confirm-signup.html` e **Magic Link** por `magic-link.html`. Assunto sugerido: `Seu código de acesso — Os Caras das Legends`. Ambos precisam de `{{ .Token }}`: o fluxo é por código, não depende de abrir links.
 3. Conferir SMTP do Resend: remetente `acesso@oscarasdaslegends.com.br`, nome Os Caras das Legends. Não colocar a chave em variáveis NEXT_PUBLIC nem no repositório.
 4. Authentication → Providers/Sign In: permitir novos usuários e manter confirmação de e-mail habilitada. Conferir validade do OTP (recomendado 10 minutos) e intervalo entre envios (ao menos 60 segundos).
-5. Vercel → Environment Variables: `CUSTOMER_EMAIL_ACCESS_ENABLED=true`. Precisa de novo deploy, pois a tela de solicitação é renderizada no build. Sem a variável, os envios e ativação ficam desligados e o convite continua funcionando.
+5. Vercel → Environment Variables: `CUSTOMER_EMAIL_ACCESS_ENABLED=true`. Precisa de novo deploy para a Vercel disponibilizar a variável à função. A tela lê o valor em tempo de requisição. Sem a variável, os envios e ativação ficam desligados e o convite continua funcionando.
 6. Fazer teste real com um e-mail controlado pela equipe: entrega, código expirado, código repetido, criação, logout, login por e-mail e por telefone, recuperação. Não testar contas de clientes reais sem combinar com eles.
 
 ## Regras

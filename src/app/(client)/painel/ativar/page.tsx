@@ -8,8 +8,8 @@ export const metadata = {title:"Ativar acesso por e-mail"};
 // A ativação depende da sessão e não pode ser pré-renderizada.
 export const instant = false;
 export default async function ActivateEmailPage() {
- if (process.env.CUSTOMER_EMAIL_ACCESS_ENABLED !== "true") redirect("/painel/login");
  await connection();
+ if (process.env.CUSTOMER_EMAIL_ACCESS_ENABLED?.trim().toLowerCase() !== "true") redirect("/painel/login");
  const supabase=await createClient();
  const {data:{user}}=await supabase.auth.getUser();
  if (!user?.email_confirmed_at) redirect("/painel/acesso-email");
