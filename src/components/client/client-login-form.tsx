@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useActionState } from "react";
 import { Loader2, LogIn } from "lucide-react";
 
@@ -39,20 +40,19 @@ export function ClientLoginForm({
                 </span>
                 <h1 className="text-2xl font-bold">Seu painel</h1>
                 <p className="text-balance text-muted-foreground">
-                  Entre com o WhatsApp do leilão e a senha que você criou no
-                  convite.
+                  Entre com seu e-mail ou WhatsApp e a senha do seu painel.
                 </p>
               </div>
 
               <Field>
-                <FieldLabel htmlFor="phone">WhatsApp</FieldLabel>
+                <FieldLabel htmlFor="phone">E-mail ou WhatsApp</FieldLabel>
                 <Input
                   id="phone"
                   name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel-national"
-                  placeholder="(11) 99999-8888"
+                  type="text"
+                  autoComplete="username"
+                  maxLength={254}
+                  placeholder="Seu e-mail ou WhatsApp com DDD"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -92,11 +92,9 @@ export function ClientLoginForm({
               </Field>
 
               <FieldDescription className="text-center">
-                Primeiro acesso ou esqueceu a senha? Peça um novo{" "}
-                <span className="font-medium text-foreground">
-                  link de convite
-                </span>{" "}
-                ao admin.
+                <Link href="/painel/acesso-email" className="font-medium text-foreground underline underline-offset-4">Criar conta</Link>
+                <br />
+                <Link href="/painel/acesso-email" className="underline underline-offset-4">Esqueci minha senha</Link>
               </FieldDescription>
             </FieldGroup>
           </form>

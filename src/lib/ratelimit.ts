@@ -24,6 +24,9 @@ export type RateBucket =
   | "admin-signin"
   | "customer-signin"
   | "invite-accept"
+  | "customer-email-send"
+  | "customer-email-verify"
+  | "customer-email-finish"
   | "customer-password"
   | "ip-only";
 
@@ -41,6 +44,9 @@ const RULES: Record<RateBucket, { limit: number; window: number }> = {
   // Troca de senha: aqui o limite é o do dono da conta, porque a confirmação
   // da senha atual é o que alguém de fora tentaria chutar.
   "customer-password": { limit: 5, window: 900 },
+  "customer-email-send": { limit: 3, window: 900 },
+  "customer-email-verify": { limit: 5, window: 900 },
+  "customer-email-finish": { limit: 5, window: 900 },
   // Teto por IP. Os outros buckets são por assunto (e-mail/telefone/token):
   // trocar o assunto zera a chave, então este teto é o que impede enumeração
   // em massa a partir de um único lugar.

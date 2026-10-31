@@ -18,24 +18,24 @@ export const adminLoginSchema = z.object({
     .max(PASSWORD_MAX, "Senha longa demais."),
 });
 
-/** Cliente: WhatsApp + senha (`customerSignIn`). Normaliza para E.164. */
+/** E-mail ou WhatsApp; mantém o nome phone para compatibilidade com formulários antigos. */
 export const customerLoginSchema = z.object({
-  phone: z.string().trim().transform((value, ctx) => {
-    const e164 = toE164(value);
-    if (!e164) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Informe um número de WhatsApp válido com DDD.",
-      });
-      return z.NEVER;
+  phone: z.string().trim().max(254).transform((value, ctx) => {
+    if (value.includes("@")) {
+      const email = z.string().email().safeParse(value.toLowerCase());
+      if (email.success) return email.data;
+    } else {
+      const phone = toE164(value);
+      if (phone) return phone;
     }
-    return e164;
+    ctx.addIssue({code:"custom",message:"Informe seu e-mail ou WhatsApp com DDD."});
+    return z.NEVER;
   }),
-  password: z
-    .string()
-    .min(1, "Informe sua senha.")
-    .max(PASSWORD_MAX, "Senha longa demais."),
+  password: z.string().min(1,"Informe sua senha.").max(PASSWORD_MAX,"Senha longa demais."),
 });
+
+export const customerEmailSchema = z.string().trim().toLowerCase().max(200).email("Informe um e-mail válido.");
+export const customerEmailCodeSchema = z.string().trim().regex(/^\d{6,10}$/, "Confira o código recebido por e-mail.");
 
 /** Primeiro acesso pelo link de convite (`acceptCustomerInvite`). */
 export const inviteAcceptSchema = z

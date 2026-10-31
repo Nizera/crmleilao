@@ -134,13 +134,35 @@ export async function customerSignIn(
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    phone,
-    password,
-  });
+  let credentials: {email:string;password:string} | {phone:string;password:string} = {phone,password};
+  if (phone.includes("@")) {
+    // Cadastros antigos têm Auth somente por telefone. O e-mail funciona como
+    // identificador, mas a senha continua validada pelo Supabase na mesma conta.
+    const admin = createAdminClient();
+    const {data:targets,error:lookupError} = await admin.rpc("customer_email_access_target", {p_email:phone});
+    const target = !lookupError && targets?.length === 1 ? targets[0] : null;
+    if (target?.auth_user_id) {
+      const {data:account,error:accountError} = await admin.auth.admin.getUserById(target.auth_user_id);
+      if (accountError || !account.user) return {error:"E-mail, WhatsApp ou senha incorretos."};
+      credentials = account.user.phone ? {phone:account.user.phone,password} : {email:phone,password};
+    } else {
+      credentials = {email:phone,password};
+    }
+  } else {
+    // Contas novas são verificadas por e-mail. O telefone é apenas um alias:
+    // a posse do número, sozinha, nunca libera acesso sem a mesma senha.
+    const admin = createAdminClient();
+    const {data:target,error:lookupError} = await admin.from("customers")
+      .select("auth_user_id").eq("phone_e164",phone).maybeSingle();
+    if (!lookupError && target?.auth_user_id) {
+      const {data:account} = await admin.auth.admin.getUserById(target.auth_user_id);
+      if (account.user?.email && !account.user.phone) credentials = {email:account.user.email,password};
+    }
+  }
+  const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    return { error: "Número ou senha incorretos." };
+    return { error: "E-mail, WhatsApp ou senha incorretos." };
   }
 
   await redirectAfterCustomerLogin(supabase, data.user?.id);
