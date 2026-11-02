@@ -103,9 +103,9 @@ export async function manageRaffle(input: unknown): Promise<ActionResult> {
 export async function recordRaffleWinner(input: unknown): Promise<ActionResult> {
   try {
     await staff();
-    const p = z.object({ prize: z.uuid(), number: z.number().int().min(0).max(9999), note: z.string().trim().min(10).max(2000), evidence: z.url().max(2000).refine(v => v.startsWith("https://")) }).safeParse(input);
-    if (!p.success) return { ok: false, error: "Informe cota, detalhes da apuração e link HTTPS do resultado." };
-    const { error } = await (await createClient()).rpc("record_raffle_winner", { p_prize: p.data.prize, p_number: p.data.number, p_note: p.data.note, p_evidence: p.data.evidence });
+    const p = z.object({ prize: z.uuid(), number: z.number().int().min(0).max(9999), note: z.string().trim().min(10).max(2000), evidence: z.url().max(2000).refine(v => v.startsWith("https://")).nullish() }).safeParse(input);
+    if (!p.success) return { ok: false, error: "Informe a cota e os detalhes da apuração (mínimo de 10 caracteres)." };
+    const { error } = await (await createClient()).rpc("record_raffle_winner", { p_prize: p.data.prize, p_number: p.data.number, p_note: p.data.note, p_evidence: p.data.evidence ?? null });
     if (error) throw error;
     invalidate(); return { ok: true, data: null };
   } catch (error) { return failure(error); }

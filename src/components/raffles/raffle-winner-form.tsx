@@ -33,7 +33,7 @@ export function RaffleWinnerForm({ campaign, prize, awarded }: { campaign: Raffl
     if (!confirm(`Confirmar ${buyer.name} como ganhador da cota ${quotaLabel(Number(raw), campaign.total_numbers)}? O resultado não poderá ser sobrescrito.`)) return;
     const form = new FormData(event.currentTarget);
     start(async () => {
-      const result = await recordRaffleWinner({ prize: prize.id, number: Number(raw), note: String(form.get("note")), evidence: String(form.get("evidence")) });
+      const result = await recordRaffleWinner({ prize: prize.id, number: Number(raw), note: String(form.get("note")) });
       if (!result.ok) toast.error(result.error);
       else { toast.success("Ganhador confirmado. O prêmio já está no painel e na separação do cliente."); router.refresh(); }
     });
@@ -42,7 +42,6 @@ export function RaffleWinnerForm({ campaign, prize, awarded }: { campaign: Raffl
       <label className="grid gap-2 text-sm font-medium">Cota vencedora<Input inputMode="numeric" pattern="[0-9]+" maxLength={4} value={raw} disabled={pending} onChange={event => { setRaw(event.target.value); setLookup(null); }} required /><span className="text-xs font-normal text-muted-foreground">Você pode digitar 0 ou 000, 1 ou 001.</span></label>
       <div role="status" aria-live="polite" className="rounded-lg border bg-background p-3 text-sm">{!raw ? "Digite a cota para identificar o comprador." : !valid ? "Informe uma cota dentro do intervalo da campanha." : buyer?.name ? <><strong>{buyer.name}</strong><p className="mt-1 text-emerald-700 dark:text-emerald-400">Cota {quotaLabel(Number(raw), campaign.total_numbers)} · Pagamento confirmado</p></> : buyer?.error || "Consultando comprador…"}</div>
       <label className="grid gap-2 text-sm font-medium">Concurso, regra aplicada ou detalhes<Textarea name="note" minLength={10} maxLength={2000} required disabled={pending} /></label>
-      <label className="grid gap-2 text-sm font-medium">Link HTTPS do resultado<Input name="evidence" type="url" required disabled={pending} /></label>
       <Button disabled={pending || !valid || !buyer?.name || campaign.status !== "paused"}>{pending ? "Registrando…" : "Registrar vencedor"}</Button>
     </>}
   </form>;

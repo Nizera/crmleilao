@@ -87,7 +87,7 @@ Nenhum teste faz compra, transferência, sorteio ou chamada ao Mercado Pago. PGl
 ## Apuração e fotos do prêmio principal
 
 1. Pause as vendas da campanha e resolva as reservas ainda abertas.
-2. Na aba Apuração, informe a cota vencedora paga, os detalhes e o link HTTPS do resultado externo.
+2. Na aba Apuração, informe a cota vencedora paga, os detalhes do resultado externo.
 3. Confirme o registro. O dono da cota recebe o prêmio em Meus prêmios, e o mesmo prêmio entra na fila de separação. O registro não pode ser sobrescrito.
 4. Na aba Fotos, envie até seis imagens; a primeira é a capa. Salve antes de sair. O ganhador pode ampliar as imagens em Meus prêmios. As imagens são da campanha e são compartilhadas entre seus prêmios.
 
@@ -99,3 +99,8 @@ A migration 0052 adiciona apenas a galeria e uma função restrita à equipe com
 A apuração consulta o comprador da cota paga após a digitação. 0 e 000 são a mesma cota; 1 e 001 também. A consulta exige equipe com escrita e retorna apenas o nome. Alterar a cota invalida a consulta anterior; a confirmação menciona nome e número. O banco confere novamente o pagamento e a titularidade ao registrar o resultado.
 
 A migration 0053 encerra a campanha na mesma transação que registra seu último prêmio principal. Se houver vários, ela permanece pausada até atribuir todos. Campanhas encerradas deixam a lista Participar; cotas, resultados, prêmios e envio continuam preservados no histórico. Para aplicar esta etapa, executar a 0052 (galeria, se ainda pendente) e a 0053 (encerramento).
+
+
+## Link do resultado opcional
+
+A migration 0054 permite registrar o resultado sem link externo, preservando os links de apurações anteriores. O formulário pede apenas a cota e os detalhes (mínimo de 10 caracteres). A identificação do comprador, a confirmação do pagamento e o encerramento automático continuam ativos.

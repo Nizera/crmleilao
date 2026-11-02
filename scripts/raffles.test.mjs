@@ -38,6 +38,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
     await db.exec(await readFile(new URL('../supabase/migrations/0044_raffle_optional_shipping_date.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0052_raffle_photos.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0053_raffle_close_after_results.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/0054_raffle_optional_result_link.sql', import.meta.url), 'utf8'));
     const draft = { title: 'Campanha teste', description: 'Regulamento da campanha teste.', total_numbers: 10, unit_price: 19.99, selection_mode: 'both', draw_method: 'external', draw_rules: 'Resultado externo com regra definida.', shipping_date: '2026-11-10', image_url: '', hide_winning_numbers: true, min_quantity: 1, max_quantity: 5 };
     await t.test('cliente e viewer não criam campanha nem liberam vendas', async () => {
       await as(a); await assert.rejects(scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]), /Acesso negado/);
@@ -111,7 +112,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await manage(c, 'pause'); await manage(c, 'instant', 'Extra', 1);
       await owner(); assert.equal(await scalar('select count(*)::int from raffle_prizes p join raffle_allocations a on a.campaign_id=p.campaign_id and a.number=p.number where p.title=$1', ['Extra']), 0);
     });
-    await t.test('resultado exige cota paga, link e reservas resolvidas; não pode sobrescrever ganhador', async () => {
+    await t.test('resultado exige cota paga e reservas resolvidas; link é opcional e ganhador não é sobrescrito', async () => {
       // A campanha anterior tem análise pendente: usa uma nova para verificar apuração completa.
       await as(admin); const next = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]);
       await manage(next, 'main', 'Prêmio final'); await manage(next, 'open');
@@ -121,7 +122,8 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await manage(next, 'pause');
       await assert.rejects(db.query('select record_raffle_winner($1,1,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /pagamento confirmado/);
       await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'http://inseguro.invalid']), /HTTPS/);
-      await db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']);
+      await db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', null]);
+      await owner(); assert.equal(await scalar('select evidence_url from raffle_awards where prize_id=$1', [p]), null); await as(admin);
       await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /Pause|já registrado/);
       assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'closed');
       await as(a);
