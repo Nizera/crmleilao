@@ -40,6 +40,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
     await db.exec(await readFile(new URL('../supabase/migrations/0053_raffle_close_after_results.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0054_raffle_optional_result_link.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0055_raffle_pause_when_paid_out.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/0056_raffle_reservation_ten_minutes.sql', import.meta.url), 'utf8'));
     const draft = { title: 'Campanha teste', description: 'Regulamento da campanha teste.', total_numbers: 10, unit_price: 19.99, selection_mode: 'both', draw_method: 'external', draw_rules: 'Resultado externo com regra definida.', shipping_date: '2026-11-10', image_url: '', hide_winning_numbers: true, min_quantity: 1, max_quantity: 5 };
     await t.test('cliente e viewer não criam campanha nem liberam vendas', async () => {
       await as(a); await assert.rejects(scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]), /Acesso negado/);
@@ -102,9 +103,10 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       assert.equal(autoNumbers.length, 3); assert.equal(new Set(autoNumbers).size, 3); assert.ok(!autoNumbers.includes(prizeNumber));
     });
     await t.test('relógio local não libera cotas; cancelamento confirmado libera e pagamento tardio vai para análise', async () => {
-      await owner(); await db.query("update raffle_orders set expires_at=now()-interval '1 day' where id=$1", [auto]);
+      await owner(); await db.query("update raffle_orders set expires_at=now()-interval '1 day',reservation_expires_at=now()-interval '1 second' where id=$1", [auto]);
       assert.equal(await scalar('select count(*)::int from raffle_allocations where order_id=$1', [auto]), 3);
       await settle(auto, 'cancelled'); await owner();
+      assert.equal(await scalar('select status from raffle_orders where id=$1', [auto]), 'expired');
       assert.equal(await scalar('select count(*)::int from raffle_allocations where order_id=$1', [auto]), 0);
       await settle(auto, 'paid'); await owner(); assert.equal(await scalar('select status from raffle_orders where id=$1', [auto]), 'review');
     });

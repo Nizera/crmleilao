@@ -36,6 +36,7 @@ test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo
     .replace('import { quotaLabel, raffleMoney, raffleStatus, type Raffle, type RaffleOrder, type RaffleAward } from "@/lib/raffles";', 'const quotaLabel=n=>String(n).padStart(3,"0");const raffleMoney=n=>String(n);const raffleStatus={paid:"Pago",review:"Em análise",pending:"Aguardando pagamento"};')
     .replace('import { Button } from "@/components/ui/button";', 'const Button=({variant,asChild,children,...props})=>React.createElement("button",props,children);')
     .replace('import { Input } from "@/components/ui/input";', 'const Input=props=>React.createElement("input",props);')
+    .replace('import { raffleReservationDeadline } from "@/lib/raffle-reservation";', 'const raffleReservationDeadline=o=>o.reservation_expires_at||o.expires_at;')
     .replace('import { usePaymentExpired } from "@/components/client/use-payment-expired";', 'const usePaymentExpired=()=>globalThis.__raffleUiAudit.expired;');
   try {
     const { RaffleOrderCard } = await import(url(source));

@@ -20,9 +20,14 @@ test('Pix: ID preservado sem QR, UTC correto, retomada por GET e timeout propaga
   assert.equal(order.orderId,'ORD_recovery');assert.equal(order.qrCode,null);assert.equal(calls.length,1);
   assert.ok(Math.abs(Date.parse(order.dateOfExpiration)-before-3*86400000)<1000);
   assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.equal(JSON.parse(calls[0].options.body).transactions.payments[0].expiration_time,'P3D');
+  const short=await createPixOrder({amount:10,description:'fixture',externalReference:'raffle_fixture',payerEmail:'fixture@example.invalid'},{waitForQr:false,expirationMinutes:30});
+  assert.equal(JSON.parse(calls[1].options.body).transactions.payments[0].expiration_time,'PT30M');
+  assert.ok(Math.abs(Date.parse(short.dateOfExpiration)-Date.now()-30*60000)<1000);
+  await assert.rejects(createPixOrder({amount:10,description:'fixture',externalReference:'invalid',payerEmail:'fixture@example.invalid'},{waitForQr:false,expirationMinutes:10}),/Prazo/);
   globalThis.fetch=async(url,options)=>{calls.push({url,options});return Response.json({id:'ORD_recovery',status:'action_required',total_amount:'10.00',external_reference:'shop_fixture',transactions:{payments:[{payment_method:{qr_code:'fake-qr'}}]}});};
   const synced=await getOrder(order.orderId);assert.equal(synced.raw.transactions.payments[0].payment_method.qr_code,'fake-qr');
-  assert.equal(calls.filter(c=>c.options.method==='POST').length,1);
+  assert.equal(calls.filter(c=>c.options.method==='POST').length,2);
   globalThis.fetch=async(_url,options)=>{options.signal.throwIfAborted();throw new Error('expected abort');};
   await assert.rejects(createPixOrder({amount:10,description:'fixture',externalReference:'shop_fixture',payerEmail:'fixture@example.invalid'},{signal:AbortSignal.abort(),waitForQr:false}),/abort/i);
  }finally{globalThis.fetch=original;if(token===undefined)delete process.env.MP_ACCESS_TOKEN;else process.env.MP_ACCESS_TOKEN=token;}

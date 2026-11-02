@@ -109,3 +109,8 @@ A migration 0054 permite registrar o resultado sem link externo, preservando os 
 ## Pausa automática por cotas totalmente pagas
 
 A migration 0055 pausa campanhas abertas assim que a última cota tem pagamento confirmado, sem necessidade de pausa manual. Cotas apenas reservadas não bastam. A confirmação de pagamento e os prêmios instantâneos continuam na mesma transação. A regra impede reabrir uma campanha sem números disponíveis; estornos não reabrem vendas automaticamente. A apuração permanece uma ação explícita da equipe. A aplicação também pausa campanhas abertas já totalmente pagas, com evento de auditoria, sem alterar pedidos, prêmios ou saldos. A regra entra em vigor no banco sem depender de novo deploy do aplicativo.
+
+
+## Reservas de dez minutos
+
+A implementação atual usa o prazo independente de reserva de dez minutos, com cancelamento confirmado no provedor e verificação a cada minuto. Esta regra substitui o prazo anterior de até três dias para reservas de rifas; lotes e loja não mudam. Ativação, limites e acompanhamento em `docs/rifa-reserva-dez-minutos.md`. A migration 0056 e o deploy precisam estar aplicados, e o job do Supabase precisa estar ativo para funcionamento com o navegador fechado.

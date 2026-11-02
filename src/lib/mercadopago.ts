@@ -58,12 +58,12 @@ export function mpWebhookUrl(): string | null {
 }
 
 /**
- * Vencimento local do Pix (mesmo intervalo enviado em `expiration_time: P3D`).
+ * Vencimento local do Pix, no mesmo intervalo enviado ao provedor.
  * Usado como fallback quando a resposta de criação não traz a data.
  * UTC; a conversão de fuso pertence apenas à apresentação.
  */
-function expiryIso(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString();
+function expiryIso(minutes: number): string {
+  return new Date(Date.now() + minutes * 60_000).toISOString();
 }
 
 async function mpFetch(
@@ -165,10 +165,12 @@ export async function createPixOrder(input: {
   payerFirstName?: string;
   payerLastName?: string;
   identification?: { type: "CPF" | "CNPJ"; number: string };
-}, options: { waitForQr?: boolean; signal?: AbortSignal } = {}): Promise<MpPixOrder> {
+}, options: { waitForQr?: boolean; signal?: AbortSignal; expirationMinutes?: number } = {}): Promise<MpPixOrder> {
   const signal = options.signal ?? AbortSignal.timeout(25000);
   const amount = input.amount.toFixed(2);
-  const localExpiry = expiryIso(PIX_EXPIRES_DAYS);
+  const minutes = options.expirationMinutes ?? PIX_EXPIRES_DAYS * 24 * 60;
+  if (!Number.isInteger(minutes) || minutes < 30 || minutes > 30 * 24 * 60) throw new Error("Prazo do Pix inválido.");
+  const localExpiry = expiryIso(minutes);
 
   const json = (await mpFetch("/v1/orders", {
     method: "POST",
@@ -185,7 +187,7 @@ export async function createPixOrder(input: {
           {
             amount,
             payment_method: { id: "pix", type: "bank_transfer" },
-            expiration_time: `P${PIX_EXPIRES_DAYS}D`,
+            expiration_time: options.expirationMinutes === undefined ? `P${PIX_EXPIRES_DAYS}D` : `PT${minutes}M`,
           },
         ],
       },

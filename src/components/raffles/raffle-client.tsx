@@ -9,6 +9,7 @@ import { reserveRaffle, refreshRaffleOrder, refreshRaffleOrders } from "@/app/ac
 import { quotaLabel, raffleMoney, raffleStatus, type Raffle, type RaffleOrder, type RaffleAward } from "@/lib/raffles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { raffleReservationDeadline } from "@/lib/raffle-reservation";
 import { usePaymentExpired } from "@/components/client/use-payment-expired";
 
 export type RaffleDetail = { campaign: Raffle; paid: number; reserved: number; results: { title: string; number: number; note: string; evidence: string; status: string }[]; prizes: { id: string; title: string; kind: string; number: number | null; found: boolean }[]; numbers: { number: number; state: string }[] };
@@ -27,7 +28,7 @@ export function RaffleParticipation({ detail: d, from, enabled }: { detail: Raff
     <section className="grid gap-3 rounded-xl border p-4"><h2 className="flex items-center gap-2 font-bold"><Gift className="size-5 text-ouro-ink" />Prêmios da campanha</h2>{d.prizes.map(p => <div key={p.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-muted p-3 text-sm"><span>{p.title}</span><span className="font-semibold">{p.kind === "main" ? "Sorteio principal" : p.found ? "Cota premiada encontrada" : p.number !== null ? `Cota ${quotaLabel(p.number, c.total_numbers)}` : "Cota surpresa"}</span></div>)}<p className="text-xs text-muted-foreground">Cotas premiadas são reveladas após a confirmação do pagamento. Os prêmios ficam disponíveis em Meus prêmios.</p></section>
     <section className="grid gap-4 rounded-xl border p-4"><h2 className="text-lg font-bold">Escolha suas cotas</h2>{c.selection_mode === "both" && <div className="grid grid-cols-2 gap-2"><Button className="h-auto min-h-11 min-w-0 whitespace-normal px-2 py-2" variant={automatic ? "outline" : "default"} onClick={() => { setAutomatic(false); requestKey.current = null; }}>Escolher números</Button><Button className="h-auto min-h-11 min-w-0 whitespace-normal px-2 py-2" variant={automatic ? "default" : "outline"} onClick={() => { setAutomatic(true); requestKey.current = null; }}>Receber aleatórios</Button></div>}
       {automatic ? <label className="grid gap-2 text-sm">Quantidade<Input type="number" min={c.min_quantity} max={c.max_quantity} value={quantity} onChange={e => { setQuantity(Number(e.target.value)); requestKey.current = null; }} /><span className="text-xs text-muted-foreground">Os números são atribuídos no momento da reserva.</span></label> : <><form className="flex gap-2" action={`/painel/rifas/${c.id}`}><label className="sr-only" htmlFor="quota-search">Buscar cota</label><Input id="quota-search" type="number" name="from" min={0} max={c.total_numbers - 1} placeholder="Buscar número" /><Button variant="outline">Buscar</Button></form><div className="flex flex-wrap gap-3 text-xs"><span>○ Disponível</span><span className="text-ouro-ink">● Selecionada</span><span className="text-muted-foreground">● Paga ou reservada</span></div><div className="grid grid-cols-5 gap-2 sm:grid-cols-10">{d.numbers.map(n => <button type="button" key={n.number} aria-pressed={selected.includes(n.number)} disabled={pending || n.state !== "available" || c.status !== "open"} onClick={() => toggle(n.number)} className={`min-h-10 rounded-lg border px-1 text-xs font-semibold tabular-nums disabled:cursor-not-allowed disabled:opacity-40 ${selected.includes(n.number) ? "border-amarelo bg-amarelo text-black" : "bg-background"}`} title={n.state === "available" ? "Disponível" : n.state === "paid" ? "Paga" : "Reservada"}>{quotaLabel(n.number, c.total_numbers)}</button>)}</div><div className="flex flex-wrap items-center justify-between gap-2 text-sm"><Button asChild variant="outline" disabled={from === 0}><Link aria-disabled={from === 0} href={`?from=${Math.max(0, from - 100)}`}>Anterior</Link></Button><span>{quotaLabel(from, c.total_numbers)}–{quotaLabel(Math.min(from + 99, c.total_numbers - 1), c.total_numbers)}</span><Button asChild variant="outline" disabled={from + 100 >= c.total_numbers}><Link aria-disabled={from + 100 >= c.total_numbers} href={`?from=${Math.min(c.total_numbers - 1, from + 100)}`}>Próximas</Link></Button></div>{selected.length > 0 && <p className="break-words text-xs text-muted-foreground">Selecionadas: {selected.map(n => quotaLabel(n, c.total_numbers)).join(", ")}</p>}</>}
-      <p className="text-xs text-muted-foreground">Entre {c.min_quantity} e {c.max_quantity} cotas por compra. Uma reserva aberta por campanha. Compras não geram Caracoins nem alteram seu elo.</p>
+      <p className="text-xs text-muted-foreground">Entre {c.min_quantity} e {c.max_quantity} cotas por compra. Reserva por 10 minutos. Uma reserva aberta por campanha. Compras não geram Caracoins nem alteram seu elo.</p>
       <div className="grid gap-3 rounded-xl bg-amarelo/10 p-4"><div className="flex flex-wrap justify-between gap-2"><span>{qty} cota(s)</span><strong>{raffleMoney(qty * c.unit_price)}</strong></div><Button className="h-auto min-h-10 whitespace-normal py-3" disabled={pending || !valid || c.status !== "open" || !enabled} onClick={() => start(async () => {
         requestKey.current ??= crypto.randomUUID();
         const r = await reserveRaffle({ campaign: c.id, key: requestKey.current, ...(automatic ? { quantity } : { numbers: selected }) });
@@ -54,7 +55,7 @@ export function RaffleOrdersList({ orders, awards }: { orders: RaffleOrder[]; aw
         cursor.current = (cursor.current + 3) % Math.max(1, activeCount);
         if (!disposed && result.ok && result.data.some(updated => {
           const previous = orders.find(o => o.id === updated.id);
-          return previous && (previous.status !== updated.status || previous.qr_code !== updated.qr_code || previous.expires_at !== updated.expires_at);
+          return previous && (previous.status !== updated.status || previous.qr_code !== updated.qr_code || previous.expires_at !== updated.expires_at || previous.reservation_expires_at !== updated.reservation_expires_at);
         })) router.refresh();
       } catch { /* Webhook e reconciliação seguem ativos; mantém as reservas. */ }
       finally { busy.current = false; }
@@ -72,7 +73,8 @@ export function RaffleOrderCard({ order, awards }: { order: RaffleOrder; awards:
   const [pending, start] = useTransition();
   const router = useRouter();
   const active = ["creating", "pending"].includes(order.status);
-  const expired = usePaymentExpired(order.expires_at);
+  const reservationDeadline = raffleReservationDeadline(order);
+  const expired = usePaymentExpired(reservationDeadline);
   const update = (cancel = false) => start(async () => {
     try {
       const result = await refreshRaffleOrder(order.id, cancel);
@@ -103,7 +105,7 @@ export function RaffleOrderCard({ order, awards }: { order: RaffleOrder; awards:
           <label className="grid gap-2 text-sm">Pix copia e cola<textarea value={order.qr_code} readOnly rows={4} className="w-full rounded-lg border bg-background p-3 text-xs" onFocus={e => e.target.select()} /></label>
           <Button onClick={async () => { try { await navigator.clipboard.writeText(order.qr_code!); toast.success("Pix copiado!"); } catch { toast.error("Selecione e copie o código acima."); } }}><Copy />Copiar Pix</Button>
         </> : <p className="text-sm">Preparando o Pix. Sua reserva já foi salva e será atualizada automaticamente.</p>}
-        {order.expires_at && <p className="text-xs">Prazo: {new Date(order.expires_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>}
+        {reservationDeadline && <p className="text-xs">Reserva por 10 minutos. Prazo: {new Date(reservationDeadline).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>}
       </div>}
     </>}
     {order.status === "review" && <p className="text-sm text-destructive">Pagamento em análise. Fale com a equipe antes de efetuar uma nova compra.</p>}

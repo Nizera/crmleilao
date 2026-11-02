@@ -1,7 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createPixOrder, getOrder, qrFrom, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";
+import { createPixOrder, cancelPixOrder, getOrder, qrFrom, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";
+import { raffleReservationExpired } from "@/lib/raffle-reservation";
 import type { RaffleOrder } from "@/lib/raffles";
 
 export async function rafflesEnabled() {
@@ -18,7 +19,7 @@ export async function ensureRafflePix(order: RaffleOrder, signal?: AbortSignal) 
   const admin = createAdminClient();
   const { data: customer, error } = await admin.from("customers").select("email").eq("id", order.customer_id).single();
   if (error || !customer?.email) throw new Error("Comprador indisponível.");
-  const payment = await createPixOrder({ amount: Number(order.amount), description: `Rifa Os Caras das Legends · ${order.code}`, externalReference: order.external_reference, payerEmail: customer.email }, { waitForQr: false, signal });
+  const payment = await createPixOrder({ amount: Number(order.amount), description: `Rifa Os Caras das Legends · ${order.code}`, externalReference: order.external_reference, payerEmail: customer.email }, { waitForQr: false, signal, expirationMinutes: 30 });
   if (Math.round(payment.amount * 100) !== Math.round(Number(order.amount) * 100)) throw new Error("Pagamento divergente.");
   const { error: saveError } = await admin.from("raffle_orders").update({ mp_order_id: payment.orderId, qr_code: payment.qrCode, qr_code_base64: payment.qrCodeBase64, expires_at: payment.dateOfExpiration }).eq("id", order.id).or(`mp_order_id.is.null,mp_order_id.eq.${payment.orderId}`);
   if (saveError) throw saveError;
@@ -37,14 +38,24 @@ export async function settleRafflePayment(payment: MpOrder) {
 }
 export async function syncRafflePayment(order: RaffleOrder, signal?: AbortSignal) {
   if (!order.mp_order_id) return;
-  const payment = await getOrder(order.mp_order_id, signal);
-  if (!payment || payment.externalReference !== order.external_reference || Math.round(payment.amount * 100) !== Math.round(Number(order.amount) * 100)) throw new Error("Pagamento divergente.");
+  const matches = (payment: MpOrder | null): payment is MpOrder => Boolean(payment && payment.id === order.mp_order_id && payment.externalReference === order.external_reference && Math.round(payment.amount * 100) === Math.round(Number(order.amount) * 100));
+  let payment = await getOrder(order.mp_order_id, signal);
+  if (!matches(payment)) throw new Error("Pagamento divergente.");
+  // Confirma primeiro eventuais pagamentos concluídos: o relógio não desfaz pagamento.
+  await settleRafflePayment(payment);
+  const overdue = raffleReservationExpired(order);
+  if (overdue && !targetChargeStatus(payment.status, payment.statusDetail)) {
+    await cancelPixOrder(order.mp_order_id);
+    // Falha/404/cancelamento em processamento nunca libera cotas por conta própria.
+    payment = await getOrder(order.mp_order_id, signal);
+    if (!matches(payment)) throw new Error("Cancelamento ainda não confirmado.");
+    await settleRafflePayment(payment);
+  }
   const qr = qrFrom(payment.raw);
-  if (qr.qrCode) {
+  if (!overdue && qr.qrCode) {
     const { error } = await createAdminClient().from("raffle_orders").update({ qr_code: qr.qrCode, qr_code_base64: qr.qrCodeBase64 }).eq("id", order.id).eq("mp_order_id", payment.id);
     if (error) throw error;
   }
-  await settleRafflePayment(payment);
 }
 
 export async function reconcileRafflePayments(budget = 18000) {
