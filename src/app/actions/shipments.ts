@@ -1,4 +1,6 @@
 "use server";
+import { z } from "zod";
+import { allow } from "@/lib/ratelimit";
 
 import { revalidatePath, updateTag } from "next/cache";
 
@@ -40,6 +42,17 @@ import { createClient } from "@/lib/supabase/server";
 import { formatBRL, waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
+
+export async function releaseExternalPrizeFreight(customerId:string,lotIds:string[],reason:string):Promise<ActionResult>{
+ try{
+  const {profile}=await requireAdmin();
+  if(profile.role==='viewer'||!await allow('store-catalog-write',profile.id))return failure('Seu perfil não permite liberar fretes.');
+  if(!z.object({customerId:z.uuid(),lotIds:z.array(z.uuid()).min(1).max(500),reason:z.string().trim().min(5).max(500)}).safeParse({customerId,lotIds,reason}).success)return failure('Confira os prêmios e informe o motivo.');
+  const {error}=await (await createClient()).rpc('release_external_prize_freight',{p_customer:customerId,p_lots:lotIds,p_reason:reason.trim()});
+  if(error)return failure(error.code==='P0001'?error.message:'Não foi possível liberar. Confira se a migration 0050 foi aplicada.');
+  revalidateShipmentPaths();revalidatePath('/admin/relatorios');return {ok:true,data:null};
+ }catch(error){rethrowIfRedirect(error);return failure('Não foi possível liberar o frete agora.');}
+}
 
 function revalidateShipmentPaths() {
   updateTag("dashboard");

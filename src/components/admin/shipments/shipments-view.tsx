@@ -26,6 +26,7 @@ import {
   printShipmentAction,
   syncShipmentAction,
   ensureWebhookAction,
+  releaseExternalPrizeFreight,
 } from "@/app/actions/shipments";
 import { ShipmentDetailSheet } from "@/components/admin/shipments/shipment-detail-sheet";
 import { ShipmentFormSheet } from "@/components/admin/shipments/shipment-form-sheet";
@@ -226,10 +227,17 @@ export function ShipmentsView({
 
   /** Status do frete de uma linha da fila. */
   const freightLabel = (row: ShipmentQueueRow) => {
-    const label = row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
+    const label = row.companyFreight ? "Frete liberado — prêmio externo" : row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
     return row.pendingShipment
       ? `${SHIPMENT_STATUS_LABELS[row.pendingShipment.status]} · ${label}`
       : label;
+  };
+
+  const releaseFreight=(row:ShipmentQueueRow)=>{
+    const ids=row.lots.filter(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status)).map(l=>l.id);
+    const reason=window.prompt('Motivo da liberação do frete dos prêmios de R$ 0:', 'Prêmio da rifa.digital — frete por conta da empresa');
+    if(reason===null)return;
+    startTransition(async()=>{const result=await releaseExternalPrizeFreight(row.customerId,ids,reason);if(!result.ok)toast.error(result.error);else{toast.success('Frete liberado para os prêmios selecionados.');router.refresh();}});
   };
 
   const notify = (shipment: Shipment) => {
@@ -556,16 +564,16 @@ export function ShipmentsView({
                           </Button>
                         </div>
                       ) : (
-                        <Button
+                        <div className="flex items-center gap-1"><Button
                           size="sm"
-                          disabled={!canCreate || row.unpaidTotal > 0 || row.hasActiveCharge || row.freightStatus !== "paid"}
+                          disabled={!canCreate || row.unpaidTotal > 0 || row.hasActiveCharge || (!row.companyFreight && row.freightStatus !== "paid")}
                           onClick={() => setEmitTarget(row)}
                           title={
                             row.unpaidTotal > 0
                               ? "Há lotes pendentes de pagamento para este cliente."
                               : row.hasActiveCharge
                                 ? "O cliente tem uma cobrança aguardando pagamento."
-                              : row.freightStatus !== "paid"
+                              : (!row.companyFreight && row.freightStatus !== "paid")
                                 ? "O frete de todos os períodos dos lotes precisa estar pago."
                                 : canCreate
                                   ? undefined
@@ -578,6 +586,7 @@ export function ShipmentsView({
                         >
                           Emitir envio
                         </Button>
+                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releaseFreight(row)}>Liberar frete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
                       )}
                     </TableCell>
                   </TableRow>

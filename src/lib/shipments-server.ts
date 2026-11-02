@@ -223,6 +223,7 @@ export type ShipmentQueueRow = {
   pendingShipment: Shipment | null;
   freightStatus: ShipmentFreightStatus;
   hasActiveCharge: boolean;
+  companyFreight?: boolean;
 };
 
 function round2(value: number): number {
@@ -325,6 +326,12 @@ export async function listShipmentQueue(params: {
   }
 
   const lotIds = rows.map((row) => row.id);
+  const releasedPrizeLots = new Set<string>();
+  for(const piece of chunk(lotIds,200)){
+    const {data,error}=await admin.from('external_prize_freight_releases').select('lot_id').in('lot_id',piece);
+    if(error)throw new Error('Não foi possível conferir liberações de frete. Confira a migration 0050.');
+    for(const release of data??[])releasedPrizeLots.add(release.lot_id);
+  }
   const links: { lot_id: string; shipment_id: string }[] = [];
   for (const lotChunk of chunk(lotIds, 200)) {
     const { data, error: linksError } = await admin
@@ -424,6 +431,7 @@ export async function listShipmentQueue(params: {
       pendingShipment: entry.pendingShipment,
       freightStatus: freightStates.get(customerId) ?? 'none',
       hasActiveCharge: customersWithOpenCharges.has(customerId),
+      companyFreight: entry.lots.length>0 && entry.lots.every(l=>l.arremate_value===0 && releasedPrizeLots.has(l.id)),
     });
   }
 
