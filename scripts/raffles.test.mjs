@@ -36,6 +36,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
     assert.ok(baseMigration.trim().length > 100, 'A migration 0043 está vazia: recupere a versão original antes de testar.');
     await db.exec(baseMigration);
     await db.exec(await readFile(new URL('../supabase/migrations/0044_raffle_optional_shipping_date.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/0052_raffle_photos.sql', import.meta.url), 'utf8'));
     const draft = { title: 'Campanha teste', description: 'Regulamento da campanha teste.', total_numbers: 10, unit_price: 19.99, selection_mode: 'both', draw_method: 'external', draw_rules: 'Resultado externo com regra definida.', shipping_date: '2026-11-10', image_url: '', hide_winning_numbers: true, min_quantity: 1, max_quantity: 5 };
     await t.test('cliente e viewer não criam campanha nem liberam vendas', async () => {
       await as(a); await assert.rejects(scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]), /Acesso negado/);
@@ -121,9 +122,36 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'http://inseguro.invalid']), /HTTPS/);
       await db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']);
       await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /já registrado/);
+      await as(a);
+      const mainAwards = await scalar('select get_raffle_awards(1)');
+      const main = mainAwards.find(award => award.order_id === o && award.kind === 'main');
+      assert.ok(main, 'O prêmio principal aparece em Meus prêmios do dono da cota');
+      assert.equal(main.customer_id, a);
+      await owner();
+      assert.equal(await scalar('select customer_id from logistics_pending where id=$1', [main.logistics_id]), a);
+      assert.equal(await scalar('select count(*)::int from raffle_awards where prize_id=$1', [p]), 1);
+      await as(b); assert.deepEqual(await scalar('select get_raffle_awards(1,$1::uuid[])', [[o]]), []);
+      await as(admin);
       await manage(next, 'close');
       const result = await scalar('select list_raffle_admin_orders($1,null,$2,1)', [next, '000']);
       assert.equal(result.total, 1); assert.equal(result.items[0].has_award, true);
+    });
+    await t.test('galeria exige equipe com escrita, limita fotos e mantém capa e auditoria', async () => {
+      await as(admin); const campaign = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]);
+      const photos = ['https://example.invalid/capa.webp', 'https://example.invalid/detalhe.webp'];
+      await as(a); await assert.rejects(db.query('select set_raffle_photos($1,$2::text[])', [campaign, photos]), /Acesso negado/);
+      await as(viewer); await assert.rejects(db.query('select set_raffle_photos($1,$2::text[])', [campaign, photos]), /Acesso negado/);
+      await as(admin);
+      for (const invalid of [Array(7).fill(photos[0]), ['javascript:alert(1)'], [null], null]) {
+        await assert.rejects(db.query('select set_raffle_photos($1,$2::text[])', [campaign, invalid]), /seis imagens/);
+      }
+      await db.query('select set_raffle_photos($1,$2::text[])', [campaign, photos]);
+      assert.equal(await scalar('select image_url from raffle_campaigns where id=$1', [campaign]), photos[0]);
+      assert.deepEqual(await scalar('select image_urls from raffle_campaigns where id=$1', [campaign]), photos);
+      assert.equal(await scalar("select actor from raffle_events where campaign_id=$1 and action='Fotos da campanha atualizadas'", [campaign]), admin);
+      await db.query('select set_raffle_photos($1,$2::text[])', [campaign, []]);
+      assert.equal(await scalar('select image_url from raffle_campaigns where id=$1', [campaign]), '');
+      await as('', 'anon'); await assert.rejects(db.query('select set_raffle_photos($1,$2::text[])', [campaign, photos]), /permission denied/);
     });
     await t.test('estorno não redistribui cota e bloqueia prêmio ainda não enviado', async () => {
       await settle(instantOrder, 'review'); await owner();

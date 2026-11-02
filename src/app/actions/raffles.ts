@@ -78,6 +78,17 @@ export async function uploadRaffleImage(form: FormData): Promise<ActionResult<st
     return { ok: true, data: admin.storage.from("lot-images").getPublicUrl(path).data.publicUrl };
   } catch (error) { return failure(error); }
 }
+export async function saveRafflePhotos(id: string, urls: string[]): Promise<ActionResult> {
+  try {
+    await staff();
+    const prefix = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/`;
+    const parsed = z.object({ id: z.uuid(), urls: z.array(z.url().max(2000).refine(url => url.startsWith(prefix))).max(6) }).safeParse({ id, urls });
+    if (!parsed.success) return { ok: false, error: "Use até seis fotos enviadas pelo aplicativo." };
+    const { error } = await (await createClient()).rpc("set_raffle_photos", { p_campaign: id, p_urls: [...new Set(parsed.data.urls)] });
+    if (error) throw error;
+    invalidate(); return { ok: true, data: null };
+  } catch (error) { return failure(error); }
+}
 export async function manageRaffle(input: unknown): Promise<ActionResult> {
   try {
     await staff();

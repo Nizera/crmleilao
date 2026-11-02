@@ -82,3 +82,13 @@ Atualização: a migration `0044_raffle_optional_shipping_date.sql` torna a prev
 `npm run test:raffles` executa a migration real em PostgreSQL embarcado descartável (PGlite), com papéis separados. Verifica acesso negado, isolamento, números ocultos, zero válido, valores inválidos, seleção automática, idempotência, colisão de cotas, valor divergente, liquidação, prêmio/logística únicos, expiração, pagamento tardio, resultado e estorno.
 
 Nenhum teste faz compra, transferência, sorteio ou chamada ao Mercado Pago. PGlite não substitui teste de carga com múltiplas conexões PostgreSQL, nem o teste integrado do Pix e de emissão de etiqueta em ambiente controlado. A interface com dados reais ainda depende da aplicação das migrations novas. A validação visual isolada dos componentes e os resultados atualizados estão em `validacao-loja-rifas-2026-11-01.md`.
+
+
+## Apuração e fotos do prêmio principal
+
+1. Pause as vendas da campanha e resolva as reservas ainda abertas.
+2. Na aba Apuração, informe a cota vencedora paga, os detalhes e o link HTTPS do resultado externo.
+3. Confirme o registro. O dono da cota recebe o prêmio em Meus prêmios, e o mesmo prêmio entra na fila de separação. O registro não pode ser sobrescrito.
+4. Na aba Fotos, envie até seis imagens; a primeira é a capa. Salve antes de sair. O ganhador pode ampliar as imagens em Meus prêmios. As imagens são da campanha e são compartilhadas entre seus prêmios.
+
+A migration 0052 adiciona apenas a galeria e uma função restrita à equipe com escrita, com auditoria. Não altera cotas, pagamentos ou ganhadores. As campanhas antigas continuam usando a capa. A apuração permanece externa; o app registra o resultado informado pela equipe.
