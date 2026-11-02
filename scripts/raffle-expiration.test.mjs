@@ -52,4 +52,12 @@ test('agendamento exige segredo correto antes de consultar ou cancelar pagamento
   assert.equal(runs, 0);
   assert.equal((await GET(new Request('https://example.invalid', { headers: { authorization: `Bearer ${env.CRON_SECRET}` } }))).status, 200);
   assert.equal(runs, 1);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = time => crypto.createHmac('sha256', env.CRON_SECRET).update(`raffle-expiration:${time}`).digest('hex');
+  const signed = (time, token = signature(time)) => new Request('https://example.invalid', { headers: { authorization: `Bearer ${token}`, 'x-raffle-cron-time': time } });
+  assert.equal((await GET(signed(timestamp))).status, 200);
+  assert.equal(runs, 2);
+  for (const time of [String(Number(timestamp) - 120), String(Number(timestamp) + 120), 'invalid']) assert.equal((await GET(signed(time))).status, 401);
+  assert.equal((await GET(signed(timestamp, 'invalid'))).status, 401);
+  assert.equal(runs, 2);
 });

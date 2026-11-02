@@ -23,7 +23,7 @@ Essa agenda roda no Supabase e não depende da frequência de cron disponível n
 
 ## Segurança e testes
 
-O endpoint recusa pedidos sem autenticação. O agendamento usa Vault e restringe os papéis do app nas tabelas da fila HTTP. Administradores com acesso direto ao banco continuam dentro da fronteira de confiança. Nenhum segredo é gravado neste arquivo ou nos scripts versionados.
+O endpoint recusa pedidos sem autenticação. O agendamento usa Vault e uma assinatura HMAC com validade de até 90 segundos, exclusiva desta rotina. O segredo permanente não é incluído nos cabeçalhos da fila HTTP; não dependemos de a fila ser invisível a todos os papéis do banco. Administradores com acesso direto ao banco continuam dentro da fronteira de confiança. Nenhum segredo é gravado neste arquivo ou nos scripts versionados.
 
 Os testes usam respostas simuladas do provedor e verificam: prazo, Pix padrão preservado, Pix de rifa com 30 minutos, cancelamento confirmado, cancelamento pendente/falho, pagamento concorrente, divergência de valor, expiração no banco e autenticação da rotina. Não foi criado nem cancelado um pagamento real para validar este ajuste, nem foi ativado o job no banco pelo agente.
 
