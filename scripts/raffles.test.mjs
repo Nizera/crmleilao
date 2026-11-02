@@ -39,6 +39,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
     await db.exec(await readFile(new URL('../supabase/migrations/0052_raffle_photos.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0053_raffle_close_after_results.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0054_raffle_optional_result_link.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/0055_raffle_pause_when_paid_out.sql', import.meta.url), 'utf8'));
     const draft = { title: 'Campanha teste', description: 'Regulamento da campanha teste.', total_numbers: 10, unit_price: 19.99, selection_mode: 'both', draw_method: 'external', draw_rules: 'Resultado externo com regra definida.', shipping_date: '2026-11-10', image_url: '', hide_winning_numbers: true, min_quantity: 1, max_quantity: 5 };
     await t.test('cliente e viewer não criam campanha nem liberam vendas', async () => {
       await as(a); await assert.rejects(scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]), /Acesso negado/);
@@ -139,6 +140,24 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await manage(next, 'close');
       const result = await scalar('select list_raffle_admin_orders($1,null,$2,1)', [next, '000']);
       assert.equal(result.total, 1); assert.equal(result.items[0].has_award, true);
+    });
+    await t.test('só cotas pagas pausam automaticamente; reserva não basta e prêmio continua vinculado', async () => {
+      await as(admin); const next = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify({ ...draft, total_numbers: 2, max_quantity: 2 })]);
+      await manage(next, 'main', 'Principal'); await manage(next, 'instant', 'Surpresa', 1); await manage(next, 'open');
+      await as(a); const first = await reserve(next, [0]);
+      await as(b); const second = await reserve(next, [1]);
+      await owner(); assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'open');
+      await settle(first, 'paid'); await owner();
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'open');
+      await settle(second, 'paid'); await owner();
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'paused');
+      assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1', [next]), 1);
+      await settle(second, 'paid'); await owner();
+      assert.equal(await scalar("select count(*)::int from raffle_events where campaign_id=$1 and action='Todas as cotas pagas: vendas pausadas para apuração'", [next]), 1);
+      await as(admin); await assert.rejects(manage(next, 'open'), /Todas as cotas/);
+      const prize = await scalar("select id from raffle_prizes where campaign_id=$1 and kind='main'", [next]);
+      await db.query('select record_raffle_winner($1,0,$2,null)', [prize, 'Resultado comprovado']);
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'closed');
     });
     await t.test('vários prêmios principais mantêm a pausa até o último ganhador', async () => {
       await as(admin); const next = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]);

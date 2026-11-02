@@ -104,3 +104,8 @@ A migration 0053 encerra a campanha na mesma transação que registra seu últim
 ## Link do resultado opcional
 
 A migration 0054 permite registrar o resultado sem link externo, preservando os links de apurações anteriores. O formulário pede apenas a cota e os detalhes (mínimo de 10 caracteres). A identificação do comprador, a confirmação do pagamento e o encerramento automático continuam ativos.
+
+
+## Pausa automática por cotas totalmente pagas
+
+A migration 0055 pausa campanhas abertas assim que a última cota tem pagamento confirmado, sem necessidade de pausa manual. Cotas apenas reservadas não bastam. A confirmação de pagamento e os prêmios instantâneos continuam na mesma transação. A regra impede reabrir uma campanha sem números disponíveis; estornos não reabrem vendas automaticamente. A apuração permanece uma ação explícita da equipe. A aplicação também pausa campanhas abertas já totalmente pagas, com evento de auditoria, sem alterar pedidos, prêmios ou saldos. A regra entra em vigor no banco sem depender de novo deploy do aplicativo.
