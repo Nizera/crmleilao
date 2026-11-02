@@ -7,6 +7,7 @@ import {
 import { ClientHeader } from "@/components/client/client-header";
 import { ClientBottomNav } from "@/components/client/client-bottom-nav";
 import { getCustomerCaracoinsBalance } from "@/lib/loyalty";
+import { ClientModuleNav } from "@/components/client/client-module-nav";
 
 // Rotas autenticadas leem cookies() na request e não entram no shell estático.
 export const instant = false;
@@ -32,7 +33,8 @@ export default async function ClientLayout({
         unreadCount={unreadCount}
         caracoins={caracoins}
       />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-24 pt-6">
+      <main className="mx-auto w-full max-w-2xl has-[.store-page]:max-w-7xl flex-1 px-4 pb-24 pt-6">
+        <ClientModuleNav />
         {children}
         <footer className="mt-10 border-t border-ouro/20 pt-4 text-center text-xs text-muted-foreground">
           Os Caras das Legends · Leilão diário de colecionáveis

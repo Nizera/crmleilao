@@ -29,13 +29,14 @@ test('Pix: ID preservado sem QR, UTC correto, retomada por GET e timeout propaga
 });
 
 test('Webhook: HMAC obrigatório, valor consultado no provedor e replay encaminhado com segurança',async()=>{
- let consulted=0,settled=0;
- globalThis.__webhookAudit={getOrder:async()=>{consulted++;return {id:'ORD_fixture',externalReference:'shop_fixture',status:'processed',statusDetail:'accredited',amount:10};},settleStoreMpOrder:async()=>{settled++;return {ok:true};}};
+ let consulted=0,settled=0,raffleSettled=0,reference='shop_fixture';
+ globalThis.__webhookAudit={getOrder:async()=>{consulted++;return {id:'ORD_fixture',externalReference:reference,status:'processed',statusDetail:'accredited',amount:10};},settleStoreMpOrder:async()=>{settled++;return {ok:true};},settleRafflePayment:async()=>{raffleSettled++;}};
  let source=await read('../src/app/api/webhooks/mercadopago/[token]/route.ts');
  source=source.replace('import { revalidatePath, revalidateTag } from "next/cache";','const revalidatePath=()=>{};const revalidateTag=()=>{};')
   .replace('import { settleChargeByReference } from "@/lib/charges-server";','const settleChargeByReference=async()=>({ok:true});')
   .replace('import { getOrder, targetChargeStatus } from "@/lib/mercadopago";','const {getOrder}=globalThis.__webhookAudit;const targetChargeStatus=()=>"approved";')
-  .replace('import { settleStoreMpOrder } from "@/lib/store-server";','const {settleStoreMpOrder}=globalThis.__webhookAudit;');
+  .replace('import { settleStoreMpOrder } from "@/lib/store-server";','const {settleStoreMpOrder}=globalThis.__webhookAudit;')
+  .replace('import { settleRafflePayment } from "@/lib/raffles-server";','const {settleRafflePayment}=globalThis.__webhookAudit;');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
  const {POST}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
  const previous={token:process.env.MP_WEBHOOK_TOKEN,secret:process.env.MP_WEBHOOK_SECRET};process.env.MP_WEBHOOK_TOKEN='fake-webhook-path';process.env.MP_WEBHOOK_SECRET='fake-hmac-secret';
@@ -48,7 +49,8 @@ test('Webhook: HMAC obrigatório, valor consultado no provedor e replay encaminh
   const signature=`ts=${timestamp},v1=${digest}`;
   assert.equal((await POST(request(signature),params)).status,200);assert.equal((await POST(request(signature),params)).status,200);
   assert.equal(consulted,2);assert.equal(settled,2); // idempotência financeira é exercitada no PostgreSQL.
-  delete process.env.MP_WEBHOOK_SECRET;assert.equal((await POST(request(signature),params)).status,503);assert.equal(consulted,2);
+  reference='raffle_fixture';assert.equal((await POST(request(signature),params)).status,200);assert.equal(raffleSettled,1);assert.equal(consulted,3);assert.equal(settled,2);
+  delete process.env.MP_WEBHOOK_SECRET;assert.equal((await POST(request(signature),params)).status,503);assert.equal(consulted,3);
  }finally{for(const [name,value]of [['MP_WEBHOOK_TOKEN',previous.token],['MP_WEBHOOK_SECRET',previous.secret]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}delete globalThis.__webhookAudit;}
 });
 
@@ -63,10 +65,15 @@ test('Loja: falha após criar não perde ID e QR é atualizado sem outro POST',a
   .replace('import { createPixOrder, getOrder, qrFrom, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";','const {createPixOrder,getOrder}=globalThis.__storeAudit;const qrFrom=raw=>({qrCode:raw.transactions.payments[0].payment_method.qr_code});const targetChargeStatus=()=>null;')
   .replace('import { isStoreOrderOpen, type StoreOrder } from "@/lib/store";','const isStoreOrderOpen=o=>["creating","pending"].includes(o.payment_status);');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
- const {ensureStorePix,syncStoreOrder}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+ const {ensureStorePix,syncStoreOrder,reconcileStoreOrders}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
  try{
   await ensureStorePix(state);assert.equal(state.mp_order_id,'ORD_fixture');assert.equal(posts,1);assert.equal(gets,0);
   await ensureStorePix(state);await syncStoreOrder(state);assert.equal(posts,1);assert.equal(state.qr_code,'fake-ready-qr');
+  await ensureStorePix({...state,mp_order_id:null,cash_total:0});assert.equal(posts,1);
+  const batches=[[{...state},{...state,id:crypto.randomUUID()}],[{...state,id:crypto.randomUUID()}],[]];let claims=0;
+  db.rpc=async(name)=>{if(name==='claim_store_reconciliation'){claims++;return {error:null,data:batches.shift()??[]};}return {error:null};};
+  assert.deepEqual(await reconcileStoreOrders(),{checked:3,failed:0});assert.equal(claims,3);
+
  }finally{delete globalThis.__storeAudit;}
 });
 

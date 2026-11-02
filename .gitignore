@@ -49,3 +49,10 @@ supabase/.temp/
 
 # assets originais de marca (jah tratados em public/brand)
 /images.zip
+
+# Backups locais com dados pessoais; nunca versionar.
+/private-backups/
+
+# Artefatos de testes, dados fictícios e diagnósticos locais.
+/tmp/
+/output/

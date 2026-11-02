@@ -1,3 +1,4 @@
+export const instant=false;
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/dal";

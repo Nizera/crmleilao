@@ -153,13 +153,15 @@ export function ClientShipmentsCard({
                     {shipment.carrier ?? shipment.service_name ?? "Envio"}
                   </span>
                   <span className="block text-xs leading-relaxed text-muted-foreground">
-                    Pacote com {shipment.lots?.length ?? 0} {(shipment.lots?.length ?? 0) === 1 ? "lote" : "lotes"}
+                    {(shipment.lots?.length ?? 0)>0 ? `Pacote com ${shipment.lots!.length} ${shipment.lots!.length===1?'lote':'lotes'}` : shipment.freight_payer==='company' ? 'Envio do seu prêmio' : 'Seu pacote'}
                     {` · Previsto ${formatDateBR(shipment.batch_date)}`}
                   </span>
                 </div>
               </div>
               <ShipmentStatusBadge status={shipment.status} />
             </div>
+            {shipment.freight_payer==='company' && <p className="mt-2 text-xs font-medium text-ouro-ink">Frete do prêmio por nossa conta.</p>}
+            {!!shipment.logisticsPending?.length && <div className="mt-3 grid min-w-0 gap-1 rounded-lg border p-3 text-xs [overflow-wrap:anywhere]"><p className="font-semibold">Itens adicionais neste pacote</p>{shipment.logisticsPending.map(item=><p key={item.id}>{item.quantity} × {item.title}</p>)}</div>}
             {shipment.tracking_code && <p className="mt-3 min-w-0 rounded-lg bg-muted/50 p-2.5 text-xs text-muted-foreground">Código de rastreio<span className="mt-1 block break-all font-mono font-semibold text-foreground">{shipment.tracking_code}</span></p>}
 
             {(shipment.storeOrders?.length ?? 0)>0 && <div className="mt-3 grid min-w-0 gap-2 rounded-lg border p-3 text-xs [overflow-wrap:anywhere]"><p className="font-semibold">Produtos da loja neste pacote</p>{shipment.storeOrders?.map(order=><div key={order.id} className="min-w-0"><p className="font-medium">{order.code}</p>{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity}× {item.name}</p>)}</div>)}</div>}

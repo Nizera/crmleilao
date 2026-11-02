@@ -1,3 +1,4 @@
+export const instant=false;
 import { requireAdmin } from "@/lib/dal";
 import { dashboardPeriod } from "@/lib/store-dashboard";
 import { getStoreDashboard } from "@/lib/store-dashboard-server";

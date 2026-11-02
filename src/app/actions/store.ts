@@ -1,15 +1,19 @@
 "use server";
 
+import {isLocalStorePilot,storePurchasesEnabled} from "@/lib/store-settings-server";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin, requireCustomer } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
+import {createAdminClient} from "@/lib/supabase/admin";
 import { allow } from "@/lib/ratelimit";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { cartCheckoutSchema, isStoreOrderOpen, type StoreOrder } from "@/lib/store";
 import { ensureStorePix, getOwnStoreOrder, reconcileStoreOrders, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
 import { cancelPixOrder } from "@/lib/mercadopago";
-import { STORE_PREVIEW_ONLY, STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
+import type {StoreFreightQuote} from "@/lib/store-freight";
+import { STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
 
 function invalidateStore() {
   revalidatePath("/painel", "layout");
@@ -19,20 +23,30 @@ function invalidateStore() {
 }
 function failed(error: unknown): ActionResult<never> {
   rethrowIfRedirect(error);
-  console.error("[store]", error instanceof Error ? error.message : "Falha na loja");
+  if (error instanceof Error && error.message === "Preencha seu e-mail em Meus dados antes de pagar por Pix.") return { ok: false, error: error.message };
+  // PostgREST devolve um objeto, não uma instância de Error. Nunca registrar payload,
+  // credenciais, dados do comprador ou detalhes de linha retornados pelo PostgreSQL.
+  const databaseError = error && typeof error === 'object' ? error as {code?:unknown;message?:unknown} : null;
+  console.error("[store]", {
+    code: typeof databaseError?.code === 'string' ? databaseError.code : undefined,
+    message: typeof databaseError?.message === 'string' ? databaseError.message.slice(0,500) : 'Falha na loja',
+  });
   return { ok: false, error: "Não foi possível concluir agora. Se o pedido foi criado, ele continua salvo abaixo para retomar sem cobrar novamente." };
 }
-const domainError = (message: string) => /^(Você já tem|A loja está|Saldo de Caracoins|Estoque insuficiente|Um produto|Modalidade|Preencha seu|O preço|Carrinho inválido|Produto duplicado|O carrinho deve)/.test(message);
+const domainError = (message: string) => /^(Você já tem|A loja está|Saldo de Caracoins|Estoque insuficiente|Um produto|Modalidade|Preencha seu|O preço|Carrinho inválido|Produto duplicado|O carrinho deve|Voucher|Compra não|Separe compras|O frete)/.test(message);
 
 export async function checkoutStoreAction(input: unknown): Promise<ActionResult<StoreOrder>> {
   try {
     const { customer } = await requireCustomer();
-    if (STORE_PREVIEW_ONLY) return {ok:false,error:STORE_PREVIEW_MESSAGE};
+    if (!await storePurchasesEnabled(customer.id)) return {ok:false,error:STORE_PREVIEW_MESSAGE};
     const parsed = cartCheckoutSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: "Revise os produtos e quantidades do carrinho." };
     if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };
     const db = await createClient();
-    const { data: id, error } = await db.rpc("checkout_store_cart", { p_request_key: parsed.data.requestKey, p_items: parsed.data.items });
+    const items=parsed.data.items.map((item,index)=>index===0?{...item,expected_freight_amount:parsed.data.expectedFreight??0}:item);
+    const {data:id,error}=await isLocalStorePilot(customer.id)?await createAdminClient().rpc('run_local_store_pilot',{p_customer:customer.id,p_operation:'checkout',p_request_key:parsed.data.requestKey,p_items:items,p_voucher:parsed.data.voucherId??null}):await db.rpc("checkout_store_cart_v2", { p_request_key: parsed.data.requestKey, p_items: items, p_voucher: parsed.data.voucherId ?? null });
+    if(error?.code==='42883' && error.message.includes('checkout_store_cart_live'))return {ok:false,error:'Atualização interna da loja pendente. Aplique a migration 0042 e tente novamente.'};
+    if(error?.code==='PGRST202')return {ok:false,error:'Aplique a migration 0040 para habilitar o teste local.'};
     if (error) {
       if (domainError(error.message)) return { ok: false, error: error.message };
       throw error;
@@ -95,8 +109,12 @@ export async function handleStoreOrderAction(form: FormData): Promise<ActionResu
     const status = String(form.get("status") ?? "");
     if (!z.uuid().safeParse(id).success || !["processing", "boxed", "fulfilled", "cancelled"].includes(status)) return { ok: false, error: "Pedido ou ação inválidos." };
     const db = await createClient();
-    const { error } = await db.rpc("handle_store_order", { p_order_id: id, p_status: status, p_note: String(form.get("note") ?? "").trim().slice(0,500) });
-    if (error) return { ok: false, error: "Não foi possível movimentar. Confira se o pedido está pago e ainda não foi concluído." };
+    if(!await allow('store-catalog-write',profile.id))return {ok:false,error:'Aguarde um pouco antes de movimentar novamente.'};
+    const note=String(form.get("note")??"").trim().slice(0,500);
+    const declared=String(form.get('declared_value')??'').replace(',','.');
+    if(status==='boxed' && declared && (!Number.isFinite(Number(declared))||Number(declared)<=0))return {ok:false,error:'Informe um valor declarado válido.'};
+    const {error}=status==='boxed'?await db.rpc('box_store_order',{p_order_id:id,p_note:note,p_declared_value:declared?Number(declared):null}):await db.rpc('handle_store_order',{p_order_id:id,p_status:status,p_note:note});
+    if (error) return { ok: false, error: /^(Informe o valor declarado|Confira o valor declarado|Pedido indisponível)/.test(error.message)?error.message:"Não foi possível movimentar. Confira se o pedido está pago e ainda não foi concluído." };
     invalidateStore();
     revalidatePath('/admin/relatorios');
     revalidatePath('/admin/envios');
@@ -129,4 +147,11 @@ export async function syncAdminStoreOrderAction(id: string): Promise<ActionResul
     invalidateStore();
     return { ok: true, data: null };
   } catch (error) { return failed(error); }
+}
+
+export async function getStoreFreightQuoteAction():Promise<ActionResult<StoreFreightQuote>>{
+ try{const {customer}=await requireCustomer();if(!await allow('store-sync',customer.id))return {ok:false,error:'Aguarde alguns segundos para conferir o frete.'};
+ const db=await createClient();const {data,error}=await db.rpc('get_store_freight_quote');if(error||!data)return {ok:false,error:'Não foi possível conferir o frete. Confira a migration 0041 e tente novamente.'};
+ return {ok:true,data:data as StoreFreightQuote};
+ }catch(error){rethrowIfRedirect(error);return {ok:false,error:'Não foi possível conferir o frete. Tente novamente.'};}
 }

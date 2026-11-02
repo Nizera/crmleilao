@@ -7,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isInAuctionPeriod, resolveAuctionPeriod } from "@/lib/auction-period";
 import { computePeriodFreight, type ScopeLot, type ScopeCharge, type ScopeShipment, type ScopeFreightUsage, type ScopeFreightItem, type PeriodFreightStats } from "@/lib/dashboard-scope";
 import { fetchScopeRows } from "@/lib/dashboard-scope-server";
+import { computePeriodReceipts } from "@/lib/period-receipts";
+import { loadFreightReceipts } from "@/lib/period-receipts-server";
 
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const REVENUE_STATUSES = new Set<LotStatus>(["paid", "shipped", "delivered"]);
@@ -90,14 +92,17 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   for (const result of [chargesRes, linksRes, usageRes, freightRes]) if (result.error) console.error("[dashboard] falha na consulta do período:", result.error.message);
   if (lotsError) console.error("[dashboard] falha nos lotes:", lotsError.message);
   const paid = active.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
+  let receiptError=false;
+  const receiptFreight=await loadFreightReceipts(db,period).catch(()=>{receiptError=true;return {charges:[],store:[]};});
+  const receipts=computePeriodReceipts(allLots,receiptFreight.charges,receiptFreight.store,period);
   const pending = active.filter(lot => lot.status === "pending_payment");
   const sum = (lots: ScopeLot[]) => lots.reduce((value, lot) => value + Number(lot.arremate_value), 0);
   const allPaid = allLots.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
   const currentMonth = today.slice(0, 7);
   const [year, month] = currentMonth.split("-").map(Number);
   const previousMonth = new Date(Date.UTC(year, month - 2, 15)).toISOString().slice(0, 7);
-  const monthRevenue = sum(allPaid.filter(lot => spMonthOf(lot.paid_at!) === currentMonth));
-  const previousRevenue = sum(allPaid.filter(lot => spMonthOf(lot.paid_at!) === previousMonth));
+  const monthRevenue = sum(allPaid.filter(lot => spMonthOf(lot.created_at) === currentMonth));
+  const previousRevenue = sum(allPaid.filter(lot => spMonthOf(lot.created_at) === previousMonth));
   const months: DashboardStats["revenue"]["months"] = [];
   const monthIndex = new Map<string, { label: string; value: number }>();
   const [selectedYear, selectedMonth] = period.to.slice(0, 7).split("-").map(Number);
@@ -128,7 +133,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   for (const lot of active) if (lot.status === "paid" && lot.shipping_date && lot.shipping_date >= today) batches.set(lot.shipping_date, (batches.get(lot.shipping_date) ?? 0) + 1);
   const nextBatch = [...batches.entries()].sort(([a], [b]) => a.localeCompare(b))[0];
   return {
-    ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !lotsError && !linksRes.error, closing: !lotsError, freight: !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
+    ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !lotsError && !linksRes.error, closing: !lotsError, freight: !receiptError && !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
     revenue: {
       day: sum(active), dayLots: active.length, month: monthRevenue, prevMonth: previousRevenue,
       deltaPct: previousRevenue > 0 ? Math.round((monthRevenue - previousRevenue) / previousRevenue * 100) : null,
@@ -150,14 +155,14 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
       posted: [...shipments.values()].filter(s => s.status === "posted").length,
       delivered: [...shipments.values()].filter(s => s.status === "delivered").length,
     },
-    freight: chargesRes.error || linksRes.error || usageRes.error || freightRes.error || lotsError
+    freight: receiptError || chargesRes.error || linksRes.error || usageRes.error || freightRes.error || lotsError
       ? { total: 0, byDay: { ter: 0, qua: 0, qui: 0, sex: 0, sab: 0, dom: 0, seg: 0 }, paidCount: 0, carriedCount: 0, pendingCount: 0 }
-      : computePeriodFreight(allLots, active, chargesRes.data, linksRes.data, usageRes.data, freightRes.data),
-    closing: { receivedOn: sum(paid), paidLotsOn: paid.length },
+      : { ...computePeriodFreight(allLots, active, chargesRes.data, linksRes.data, usageRes.data, freightRes.data), total:receipts.freightTotal, byDay:receipts.byDay, paidCount:receipts.paidCustomers },
+    closing: { receivedOn: receipts.lotsTotal, paidLotsOn: receipts.paidLots },
     pipeline, ranking: [...rankMap.values()].sort((a, b) => b.total - a.total).slice(0, 5),
     recentPayments: [...paid].sort((a, b) => b.paid_at!.localeCompare(a.paid_at!)).slice(0, 5).map(lot => ({ code: lot.code, title: lot.title, customer: lot.customer?.name?.trim() || "Sem nome", value: Number(lot.arremate_value), paidAt: lot.paid_at! })),
     nextBatch: nextBatch ? { shippingDate: nextBatch[0], count: nextBatch[1] } : null,
   };
 }
 
-export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-period-stats-v2"], { tags: ["dashboard"], revalidate: 30 });
+export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-month-registration-v4"], { tags: ["dashboard"], revalidate: 30 });

@@ -19,6 +19,8 @@ function load(path, dependencies = {}) {
 const dates = load('src/lib/dates.ts');
 const periods = load('src/lib/auction-period.ts', { '@/lib/dates': dates });
 const scope = load('src/lib/dashboard-scope.ts', { '@/lib/freight': load('src/lib/freight.ts') });
+const receipts = load('src/lib/period-receipts.ts', { '@/lib/auction-period': periods, '@/lib/freight': load('src/lib/freight.ts') });
+const receiptServer = load('src/lib/period-receipts-server.ts', { 'server-only': {} });
 const scopeServer = load('src/lib/dashboard-scope-server.ts', { 'server-only': {} });
 function statsFor(lots, from, to, extra = {}) {
   const tables = { lots, ...extra };
@@ -26,6 +28,10 @@ function statsFor(lots, from, to, extra = {}) {
     let rows = [...(tables[table] || [])];
     const query = {
       select() { return this; },
+      eq(key,value) { rows=rows.filter(r=>r[key]===value);return this; },
+      gt(key,value) { rows=rows.filter(r=>Number(r[key])>value);return this; },
+      gte(key,value) { rows=rows.filter(r=>Date.parse(r[key])>=Date.parse(value));return this; },
+      lt(key,value) { rows=rows.filter(r=>Date.parse(r[key])<Date.parse(value));return this; },
       in(key, values) { rows = rows.filter(row => values.includes(row[key])); return this; },
       order() { return this; },
       range(start, end) { rows = rows.slice(start, end + 1); return this; },
@@ -38,7 +44,7 @@ function statsFor(lots, from, to, extra = {}) {
     '@/lib/charges': { isChargeActive: charge => ['pending', 'in_process'].includes(charge.status) },
     '@/lib/dates': { ...dates, spToday: () => '2026-10-28' },
     '@/lib/auction-period': periods, '@/lib/dashboard-scope': scope,
-    '@/lib/dashboard-scope-server': scopeServer,
+    '@/lib/dashboard-scope-server': scopeServer, '@/lib/period-receipts': receipts, '@/lib/period-receipts-server': receiptServer,
     '@/lib/lots': { LOT_STATUS_LABELS: {} },
     '@/lib/supabase/admin': { createAdminClient: () => client },
   }).getDashboardStats('2026-10-27', from, to);
@@ -49,6 +55,20 @@ const lot = (value, overrides = {}) => ({ id: 'lot-' + nextLotId++, charge_id: n
   arremate_value: value, paid_at: '2026-10-27T18:00:00Z',
   created_at: '2026-10-27T15:00:00Z', shipping_date: null,
   customer_id: 'customer', customer: { id: 'customer', name: 'Teste' }, ...overrides });
+
+test('mensal usa cadastro dos lotes pagos; fechamento e frete continuam pela data de pagamento', async () => {
+  const result=await statsFor([
+    lot(100,{created_at:'2026-09-30T20:00:00-03:00',paid_at:'2026-10-27T15:00:00Z'}),
+    lot(50,{created_at:'2026-10-27T15:00:00Z',paid_at:'2026-11-01T15:00:00Z'}),
+    lot(30,{status:'pending_payment',paid_at:null}),
+  ],undefined,undefined,{charges:[{id:'old-lot-pix',customer_id:'customer',status:'approved',freight_amount:20,paid_at:'2026-10-27T15:00:00Z'}]});
+  assert.equal(result.revenue.month,50);
+  assert.equal(result.revenue.prevMonth,100);
+  assert.equal(result.revenue.deltaPct,-50);
+  assert.equal(result.closing.receivedOn,100);
+  assert.equal(result.freight.total,20);
+  assert.equal(result.revenue.total,150);
+});
 
 test('8 lotes de R$ 925 entram uma única vez no faturamento diário', async () => {
   const result = await statsFor([100,100,100,100,100,100,100,225].map(value => lot(value)));
@@ -68,10 +88,10 @@ test('dia de São Paulo inclui pendentes, exclui cancelados e separa recebimento
   ]);
   assert.equal(result.revenue.dayLots, 2);
   assert.equal(result.revenue.day, 70);
-  assert.equal(result.closing.receivedOn, 40);
+  assert.equal(result.closing.receivedOn, 60);
 });
 
-test('leilão atravessa meia-noite e recebimento posterior continua no fechamento correto', async () => {
+test('leilão atravessa meia-noite e fechamento usa pagamento, não cadastro', async () => {
   const result = await statsFor([
     lot(10, { created_at: '2026-10-27T14:59:59Z' }),
     lot(30, { created_at: '2026-10-27T15:00:00Z', paid_at: '2026-10-29T18:00:00Z' }),
@@ -80,8 +100,8 @@ test('leilão atravessa meia-noite e recebimento posterior continua no fechament
   ], '2026-10-27T12:00', '2026-10-28T00:30');
   assert.equal(result.revenue.dayLots, 2);
   assert.equal(result.revenue.day, 80);
-  assert.equal(result.closing.receivedOn, 30);
-  assert.equal(result.closing.paidLotsOn, 1);
+  assert.equal(result.closing.receivedOn, 90);
+  assert.equal(result.closing.paidLotsOn, 2);
 });
 
 test('datas/horas SP, intervalos adjacentes e limites inválidos', () => {
@@ -110,12 +130,14 @@ test('fechamento pagina todos os lotes, restringe pendências ao período e exig
   rows.push({ ...lot(100, { created_at: '2026-10-28T03:30:00Z', status: 'pending_payment', paid_at: null }), id: 'out', code: 'OUT' });
   rows.push({ ...lot(500, { created_at: '2026-10-28T03:00:00Z', status: 'cancelled', paid_at: null }), id: 'cancel', code: 'CANCEL' });
   rows.push({ ...lot(25, { created_at: '2026-10-27T15:00:00Z', status: 'pending_payment', paid_at: null, charge_id: 'mixed' }), id: 'pending', code: 'PENDING' });
+  rows.push(...Array.from({length:1005},(_,i)=>({...lot(1,{created_at:'2026-10-26T12:00:00Z',paid_at:'2026-10-27T18:00:00Z'}),id:'receipt'+i,code:'RECEIPT'+i})));
   let role = 'owner', reads = 0;
   const client = { from(table) {
-    assert.ok(['lots', 'charges'].includes(table)); reads++;
-    let filtered = table === 'lots' ? [...rows] : [{ id: 'mixed', status: 'pending', amount: 999, expires_at: null, customer: { name: 'Teste', phone_e164: '' } }], from = 0, to = Infinity;
+    assert.ok(['lots', 'charges','store_orders'].includes(table)); reads++;
+    let filtered = table === 'lots' ? [...rows] : table === 'store_orders' ? [] : [{ id: 'mixed', status: 'pending', amount: 999, expires_at: null, customer: { name: 'Teste', phone_e164: '' } }], from = 0, to = Infinity;
     const query = {
       select() { return this; },
+      gt(key,value) { filtered=filtered.filter(r=>Number(r[key])>value);return this; },
       eq(key, value) { filtered = filtered.filter(row => row[key] === value); return this; },
       in(key, values) { filtered = filtered.filter(row => values.includes(row[key])); return this; },
       neq(key, value) { filtered = filtered.filter(row => row[key] !== value); return this; },
@@ -130,7 +152,7 @@ test('fechamento pagina todos os lotes, restringe pendências ao período e exig
   const action = load('src/app/actions/staff-payments.ts', {
     'next/cache': {}, '@/lib/dal': { requireAdmin: async () => ({ profile: { role } }) },
     '@/lib/charges': { isChargeActive: () => true },
-    '@/lib/dashboard-scope-server': scopeServer,
+    '@/lib/dashboard-scope-server': scopeServer, '@/lib/period-receipts': receipts, '@/lib/period-receipts-server': receiptServer,
     '@/lib/dates': dates, '@/lib/auction-period': periods,
     '@/lib/result': { rethrowIfRedirect: () => {} }, '@/lib/staff-payments': {},
     '@/lib/supabase/admin': { createAdminClient: () => client },
@@ -231,7 +253,7 @@ test('todas as KPIs seguem o leilão; mensal/acumulado não sofrem corte e Pix m
   assert.equal(result.revenue.total, 220);
   assert.equal(result.revenue.day, 150);
   assert.equal(result.revenue.ticket, 40);
-  assert.equal(result.closing.receivedOn, 80);
+  assert.equal(result.closing.receivedOn, 0);
   assert.equal(result.charges.openAmount, 70);
   assert.equal(result.charges.pendingLotsCount, 2);
   assert.equal(result.charges.openCount, 1);
@@ -246,18 +268,18 @@ test('todas as KPIs seguem o leilão; mensal/acumulado não sofrem corte e Pix m
   assert.equal(result.ranking.length, 2);
   assert.equal(result.recentPayments.length, 2);
   assert.equal(result.revenue.months.at(-1).value, 80);
-  assert.equal(result.freight.total, 20);
-  assert.equal(result.freight.paidCount, 1);
+  assert.equal(result.freight.total, 40);
+  assert.equal(result.freight.paidCount, 2);
   assert.equal(result.freight.carriedCount, 1);
   assert.equal(result.freight.pendingCount, 2);
   assert.equal(result.freight.byDay.qua, 20);
-  assert.equal(result.freight.byDay.ter, 0);
+  assert.equal(result.freight.byDay.ter, 20);
   const other = await statsFor(rows, '2026-10-27T00:00', '2026-10-27T12:00', extra);
   assert.equal(other.revenue.month, 220);
   assert.equal(other.revenue.total, 220);
   assert.equal(other.revenue.day, 40);
-  assert.equal(other.freight.total, 20);
-  assert.equal(other.freight.byDay.ter, 20);
+  assert.equal(other.freight.total, 0);
+  assert.equal(other.freight.byDay.ter, 0);
   assert.equal(other.freight.byDay.qua, 0);
   const empty = await statsFor(rows, '2026-10-26T00:00', '2026-10-26T12:00', extra);
   assert.equal(empty.revenue.total, 220);

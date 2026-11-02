@@ -17,6 +17,8 @@ import {
 } from "@/lib/staff-payments";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchScopeRows } from "@/lib/dashboard-scope-server";
+import { loadFreightReceipts } from "@/lib/period-receipts-server";
+import { computePeriodReceipts } from "@/lib/period-receipts";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -75,15 +77,24 @@ export async function getClosingDataAction(
       customerName: charge.customer?.name?.trim() || null, phone_e164: charge.customer?.phone_e164 ?? "",
       ticketUrl: charge.ticket_url, expiresAt: charge.expires_at,
     }));
-    const paid = entries.filter(entry => ["paid", "shipped", "delivered"].includes(entry.status) && entry.paidAt);
+    const receivedEntries: ClosingEntry[]=[];
+    for(let offset=0;;offset+=500){
+      const {data,error}=await db.from("lots").select("code,title,arremate_value,status,created_at,paid_at,customer:customers(name)").in("status",["paid","shipped","delivered"]).gte("paid_at",period.startUtc).lt("paid_at",period.endUtc).order("paid_at").order("id").range(offset,offset+499);
+      if(error)throw new Error("Não foi possível conferir os lotes recebidos no período.");
+      const page=(data??[]) as unknown as {code:string;title:string;arremate_value:number;status:string;created_at:string;paid_at:string;customer:{name:string|null}|null}[];
+      receivedEntries.push(...page.map(l=>({code:l.code,title:l.title,customer:l.customer?.name?.trim()||"Sem nome",value:Number(l.arremate_value),status:l.status,createdAt:l.created_at,paidAt:l.paid_at})));
+      if(page.length<500)break;
+    }
+    const freight=await loadFreightReceipts(db,period);
+    const receipts=computePeriodReceipts(receivedEntries.map(l=>({status:l.status,paid_at:l.paidAt,arremate_value:l.value})),freight.charges,freight.store,period);
     const pending = entries.filter(entry => entry.status === "pending_payment");
     return { ok: true, data: {
       date: period.day, period, entries, pendingLots, pendingCharges,
       pendingTotal: pendingCharges.reduce((sum, charge) => sum + charge.amount, 0),
       registeredOn: entries.reduce((sum, entry) => sum + entry.value, 0),
       totalLots: entries.length,
-      receivedOn: paid.reduce((sum, entry) => sum + entry.value, 0),
-      paidLotsOn: paid.length,
+      receivedOn: receipts.lotsTotal, paidLotsOn: receipts.paidLots,
+      freightReceivedOn:receipts.freightTotal,totalReceivedOn:receipts.total,receivedEntries,
       periodPendingTotal: pending.reduce((sum, entry) => sum + entry.value, 0),
       periodPendingCount: pending.length,
     } };

@@ -30,8 +30,8 @@ export const storeProductSchema = z.object({
   internal_cost: amount(0), stock: integer(0,1000000), low_stock_threshold: integer(0,1000000),
   active: z.boolean().default(false), archived: z.boolean().default(false),
 }).superRefine((value,ctx) => {
-  if ((value.mixed_cash_price === null) !== (value.mixed_points_cost === null)) ctx.addIssue({code:"custom",path:["mixed_cash_price"],message:"Preencha os dois valores do combinado."});
-  if (value.active && (value.internal_cost === null || (value.points_cost === null && value.cash_price === null && value.mixed_cash_price === null))) ctx.addIssue({code:"custom",path:["active"],message:"Para publicar, informe custo interno e ao menos uma modalidade de preço."});
+  if (value.mixed_cash_price !== null || value.mixed_points_cost !== null || (value.points_cost !== null && value.cash_price !== null)) ctx.addIssue({code:"custom",path:["cash_price"],message:"Escolha somente reais ou Caracoins. Descontos serão feitos por voucher."});
+  if (value.active && (value.internal_cost === null || (value.points_cost === null && value.cash_price === null))) ctx.addIssue({code:"custom",path:["active"],message:"Para publicar, informe o custo e um preço em reais ou Caracoins."});
   if (value.active && value.archived) ctx.addIssue({code:"custom",path:["active"],message:"Um produto arquivado não pode estar publicado."});
 });
 export type StoreProductInput = z.infer<typeof storeProductSchema>;
@@ -46,7 +46,7 @@ export function isProductImageContent(bytes: Uint8Array,mime: string) {
 }
 
 const csvFields: Record<string,string> = { nome:"name",descricao:"description",sku:"sku",categoria:"category",preco_caracoins:"points_cost",preco_reais:"cash_price",combinado_reais:"mixed_cash_price",combinado_caracoins:"mixed_points_cost",custo_interno:"internal_cost",estoque:"stock",alerta_estoque:"low_stock_threshold" };
-export const PRODUCT_CSV_TEMPLATE = '\uFEFFnome;descricao;sku;categoria;preco_caracoins;preco_reais;combinado_reais;combinado_caracoins;custo_interno;estoque;alerta_estoque\nKit do colecionador;Kit com acessórios;KIT-001;Colecionáveis;200;49,90;19,90;100;15,00;12;5\n';
+export const PRODUCT_CSV_TEMPLATE = '\uFEFFnome;descricao;sku;categoria;preco_caracoins;preco_reais;custo_interno;estoque;alerta_estoque\nKit do colecionador;Kit com acessórios;KIT-001;Colecionáveis;;49,90;15,00;12;5\n';
 function csvRecords(input: string) {
   const text = input.replace(/^\uFEFF/,"");
   const header = text.split(/\r?\n/,1)[0];

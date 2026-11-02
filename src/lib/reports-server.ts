@@ -31,8 +31,8 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
-  logisticsPending?: { id: string; code: string; title: string; quantity: number; reason: string; moved_at: string | null; shipmentCode?: string | null }[];
-  storeOrders?: {id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
+  logisticsPending?: { id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
+  storeOrders?: {shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
   phone_e164: string;
@@ -86,13 +86,13 @@ export async function getSeparationReport(
 
   // Reposições vencidas continuam na fila até entrarem em uma etiqueta.
   // Não são arremates: a conferência não depende de pagamentos do cliente.
-  type PendingRow = { id: string; code: string; title: string; quantity: number; reason: string; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
+  type PendingRow = { id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
   const pendingRows: PendingRow[] = [];
   const warnings: string[] = [];
   let logisticsAvailable = true;
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
-      .select("id,code,title,quantity,reason,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .select("id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .lte("shipping_date", shippingDate).is("cancelled_at", null).is("shipment_id", null)
       .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
     if (error) {
@@ -112,7 +112,7 @@ export async function getSeparationReport(
   // desta data, mesmo quando foram originalmente previstas para outro dia.
   for (let from = 0; logisticsAvailable; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
-      .select("id,code,title,quantity,reason,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .select("id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .eq("shipment.batch_date", shippingDate).is("cancelled_at", null)
       .order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
     if (error) throw new Error("Não foi possível carregar as reposições vinculadas ao envio.");
@@ -140,31 +140,35 @@ export async function getSeparationReport(
     rows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
-  if (rows.length === 0 && pendingRows.length === 0) return { shippingDate, warnings, customers: [], totals: { customers: 0, lots: 0, excludedCustomers: 0 } };
+  const db = await createClient();
+  const {data:storeRows,error:storeError}=await db.rpc('get_store_fulfillment',{p_day:shippingDate});
+  if(storeError)throw new Error('Não foi possível conferir os pedidos da loja para a separação.');
+  type StoreRow=NonNullable<SeparationCustomer['storeOrders']>[number]&{customer_id:string;physical:boolean};
+  const physicalStore=(storeRows??[] as StoreRow[]).filter((o:StoreRow)=>o.physical) as StoreRow[];
 
-  const candidateIds = [...new Set(rows.map((row) => row.customers?.id).filter((id): id is string => Boolean(id)))];
-  const paymentCandidateIds = candidateIds.length ? candidateIds : ["00000000-0000-0000-0000-000000000000"];
-  const { data: pendingLots, error: pendingLotsError } = await admin
-    .from("lots").select("customer_id").in("customer_id", paymentCandidateIds).eq("status", "pending_payment");
-  if (pendingLotsError) throw new Error(`Falha ao conferir pagamentos pendentes: ${pendingLotsError.message}`);
-  const blockedCustomers = new Set((pendingLots ?? []).map((row) => row.customer_id));
-  const { data: activeCharges, error: activeChargesError } = await admin.from("charges")
-    .select("customer_id, status, expires_at")
-    .in("customer_id", paymentCandidateIds)
-    .in("status", ["pending", "in_process"]);
-  if (activeChargesError) throw new Error(`Falha ao conferir cobranças em aberto: ${activeChargesError.message}`);
-  for (const charge of activeCharges ?? []) {
-    if (isChargeActive(charge as never)) blockedCustomers.add(charge.customer_id);
+
+  const candidateIds = [...new Set([...rows.map((row) => row.customers?.id).filter((id): id is string => Boolean(id)),...physicalStore.map(o=>o.customer_id)])];
+  const blockedCustomers=new Set<string>();
+  for(let from=0;from<candidateIds.length;from+=100){
+   const ids=candidateIds.slice(from,from+100);
+   const [pending,charges,freights,storePending]=await Promise.all([
+    admin.from('lots').select('customer_id').in('customer_id',ids).eq('status','pending_payment'),
+    admin.from('charges').select('customer_id,status,expires_at').in('customer_id',ids).in('status',['pending','in_process']),
+    admin.rpc('shipping_freight_states',{p_customers:ids}),
+    admin.from('store_orders').select('customer_id,items:store_order_items(delivery_kind)').in('customer_id',ids).in('payment_status',['creating','pending','partially_refunded','payment_review']).is('shipment_id',null).lt('created_at',`${shippingDate}T23:59:59.999999-03:00`),
+   ]);
+   if(pending.error||charges.error||freights.error||storePending.error)throw new Error('Não foi possível conferir os pagamentos e fretes da separação.');
+   for(const row of pending.data??[])blockedCustomers.add(row.customer_id);
+   for(const row of charges.data??[])if(isChargeActive(row as never))blockedCustomers.add(row.customer_id);
+   for(const row of freights.data??[])if(row.status!=='paid')blockedCustomers.add(row.customer_id);
+   for(const row of storePending.data??[])if(row.items.some(i=>i.delivery_kind==='physical'))blockedCustomers.add(row.customer_id);
   }
-  const {data: freightStates,error: freightError}=await admin.rpc('shipping_freight_states',{p_customers:candidateIds});
-  if(freightError)throw new Error('Não foi possível conferir os pagamentos de frete.');
-  for(const state of freightStates ?? [])if(state.status!=='paid')blockedCustomers.add(state.customer_id);
   const eligibleRows = rows.filter((row) => row.customers && !blockedCustomers.has(row.customers.id));
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();
-  if (itemIds.length) {
+  for(let from=0;from<itemIds.length;from+=200) {
     const { data: items, error: itemsError } = await admin.from("lot_items")
-      .select("lot_id, qty, applied, color, player:players(name)").in("lot_id", itemIds);
+      .select("lot_id, qty, applied, color, player:players(name)").in("lot_id", itemIds.slice(from,from+200));
     if (itemsError) throw new Error(`Falha ao carregar itens movimentados: ${itemsError.message}`);
     for (const item of items ?? []) {
       if (!item.applied) continue;
@@ -213,7 +217,6 @@ export async function getSeparationReport(
     byCustomer.set(customer.id, entry);
   }
 
-  const db = await createClient();
   for (const row of pendingRows) {
     const customer = row.customers;
     if (!customer) continue;
@@ -224,17 +227,18 @@ export async function getSeparationReport(
       lots: [],
     };
     entry.logisticsPending = [...(entry.logisticsPending ?? []), {
-      id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, moved_at: row.moved_at,
+      id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, source_kind: row.source_kind, shipping_declared_value: Number(row.shipping_declared_value), moved_at: row.moved_at,
       shipmentCode: row.shipment?.code ?? null,
     }];
     byCustomer.set(customer.id, entry);
   }
-  const { data: storeRows, error: storeError } = await db.rpc('get_store_fulfillment', { p_day: shippingDate });
-  if (storeError) throw new Error('Não foi possível conferir os pedidos da loja para a separação.');
-  for (const order of (storeRows ?? []) as (NonNullable<SeparationCustomer['storeOrders']>[number] & {customer_id:string;physical:boolean})[]) {
-    const entry = byCustomer.get(order.customer_id);
-    if (entry && order.physical) entry.storeOrders = [...(entry.storeOrders ?? []), order];
+  const missingStoreCustomers=[...new Set(physicalStore.filter(o=>!byCustomer.has(o.customer_id)&&!blockedCustomers.has(o.customer_id)).map(o=>o.customer_id))];
+  for(let from=0;from<missingStoreCustomers.length;from+=100){
+   const {data,error}=await admin.from('customers').select('id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state').in('id',missingStoreCustomers.slice(from,from+100));
+   if(error)throw new Error('Não foi possível carregar os destinatários dos pedidos da loja.');
+   for(const c of data??[])byCustomer.set(c.id,{customerId:c.id,name:c.name,phone_e164:c.phone_e164,address:{cep:c.address_cep,street:c.address_street,number:c.address_number,complement:c.address_complement,district:c.address_district,city:c.address_city,state:c.address_state},lots:[]});
   }
+  for(const order of physicalStore){if(blockedCustomers.has(order.customer_id))continue;const entry=byCustomer.get(order.customer_id);if(entry)entry.storeOrders=[...(entry.storeOrders??[]),order];}
 
   // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.
   const customers = [...byCustomer.values()].sort((a, b) => {

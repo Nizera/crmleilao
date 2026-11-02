@@ -70,6 +70,8 @@ const storeGroups = [{
   items: [
     { title: "Visão geral", url: "/admin/fidelidade", icon: LayoutDashboard, exact: true },
     { title: "Produtos", url: "/admin/fidelidade/recompensas", icon: Gift },
+    { title: "Banners", url: "/admin/fidelidade/banners", icon: Gift },
+      { title: "Vouchers", url: "/admin/fidelidade/vouchers", icon: Gift },
     { title: "Pedidos", url: "/admin/fidelidade/resgates", icon: ShoppingCart },
     { title: "Caracoins", url: "/admin/fidelidade/extrato", icon: History },
     { title: "Configurações", url: "/admin/fidelidade/configuracao", icon: Award },
@@ -86,7 +88,7 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const section = pathname === "/admin/fidelidade" || pathname.startsWith("/admin/fidelidade/")
     ? "loja" : pathname === "/admin/rifa" || pathname.startsWith("/admin/rifa/") ? "rifa" : "leilao";
   const groups = section === "loja" ? storeGroups : section === "rifa"
-    ? [{ label: "Rifa", items: [{ title: "Em breve", url: "/admin/rifa", icon: Ticket }] }]
+    ? [{ label: "Rifa", items: [{ title: "Campanhas", url: "/admin/rifa", icon: Ticket, exact: true }, { title: "Reservas", url: "/admin/rifa/reservas", icon: ShoppingCart }, { title: "Prêmios e separação", url: "/admin/rifa/premios", icon: Gift }, { title: "Configurações", url: "/admin/rifa/configuracao", icon: Settings }] }]
     : auctionGroups;
 
   return (
@@ -107,7 +109,7 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <nav aria-label="Seções do painel" className="mt-2 grid grid-cols-3 gap-1 border-b border-sidebar-border pb-3 group-data-[collapsible=icon]:grid-cols-1">
           {sections.map(item => <Link key={item.id} href={item.url}
             aria-current={section === item.id ? "page" : undefined}
-            title={item.id === "rifa" ? "Rifa — em breve" : item.title}
+            title={item.title}
             className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md px-1 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:min-h-8 ${section === item.id ? "bg-amarelo text-black" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
             <item.icon className="size-4 shrink-0" />
             <span className="group-data-[collapsible=icon]:sr-only">{item.title}</span>

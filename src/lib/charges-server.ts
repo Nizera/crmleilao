@@ -169,6 +169,10 @@ export async function createCharge(input: {
   includeFreight?: boolean;
 }): Promise<Charge> {
   const admin = createAdminClient();
+  const {data:storeFreight,error:storeFreightError}=await admin.from('store_orders').select('code').eq('customer_id',input.customerId).gt('freight_amount',0).in('payment_status',['creating','pending','partially_refunded','payment_review']).limit(1).maybeSingle();
+  if(storeFreightError)throw new Error('Não foi possível conferir o frete da loja. Confira a migration 0041.');
+  if(storeFreight)throw new Error(`O frete está no Pix do pedido ${storeFreight.code} da loja. Conclua ou cancele esse pagamento antes de gerar outro Pix.`);
+
 
   const { data: customer, error: customerError } = await admin
     .from("customers")

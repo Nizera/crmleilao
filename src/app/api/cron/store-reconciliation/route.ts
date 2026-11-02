@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { reconcileStoreOrders } from '@/lib/store-server';
+import { reconcileRafflePayments } from '@/lib/raffles-server';
 
 export const maxDuration = 60;
 export async function GET(request: Request) {
@@ -11,10 +12,16 @@ export async function GET(request: Request) {
     return Response.json({error:'unauthorized'}, {status:401});
   }
   try {
+    const started = Date.now();
     const result = await reconcileStoreOrders();
+    // Reaproveita a chamada diária; o webhook continua sendo a confirmação imediata.
+    const remaining = 53000 - (Date.now() - started);
+    const raffles = remaining > 1500 ? await reconcileRafflePayments(Math.min(18000, remaining)) : { checked: 0, failed: 0 };
     revalidatePath('/painel', 'layout');
     revalidatePath('/admin/fidelidade', 'layout');
-    return Response.json(result);
+    revalidatePath('/painel/rifas', 'layout');
+    revalidatePath('/admin/rifa', 'layout');
+    return Response.json({ ...result, raffles });
   } catch {
     return Response.json({error:'reconciliation_unavailable'}, {status:503});
   }

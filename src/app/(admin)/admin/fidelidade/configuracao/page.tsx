@@ -1,3 +1,4 @@
+export const instant=false;
 import { History, Settings2, Sparkles, TriangleAlert } from "lucide-react";
 import { requireAdmin } from "@/lib/dal";
 import { getLoyaltySettingsData } from "@/lib/loyalty-history-server";
@@ -7,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoyaltyAdminShell, LoyaltyField, loyaltyDate } from "@/components/admin/loyalty/loyalty-admin-shell";
 import { RetryButton } from "@/components/shared/retry-button";
-import { STORE_PREVIEW_ONLY } from "@/lib/store-availability";
+import {storePurchasesEnabled} from "@/lib/store-settings-server";
+import {StoreCommerceForm} from "@/components/admin/loyalty/store-commerce-form";
 import { LOYALTY_TIERS } from "@/lib/loyalty-tiers";
 
 export const metadata = { title: "Configurações de fidelidade" };
@@ -15,17 +17,18 @@ export const metadata = { title: "Configurações de fidelidade" };
 export default async function LoyaltySettingsPage({ searchParams }: PageProps<"/admin/fidelidade/configuracao">) {
   const { profile } = await requireAdmin();
   const params = await searchParams;
+  const purchasesEnabled=await storePurchasesEnabled();
   const { settings, history, error } = await getLoyaltySettingsData();
   const query = (key: string) => Array.isArray(params[key]) ? params[key]?.[0] : params[key];
   if (error || !settings) return <LoyaltyAdminShell active="configuracao"><div role="alert" className="grid gap-3 rounded-xl border p-5 text-sm"><p>Não foi possível carregar as configurações. Tente novamente em instantes.</p><RetryButton/></div></LoyaltyAdminShell>;
   const canEdit = profile.role !== "viewer";
   return <LoyaltyAdminShell active="configuracao" programActive={settings.active} error={query("erro")} saved={Boolean(query("salvo"))}>
     {settings.points_per_real !== null && <div role="alert" className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm"><TriangleAlert className="mt-0.5 size-5 shrink-0 text-amber-600" /><div><strong>Regra antiga ainda gravada no banco</strong><p className="mt-1 text-muted-foreground">Está configurado {settings.points_per_real} ponto(s) por real. A migration 0022 remove essa taxa, recalcula os créditos históricos e mantém um ajuste auditável no extrato. Até ela ser aplicada, a conta exibida pode não refletir a regra nova.</p></div></div>}
-    {STORE_PREVIEW_ONLY && <p role="status" className="rounded-xl border border-ouro/40 bg-amarelo/10 p-4 text-sm">Loja em prévia para os clientes. Compras e resgates estão temporariamente bloqueados, mesmo com o programa ativo. O catálogo pode continuar sendo preparado pela equipe.</p>}
+    <StoreCommerceForm key={String(purchasesEnabled)} enabled={purchasesEnabled} canEdit={profile.role==="owner"}/>
     <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="size-5" /> Ganho de Caracoins por elo</CardTitle><CardDescription>A taxa segue o elo, calculado pelos pontos ganhos em lotes pagos. Usar Caracoins em compras não reduz o elo.</CardDescription></CardHeader><CardContent className="grid gap-3">
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="size-5" /> Ganho de Caracoins por elo</CardTitle><CardDescription>A taxa segue o elo, que considera o histórico anterior ao app e os pontos de compras pagas. O histórico não gera Caracoins.</CardDescription></CardHeader><CardContent className="grid gap-3">
         <div className="grid gap-2 sm:grid-cols-2">{LOYALTY_TIERS.map((tier) => <div key={tier.key} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"><div><p className="font-semibold">{tier.name}</p><p className="text-xs text-muted-foreground">{tier.range}</p></div><span className="shrink-0 text-sm font-semibold">{tier.rate.replace(/pts? por real/, "Caracoins/R$")}</span></div>)}</div>
-        <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">A faixa é calculada pelos pontos de lotes pagos, menos estornos. Pontos resgatados não rebaixam o elo. Fretes não geram pontos. Lotes pagos no mesmo Pix usam a mesma taxa, definida antes de processar o pagamento.</p>
+        <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">O histórico conta apenas para o ranking. Caracoins são ganhos pelas compras no app. Resgates não reduzem o elo e fretes não geram pontos. Lotes pagos no mesmo Pix usam a mesma taxa, definida antes de processar o pagamento.</p>
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="size-5" /> Controles do programa</CardTitle><CardDescription>As taxas são padronizadas pelo elo e não podem ser substituídas por uma taxa global.</CardDescription></CardHeader><CardContent>
         <form action={saveLoyaltySettings} className="grid gap-4">

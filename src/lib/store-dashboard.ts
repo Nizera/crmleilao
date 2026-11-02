@@ -4,7 +4,8 @@ export const STORE_DASHBOARD_PATH = "/admin/fidelidade";
 export type DashboardPeriod = { preset: "today" | "7d" | "30d" | "custom"; from: string; to: string; today: string };
 export type StoreDashboardData = {
   active: boolean;
-  metrics: { cash: number; coins: number; orders: number; known_cost: number; missing_cost_units: number };
+  vouchers?:{redeemed:number;coins_spent:number;discounts_used:number};
+  metrics: { freight_received?:number; cash: number; coins: number; orders: number; known_cost: number; missing_cost_units: number };
   operations: { "to-fulfill": number; processing: number; review: number; "low-stock": number };
   chart: { day: string; cash: number; orders: number }[];
   top_products: { reward_id: string | null; name: string; units: number; cash: number; coins: number }[];

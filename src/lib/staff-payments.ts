@@ -87,8 +87,11 @@ export type ClosingData = {
   period: AuctionPeriod;
   registeredOn: number;
   totalLots: number;
-  /** Valor já recebido dos lotes cadastrados no período, mesmo se pago depois. */
+  /** Valor dos lotes pagos no intervalo, independentemente do cadastro. */
   receivedOn: number;
+  freightReceivedOn: number;
+  totalReceivedOn: number;
+  receivedEntries: ClosingEntry[];
   paidLotsOn: number;
   periodPendingTotal: number;
   periodPendingCount: number;

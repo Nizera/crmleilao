@@ -1,3 +1,4 @@
+export const instant=false;
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/dal";
 import { getProductEditorData } from "@/lib/store-admin-server";

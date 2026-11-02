@@ -227,12 +227,11 @@ export function ShipmentsView({
 
   /** Status do frete de uma linha da fila. */
   const freightLabel = (row: ShipmentQueueRow) => {
-    const label = row.companyFreight ? "Frete liberado — prêmio externo" : row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
+    const label = row.companyFreight ? "Frete por conta da empresa (prêmio)" : row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
     return row.pendingShipment
       ? `${SHIPMENT_STATUS_LABELS[row.pendingShipment.status]} · ${label}`
       : label;
   };
-
   const releaseFreight=(row:ShipmentQueueRow)=>{
     const ids=row.lots.filter(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status)).map(l=>l.id);
     const reason=window.prompt('Motivo da liberação do frete dos prêmios de R$ 0:', 'Prêmio da rifa.digital — frete por conta da empresa');
@@ -492,7 +491,7 @@ export function ShipmentsView({
                         {row.name ?? "Sem nome"}
                       </Link>
                       <span className="block text-xs text-muted-foreground">
-                        {formatPhoneBR(row.phone_e164)}
+                        {formatPhoneBR(row.phone_e164)}{(row.storeOrderCount??0)>0&&<span className="block text-ouro-ink">{row.storeOrderCount} pedido(s) da loja</span>}{(row.raffleAwardCount??0)>0&&<span className="block text-ouro-ink">{row.raffleAwardCount} prêmio(s) de rifa</span>}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">

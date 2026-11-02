@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireCustomer } from "@/lib/dal";
 import { orderHistoryFilters, orderHistoryHref } from "@/lib/order-history";
-import { STORE_PREVIEW_ONLY, STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const fail = (message: string, section = ""): never => redirect(`/admin/fidelidade${section}?erro=${encodeURIComponent(message)}`);
@@ -27,15 +26,11 @@ export async function saveLoyaltySettings(form: FormData) {
   redirect("/admin/fidelidade/configuracao?salvo=1");
 }
 
-export async function requestLoyaltyRedemption(form: FormData) {
+export async function requestLoyaltyRedemption(_form:FormData) {
+  void _form;
   await requireCustomer();
-  if (STORE_PREVIEW_ONLY) redirect(`/painel/loja?erro=${encodeURIComponent(STORE_PREVIEW_MESSAGE)}`);
-  const rewardId = text(form, "reward_id");
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("request_loyalty_redemption", { p_reward_id: rewardId });
-  if (error) redirect(`/painel/loja?erro=${encodeURIComponent(error.message.replace(/^.*?: /, ""))}`);
-  revalidatePath("/painel/loja"); revalidatePath("/admin/fidelidade");
-  redirect("/painel/loja?resgatado=1");
+  // Links antigos abrem o carrinho atual; a RPC antiga permanece desativada.
+  redirect('/painel/loja');
 }
 
 export async function handleLoyaltyRedemption(form: FormData) {

@@ -30,13 +30,13 @@ export function LoyaltyRanking({
     <Card className="overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Trophy className="size-5 text-ouro-ink" /> Seu elo e o ranking</CardTitle>
-        <CardDescription>Seu elo é definido pelos pontos ganhos com lotes pagos. Frete não gera pontos, e resgatar recompensas não reduz seu elo. Cada pagamento rende pontos pela taxa do elo em que você está; os lotes de um mesmo Pix usam a mesma taxa.</CardDescription>
+        <CardDescription>Seu elo considera os pontos das compras pagas e o histórico anterior ao app. Esse histórico conta apenas para o ranking e não gera Caracoins. Novas compras rendem Caracoins pela taxa do seu elo; os lotes de um mesmo Pix usam a mesma taxa.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="rounded-xl border border-ouro/30 bg-amarelo/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3"><Image src={`/elos/${currentTier.key}.svg`} alt={`${currentTier.name} — emblema do seu elo`} width={64} height={64} className="size-14 shrink-0 drop-shadow-md" /><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seu elo atual</p><p className="text-2xl font-bold text-ouro-ink">{currentTier.name}</p></div></div>
-            <p className="text-sm font-semibold">{number(rankPoints)} pontos ganhos</p>
+            <p className="text-sm font-semibold">{number(rankPoints)} pontos de ranking</p>
           </div>
           {nextTier ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-ouro" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">Faltam {number(Math.max(0, nextTier.min - rankPoints))} pontos para chegar ao elo {nextTier.name}.</p></> : <p className="mt-2 text-xs text-muted-foreground">Você alcançou o elo mais alto!</p>}
         </div>
@@ -50,7 +50,7 @@ export function LoyaltyRanking({
           })}
         </div>
         {enabled && <form action={updateLoyaltyRankingVisibility} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="visible" defaultChecked={rankVisible} className="accent-yellow-500" /> Quero aparecer no ranking</label><Button type="submit" size="sm" variant="outline">Salvar preferência</Button></form>}
-        <p className="text-xs text-muted-foreground">A faixa mostra os pontos ganhos acumulados. Participar da lista pública é opcional; quem participa aparece com o primeiro nome e a inicial do sobrenome.</p>
+        <p className="text-xs text-muted-foreground">Pontos de ranking definem seu elo. O saldo de Caracoins para usar na loja é separado. Participar da lista pública é opcional; quem participa aparece com o primeiro nome e a inicial do sobrenome.</p>
       </CardContent>
     </Card>
   );

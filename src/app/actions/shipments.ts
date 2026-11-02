@@ -3,6 +3,10 @@ import { shipmentValues } from "@/lib/shipment-values";
 import { z } from "zod";
 import { allow } from "@/lib/ratelimit";
 
+import { listStoreShippingOrders,storeDeclaredTotal,type StoreShippingOrder } from "@/lib/store-shipping";
+import { listLogisticsShippingItems, type LogisticsShippingItem } from "@/lib/logistics-shipping";
+import { logisticsDeclaredTotal } from "@/lib/shipment-content";
+import {nextShippingDate} from "@/lib/lots";
 import { revalidatePath, updateTag } from "next/cache";
 
 import { logWaMessage } from "@/app/actions/lots";
@@ -43,7 +47,6 @@ import { createClient } from "@/lib/supabase/server";
 import { waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
-
 export async function releaseExternalPrizeFreight(customerId:string,lotIds:string[],reason:string):Promise<ActionResult>{
  try{
   const {profile}=await requireAdmin();
@@ -77,7 +80,8 @@ export async function searchShipmentCustomers(
 }
 
 export type ShipmentContext = {
-  logisticsPending: { id: string; title: string; quantity: number; moved_at: string | null }[];
+  storeOrders:StoreShippingOrder[];
+  logisticsPending: LogisticsShippingItem[];
   storeBlock: string | null;
   lots: EligibleShipmentLot[];
   /** Campos da ficha que faltam para emitir a etiqueta. */
@@ -129,23 +133,21 @@ export async function loadShipmentContext(
       .map((lot) => lot.shipping_date)
       .filter((date): date is string => Boolean(date))
       .sort();
-    const defaultBatchDate = shippingDates[0] ?? null;
-    const { data: logisticsPending, error: logisticsError } = await supabase.from("logistics_pending")
-      .select("id,title,quantity,moved_at").eq("customer_id", customerId)
-      .lte("shipping_date", defaultBatchDate ?? todayISO()).is("shipment_id", null).is("cancelled_at", null)
-      .order("shipping_date").order("id");
-    if (logisticsError) return failure("Não foi possível conferir as pendências logísticas.");
+    const defaultBatchDate = shippingDates[0] ?? nextShippingDate(todayISO());
+    const storeOrders=await listStoreShippingOrders(customerId,defaultBatchDate);
+    const logisticsPending = await listLogisticsShippingItems(customerId, defaultBatchDate ?? todayISO());
 
     return {
       ok: true,
       data: {
         lots,
+        storeOrders,
         logisticsPending: logisticsPending ?? [],
         storeBlock: await storeShippingBlock(customerId, defaultBatchDate ?? todayISO()),
         missing,
         addressLine: addressParts.length > 0 ? addressParts.join(", ") : null,
         defaultBatchDate,
-        defaultVolume: defaultShipmentVolume(Math.max(1, lots.length + (logisticsPending?.length ?? 0))),
+        defaultVolume: defaultShipmentVolume(Math.max(1, lots.length + storeOrders.length + (logisticsPending?.length ?? 0))),
         originReady: (await getOrigin()) !== null,
         superfreteReady: sfConfigured(),
         sandbox: sfSandbox(),
@@ -215,15 +217,19 @@ function parseInsurance(raw: unknown): number | null {
 async function insuranceFor(
   customerId: string,
   lotIds: string[],
+  day:string,
 ): Promise<number> {
   const eligible = await listEligibleShipmentLots(customerId);
   const picked = eligible.filter((lot) => lotIds.includes(lot.id));
-  if (picked.length === 0) {
-    throw new Error("Nenhum lote elegível selecionado.");
-  }
+  const storeOrders=await listStoreShippingOrders(customerId,day);
+  const logistics = await listLogisticsShippingItems(customerId,day);
+  const logisticsTotal = logisticsDeclaredTotal(logistics);
+  if(picked.length!==lotIds.length || new Set(lotIds).size!==lotIds.length)throw new Error("Revise os lotes selecionados.");
+  if (!picked.length && !storeOrders.length && !logistics.some(i=>i.source_kind==='raffle'))throw new Error("Nenhum lote, produto ou prêmio elegível.");
+  const storeTotal=storeDeclaredTotal(storeOrders);
   return (
     Math.round(
-      picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0) * 100,
+      (logisticsTotal+storeTotal+picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0)) * 100,
     ) / 100
   );
 }
@@ -235,14 +241,17 @@ export async function quoteShipmentAction(input: {
   volume: unknown;
   insuranceValue?: unknown;
   declaredValue?: unknown;
+  batchDate?:string;
 }): Promise<ActionResult<{ options: SfQuoteOption[]; errors: string[] }>> {
   try {
     await requireAdmin();
 
     const lotIds = parseLotIds(input.lotIds);
     const volume = parseVolume(input.volume);
-    const lotsInsurance = await insuranceFor(input.customerId, lotIds);
-    const { insuranceValue } = shipmentValues(lotsInsurance,input.declaredValue,input.insuranceValue);
+    const day=input.batchDate??nextShippingDate(todayISO());
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day)))return failure('Data de envio inválida.');
+    const lotsInsurance = await insuranceFor(input.customerId, lotIds,day);
+    const { insuranceValue }=shipmentValues(lotsInsurance,input.declaredValue,input.insuranceValue);
 
     const origin = await getOrigin();
     if (!origin) {
@@ -320,7 +329,7 @@ export async function emitShipmentAction(input: {
       volume,
       batchDate,
       insuranceValue: insuranceOverride,
-      declaredValue: input.declaredValue,
+      declaredValue:input.declaredValue,
       createdBy: profile.id,
     });
 

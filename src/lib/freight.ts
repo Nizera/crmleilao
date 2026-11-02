@@ -29,6 +29,7 @@ export type CustomerFreightState = {
   periodStart: string;
   /** Cobrança aberta que já inclui o frete (quando status === "awaiting"). */
   chargeCode?: string;
+  storeOrderId?:string;
 };
 
 /** Agregados do frete pago no período corrente (dashboard do admin). */

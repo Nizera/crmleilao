@@ -21,6 +21,8 @@ export type RateBucket =
   | "store-catalog-write"
   | "store-checkout"
   | "store-sync"
+  | "raffle-sync"
+  | "raffle-order"
   | "admin-signin"
   | "customer-signin"
   | "invite-accept"
@@ -36,6 +38,8 @@ const RULES: Record<RateBucket, { limit: number; window: number }> = {
   "store-catalog-write": { limit: 60, window: 300 },
   "store-checkout": { limit: 12, window: 300 },
   "store-sync": { limit: 15, window: 60 },
+  "raffle-sync": { limit: 12, window: 60 },
+  "raffle-order": { limit: 15, window: 60 },
   // Senha de 8+ caracteres: volume baixo por conta.
   "admin-signin": { limit: 5, window: 900 },
   "customer-signin": { limit: 5, window: 900 },

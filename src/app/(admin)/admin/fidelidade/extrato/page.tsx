@@ -1,3 +1,4 @@
+export const instant=false;
 import { redirect } from 'next/navigation';
 import { RetryButton } from '@/components/shared/retry-button';
 import { requireAdmin } from '@/lib/dal';

@@ -1,5 +1,8 @@
 import "server-only";
 import { shipmentValues } from "@/lib/shipment-values";
+import {listStoreShippingOrders,storeDeclaredTotal} from "@/lib/store-shipping";
+import { listLogisticsShippingItems } from "@/lib/logistics-shipping";
+import { logisticsDeclaredTotal, shipmentContentSnapshot } from "@/lib/shipment-content";
 
 import {
   cancelOrder,
@@ -39,7 +42,7 @@ const SHIPMENT_BASE_COLUMNS = [
   "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
   "price, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
-  "cancelled_at, created_by, created_at, updated_at,",
+  "cancelled_at, created_by, created_at, updated_at, freight_payer,",
   "customer:customers(id, name, phone_e164)",
 ].join(" ");
 
@@ -224,7 +227,9 @@ export type ShipmentQueueRow = {
   pendingShipment: Shipment | null;
   freightStatus: ShipmentFreightStatus;
   hasActiveCharge: boolean;
-  companyFreight?: boolean;
+  storeOrderCount?:number;
+  raffleAwardCount?:number;
+  companyFreight?:boolean;
 };
 
 function round2(value: number): number {
@@ -302,35 +307,42 @@ export async function listShipmentQueue(params: {
     } | null;
   }[];
 
-  const truncated = rows.length > QUEUE_LOTS_CAP;
-  if (truncated) rows.length = QUEUE_LOTS_CAP;
+  const storeDate=nextShippingDate(spToday());
+  const storeResult=await admin.from('store_orders').select('id,customer_id,created_at,items:store_order_items(delivery_kind),customers(id,name,phone_e164)').eq('payment_status','paid').neq('fulfillment_status','fulfilled').is('shipment_id',null).order('created_at').limit(QUEUE_LOTS_CAP+1);
+  if(storeResult.error)throw new Error('Não foi possível carregar as compras da loja para a fila.');
+  const storeCustomers=(storeResult.data??[]).filter(o=>o.items.some(i=>i.delivery_kind==='physical')&&(!params.periodFrom||storeDate>=params.periodFrom)&&(!params.periodTo||storeDate<=params.periodTo));
+  let prizeQuery=admin.from('logistics_pending').select('id,customer_id,shipping_date,customers(id,name,phone_e164)').eq('source_kind','raffle').is('cancelled_at',null).is('shipment_id',null).order('shipping_date').order('id');
+  // Prêmio atrasado continua na fila da próxima saída, como no relatório.
+  if(params.periodTo)prizeQuery=prizeQuery.lte('shipping_date',params.periodTo);
+  const prizeResult=await prizeQuery.limit(QUEUE_LOTS_CAP+1);
+  if(prizeResult.error)throw new Error('Não foi possível carregar os prêmios para a fila.');
+  const prizeCustomers=(prizeResult.data??[]).slice(0,QUEUE_LOTS_CAP);
+  const truncated = rows.length > QUEUE_LOTS_CAP || (storeResult.data?.length??0)>QUEUE_LOTS_CAP || (prizeResult.data?.length??0)>QUEUE_LOTS_CAP;
+  if (rows.length > QUEUE_LOTS_CAP) rows.length = QUEUE_LOTS_CAP;
 
-  if (rows.length === 0) return { rows: [], truncated };
+  if (rows.length === 0 && !storeCustomers.length && !prizeCustomers.length) return { rows: [], truncated };
 
-  const customerIds = [...new Set(rows.map(row => row.customer_id))];
-  const { data: unpaidRows, error: unpaidRowsError } = await admin
-    .from("lots").select("customer_id, arremate_value")
-    .in("customer_id", customerIds).eq("status", "pending_payment");
-  if (unpaidRowsError) throw new Error(`Falha ao conferir lotes pendentes: ${unpaidRowsError.message}`);
+  const customerIds = [...new Set([...rows.map(row => row.customer_id),...storeCustomers.map(row=>row.customer_id),...prizeCustomers.map(row=>row.customer_id)])];
   const unpaidByCustomer = new Map<string, number>();
-  for (const unpaid of unpaidRows ?? []) unpaidByCustomer.set(unpaid.customer_id, round2((unpaidByCustomer.get(unpaid.customer_id) ?? 0) + Number(unpaid.arremate_value)));
-  const { data: openChargeRows, error: openChargeError } = await admin.from("charges")
-    .select("customer_id, status, expires_at")
-    .in("customer_id", customerIds).in("status", ["pending", "in_process"]);
-  if (openChargeError) throw new Error(`Falha ao conferir cobranças pendentes: ${openChargeError.message}`);
-  const customersWithOpenCharges = new Set((openChargeRows ?? []).filter((charge) => isChargeActive(charge as never)).map((charge) => charge.customer_id));
+  const customersWithOpenCharges = new Set<string>();
   const freightStates = new Map<string, ShipmentFreightStatus>();
   for (const customerChunk of chunk(customerIds, 100)) {
-    const {data,error}=await admin.rpc('shipping_freight_states',{p_customers:customerChunk});
-    if(error)throw new Error('Não foi possível conferir os fretes dos envios.');
-    for(const row of data ?? [])freightStates.set(row.customer_id,row.status as ShipmentFreightStatus);
+    const [pending, charges, freight] = await Promise.all([
+      admin.from("lots").select("customer_id,arremate_value").in("customer_id", customerChunk).eq("status", "pending_payment"),
+      admin.from("charges").select("customer_id,status,expires_at").in("customer_id", customerChunk).in("status", ["pending", "in_process"]),
+      admin.rpc("shipping_freight_states", { p_customers: customerChunk }),
+    ]);
+    if (pending.error || charges.error || freight.error) throw new Error("Não foi possível conferir pagamentos e fretes da fila.");
+    for (const row of pending.data ?? []) unpaidByCustomer.set(row.customer_id, round2((unpaidByCustomer.get(row.customer_id) ?? 0) + Number(row.arremate_value)));
+    for (const row of charges.data ?? []) if (isChargeActive(row as never)) customersWithOpenCharges.add(row.customer_id);
+    for (const row of freight.data ?? []) freightStates.set(row.customer_id, row.status as ShipmentFreightStatus);
   }
 
   const lotIds = rows.map((row) => row.id);
-  const releasedPrizeLots = new Set<string>();
+  const releasedPrizeLots=new Set<string>();
   for(const piece of chunk(lotIds,200)){
     const {data,error}=await admin.from('external_prize_freight_releases').select('lot_id').in('lot_id',piece);
-    if(error)throw new Error('Não foi possível conferir liberações de frete. Confira a migration 0050.');
+    if(error)throw new Error('Não foi possível conferir liberações de frete. Aplique a migration 0050.');
     for(const release of data??[])releasedPrizeLots.add(release.lot_id);
   }
   const links: { lot_id: string; shipment_id: string }[] = [];
@@ -411,6 +423,8 @@ export async function listShipmentQueue(params: {
     byCustomer.set(row.customer_id, entry);
   }
 
+  for(const row of storeCustomers){const customer=row.customers as unknown as {id:string;name:string|null;phone_e164:string}|null;if(!customer)continue;if(!byCustomer.has(customer.id))byCustomer.set(customer.id,{name:customer.name,phone_e164:customer.phone_e164,lots:[],pendingShipment:null});}
+  for(const row of prizeCustomers){const customer=row.customers as unknown as {id:string;name:string|null;phone_e164:string}|null;if(!customer)continue;if(!byCustomer.has(customer.id))byCustomer.set(customer.id,{name:customer.name,phone_e164:customer.phone_e164,lots:[],pendingShipment:null});}
   const queue: ShipmentQueueRow[] = [];
   for (const [customerId, entry] of byCustomer) {
     const paidTotal = round2(
@@ -428,11 +442,13 @@ export async function listShipmentQueue(params: {
       paidTotal,
       unpaidTotal,
       shippingDate:
-        entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? null,
+        entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? (storeCustomers.some(o=>o.customer_id===customerId)?storeDate:params.periodTo??prizeCustomers.find(p=>p.customer_id===customerId)?.shipping_date??storeDate),
       pendingShipment: entry.pendingShipment,
       freightStatus: freightStates.get(customerId) ?? 'none',
       hasActiveCharge: customersWithOpenCharges.has(customerId),
-      companyFreight: entry.lots.length>0 && entry.lots.every(l=>l.arremate_value===0 && releasedPrizeLots.has(l.id)),
+      storeOrderCount:storeCustomers.filter(o=>o.customer_id===customerId).length,
+      raffleAwardCount:prizeCustomers.filter(o=>o.customer_id===customerId).length,
+      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&((entry.lots.length===0&&prizeCustomers.some(p=>p.customer_id===customerId))||(entry.lots.length>0&&!prizeCustomers.some(p=>p.customer_id===customerId)&&entry.lots.every(l=>l.arremate_value===0&&releasedPrizeLots.has(l.id)))),
     });
   }
 
@@ -775,7 +791,15 @@ async function applyOrderInfo(
 /*  Ações de emissão                                                           */
 /* -------------------------------------------------------------------------- */
 
-export async function emitShipment(input: {
+export async function emitShipment(input:Parameters<typeof emitShipmentInternal>[0]):Promise<{shipment:Shipment;warning?:string}>{
+ const db=createAdminClient();const token=crypto.randomUUID();
+ const {data,error}=await db.rpc('claim_shipment_emission',{p_customer:input.customerId,p_token:token});
+ if(error)throw new Error('Não foi possível reservar a emissão. Confira a migration 0039.');
+ if(!data)throw new Error('Já há uma etiqueta sendo emitida para este cliente. Aguarde e atualize a lista.');
+ try{return await emitShipmentInternal(input);}finally{await db.from('shipment_emission_leases').delete().eq('customer_id',input.customerId).eq('token',token);}
+}
+
+async function emitShipmentInternal(input: {
   customerId: string;
   lotIds: string[];
   serviceId: number;
@@ -783,7 +807,7 @@ export async function emitShipment(input: {
   batchDate?: string | null;
   /** Seguro editável no form; null = soma dos lotes. */
   insuranceValue?: number | null;
-  declaredValue?: unknown;
+  declaredValue?:unknown;
   createdBy: string | null;
 }): Promise<{ shipment: Shipment; warning?: string }> {
   const admin = createAdminClient();
@@ -805,11 +829,6 @@ export async function emitShipment(input: {
 
   const eligible = await listEligibleShipmentLots(input.customerId);
   const picked = eligible.filter((lot) => input.lotIds.includes(lot.id));
-  if (picked.length === 0) {
-    throw new Error(
-      "Nenhum dos lotes selecionados está pago e disponível para envio.",
-    );
-  }
 
   if (new Set(input.lotIds).size !== input.lotIds.length || picked.length !== input.lotIds.length) {
     throw new Error("Revise os lotes selecionados; há itens inválidos ou indisponíveis.");
@@ -821,19 +840,29 @@ export async function emitShipment(input: {
   const logisticsBlock = await logisticsShippingBlock(input.customerId, batchDate);
   if (logisticsBlock) throw new Error(logisticsBlock);
 
+  const storeOrders=await listStoreShippingOrders(input.customerId,batchDate);
+  const logistics = await listLogisticsShippingItems(input.customerId,batchDate);
+  const logisticsSubtotal = logisticsDeclaredTotal(logistics);
+  if(!picked.length && !storeOrders.length && !logistics.some(i=>i.source_kind==='raffle'))throw new Error('Nenhum lote, produto ou prêmio disponível para envio.');
+  const storeSubtotal=storeDeclaredTotal(storeOrders);
   const lotSubtotal = round2(
     picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
   );
-  const {declaredValue,insuranceValue}=shipmentValues(lotSubtotal,input.declaredValue,input.insuranceValue);
+  const {declaredValue,insuranceValue}=shipmentValues(lotSubtotal+storeSubtotal+logisticsSubtotal,input.declaredValue,input.insuranceValue);
+  const manualDeclaration=Number(String(input.declaredValue??0).replace(",","."))>0;
 
   // Declaração de conteúdo: um item "Documento" pelo subtotal dos lotes.
-  const products: SfProduct[] = [
+  const automaticProducts: SfProduct[] = lotSubtotal>0 ? [
     {
       name: "Documento",
       quantity: 1,
-      unitary_value: declaredValue,
+      unitary_value: lotSubtotal,
     },
-  ];
+  ] : [];
+  if(storeSubtotal>0)automaticProducts.push({name:"Colecionáveis da loja",quantity:1,unitary_value:storeSubtotal});
+  if(logisticsSubtotal>0)automaticProducts.push({name:"Prêmios de rifa",quantity:1,unitary_value:logisticsSubtotal});
+
+  const products: SfProduct[]=manualDeclaration?[{name:"Documento",quantity:1,unitary_value:declaredValue}]:automaticProducts;
 
   // 1) Etiqueta na SuperFrete (status pending).
   const cart = await createCart({
@@ -857,7 +886,7 @@ export async function emitShipment(input: {
       carrier: null,
       price: cart.price,
       insurance_value: insuranceValue,
-      events:[{event:"declaration",received_at:new Date().toISOString(),detail:{declaredValue,lotSubtotal,insuranceValue,manual:Number(String(input.declaredValue??0).replace(",","."))>0}}],
+      events:[{event:"declaration",received_at:new Date().toISOString(),detail:{declaredValue,lotSubtotal,insuranceValue,manual:manualDeclaration}}],
       volume: input.volume,
       address: buildRecipient(customer),
       sf_order_id: cart.id,
@@ -873,9 +902,9 @@ export async function emitShipment(input: {
 
   const shipmentId = inserted.id as string;
 
-  const { error: linkError } = await admin.from("shipment_lots").insert(
+  const { error: linkError } = picked.length ? await admin.from("shipment_lots").insert(
     picked.map((lot) => ({ shipment_id: shipmentId, lot_id: lot.id })),
-  );
+  ) : {error:null};
   if (linkError) {
     await cancelOrder(cart.id, "Falha ao vincular os lotes no CRM").catch(() => null);
     try {
@@ -886,7 +915,7 @@ export async function emitShipment(input: {
     throw new Error(`Falha ao vincular os lotes: ${linkError.message}`);
   }
 
-  const { error: storeError } = await admin.rpc('bind_store_orders_to_shipment', { p_shipment: shipmentId });
+  const { error: storeError } = await admin.rpc('bind_shipment_contents', { p_shipment: shipmentId, p_expected: shipmentContentSnapshot(picked,storeOrders,logistics,manualDeclaration?declaredValue:0) });
   if (storeError) {
     await cancelOrder(cart.id, 'Compras da loja ainda não estão prontas para envio').catch(() => null);
     await admin.from('shipments').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', shipmentId);
@@ -933,6 +962,8 @@ async function logisticsShippingBlock(customerId: string, day: string): Promise<
 }
 
 async function assertBoundStorePayments(shipmentId:string) {
+  const {error:raffleError}=await createAdminClient().rpc('assert_shipment_raffle_payments',{p_shipment:shipmentId});
+  if(raffleError)throw new Error(raffleError.message || 'Não foi possível conferir os pagamentos dos prêmios.');
   const {error:freightError}=await createAdminClient().rpc('assert_shipment_freight',{p_shipment:shipmentId});
   if(freightError)throw new Error(freightError.message);
   const {data,error}=await createAdminClient().from('store_orders').select('id').eq('shipment_id',shipmentId).neq('payment_status','paid').limit(1);

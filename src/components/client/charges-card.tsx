@@ -110,7 +110,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
   const freightDue = freight.status === "due";
   const canAddFreight = freightDue && !active;
   const withFreight = canAddFreight;
-  const showCart = !active && (eligibleLots.length > 0 || canAddFreight);
+  const showCart = !active && !freight.storeOrderId && (eligibleLots.length > 0 || canAddFreight);
 
   const total = useMemo(
     () =>
@@ -219,6 +219,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
           <div className="rounded-lg border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
             Frete do envio incluso no Pix {freight.chargeCode} — aguardando
             confirmação.
+            {freight.storeOrderId&&<Link href="/painel/loja?tab=orders" className="mt-2 block font-medium underline">Pagar compra e frete na loja</Link>}
           </div>
         )}
         {showFreightStatus && freight.status === "paid" && (

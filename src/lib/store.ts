@@ -19,9 +19,11 @@ export type StoreProduct = {
 export type CartLine = { reward_id: string; quantity: number; mode: PriceMode; expected_cash: number; expected_coins: number };
 export const cartCheckoutSchema = z.object({
   requestKey: z.uuid(),
+  voucherId: z.uuid().nullable().optional(),
+  expectedFreight: z.union([z.literal(0),z.literal(20)]).optional(),
   items: z.array(z.object({
     reward_id: z.uuid(), quantity: z.number().int().min(1).max(99),
-    mode: z.enum(["coins", "cash", "mixed"]),
+    mode: z.enum(["coins", "cash"]),
     expected_cash: z.number().finite().min(0).max(9999999),
     expected_coins: z.number().finite().min(0).max(9999999),
   })).min(1).max(50),
@@ -31,14 +33,14 @@ export const coinNumber = (value: number) => new Intl.NumberFormat("pt-BR", { ma
 export const storeBRL = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 export function productPrices(product: StoreProduct) {
   const options: { mode: PriceMode; cash: number; coins: number }[] = [];
+  // Catálogos antigos com mais de uma modalidade exigem revisão no ADM.
+  if ((Number(product.points_cost) > 0 && Number(product.cash_price) > 0) || Number(product.mixed_cash_price) > 0 || Number(product.mixed_points_cost) > 0) return options;
   if (Number(product.points_cost) > 0) options.push({ mode: "coins", cash: 0, coins: Number(product.points_cost) });
   if (Number(product.cash_price) > 0) options.push({ mode: "cash", cash: Number(product.cash_price), coins: 0 });
-  if (Number(product.mixed_cash_price) > 0 && Number(product.mixed_points_cost) > 0)
-    options.push({ mode: "mixed", cash: Number(product.mixed_cash_price), coins: Number(product.mixed_points_cost) });
   return options;
 }
 export function priceLabel(cash: number, coins: number) {
-  return [cash > 0 ? storeBRL(cash) : null, coins > 0 ? `${coinNumber(coins)} Caracoins` : null].filter(Boolean).join(" + ");
+  return [cash > 0 ? storeBRL(cash) : null, coins > 0 ? `${coinNumber(coins)} Caracoins` : null].filter(Boolean).join(" + ") || storeBRL(0);
 }
 export function safePixTicketUrl(raw: string | null): string | null {
   try { const url = new URL(raw ?? ""); return url.protocol === "https:" && ["mercadopago.com.br","mercadopago.com"].some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)) ? url.href : null; }
@@ -55,6 +57,8 @@ export function cartTotals(items: CartLine[]) {
 
 export type StoreOrderItem = { id: string; reward_id: string; name: string; image_path: string | null; quantity: number; price_mode: PriceMode; unit_cash: number; unit_coins: number };
 export type StoreOrder = {
+  freight_amount?:number;
+  voucher_id?: string | null; voucher_name?: string | null; discount_cash?: number; cash_subtotal?: number;
   boxed_at?: string | null; shipment_id?: string | null;
   shipment?: {code:string;status:string;tracking_code:string|null}|null;
   id: string; code: string; customer_id: string; external_reference: string;

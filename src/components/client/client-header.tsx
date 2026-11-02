@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -78,6 +78,7 @@ export function ClientHeader({
   caracoins,
 }: Props) {
   const router = useRouter();
+  const isStore = usePathname() === "/painel/loja";
   const { setTheme } = useTheme();
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -100,7 +101,7 @@ export function ClientHeader({
 
   return (
     <header className="sticky top-0 z-40 bg-background/85 pt-[env(safe-area-inset-top,0px)] backdrop-blur-xl after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-linear-to-r after:from-transparent after:via-ouro after:to-transparent after:content-['']">
-      <div className="mx-auto flex h-16 w-full max-w-2xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
+      <div className={cn("mx-auto flex h-16 w-full items-center gap-2 px-3 sm:gap-3 sm:px-4", isStore ? "max-w-7xl" : "max-w-2xl")}>
         <Link href="/painel" aria-label="Os Caras das Legends — Painel do cliente" className="flex min-w-0 items-center gap-2">
           <Logo className="w-28 sm:w-44" />
         </Link>

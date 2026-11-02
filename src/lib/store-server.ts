@@ -13,10 +13,11 @@ export async function getOwnStoreOrder(id: string, customerId: string): Promise<
 }
 /** Chave idempotente estável: repetir a criação nunca gera outro Pix. */
 export async function ensureStorePix(order: StoreOrder, signal = AbortSignal.timeout(20000)): Promise<StoreOrder> {
-  if (!isStoreOrderOpen(order) || order.mp_order_id) return order;
+  if (!isStoreOrderOpen(order) || Number(order.cash_total)<=0 || order.mp_order_id) return order;
   const admin = createAdminClient();
   const { data: customer, error: customerError } = await admin.from("customers").select("name,email,cpf_cnpj").eq("id", order.customer_id).single();
-  if (customerError || !customer?.email?.trim()) throw new Error("Não foi possível carregar o e-mail do comprador.");
+  if (customerError || !customer) throw new Error("Não foi possível carregar o comprador.");
+  if (!customer.email?.trim()) throw new Error("Preencha seu e-mail em Meus dados antes de pagar por Pix.");
   const [firstName, ...lastName] = (customer.name || "Cliente").trim().split(/\s+/);
   const document = (customer.cpf_cnpj || "").replace(/\D/g, "");
   const payment = await createPixOrder({
@@ -72,19 +73,25 @@ export async function syncStoreOrder(order: StoreOrder, signal?: AbortSignal) {
 /** Chamado por cron autenticado e pelo ADM; nunca libera reservas pelo relógio local. */
 export async function reconcileStoreOrders() {
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc('claim_store_reconciliation', { p_limit: 10 });
-  if (error) throw error;
-  const results = await Promise.all((data ?? []).map(async (row: StoreOrder) => {
-    try {
-      const signal = AbortSignal.timeout(25000);
-      const order = await ensureStorePix(row, signal);
-      await syncStoreOrder(order, signal);
-      await admin.from('store_orders').update({ reconciliation_error: null }).eq('id', row.id);
-      return true;
-    } catch {
-      await admin.from('store_orders').update({ reconciliation_error: 'Não foi possível confirmar com o Mercado Pago. A reserva foi mantida por segurança.' }).eq('id', row.id);
-      return false;
-    }
-  }));
-  return { checked: results.length, failed: results.filter(result => !result).length };
+  const started=Date.now();const budget=45000;let checked=0,failed=0;
+  // Lotes pequenos limitam conexões e respeitam o orçamento da função Vercel.
+  for(let batch=0;batch<60 && Date.now()-started<budget-1500;batch++){
+    const {data,error}=await admin.rpc('claim_store_reconciliation',{p_limit:4});
+    if(error)throw error;
+    if(!data?.length)break;
+    const results=await Promise.all(data.map(async(row:StoreOrder)=>{
+      try{
+        const signal=AbortSignal.timeout(Math.max(500,Math.min(12000,budget-(Date.now()-started)-500)));
+        const order=await ensureStorePix(row,signal);await syncStoreOrder(order,signal);
+        const {error}=await admin.from('store_orders').update({reconciliation_error:null}).eq('id',row.id);
+        if(error)throw error;
+        return true;
+      }catch{
+        await admin.from('store_orders').update({reconciliation_error:'Não foi possível confirmar com o Mercado Pago. A reserva foi mantida por segurança.'}).eq('id',row.id);
+        return false;
+      }
+    }));
+    checked+=results.length;failed+=results.filter(result=>!result).length;
+  }
+  return {checked,failed};
 }

@@ -31,10 +31,16 @@ const labels: Record<string, string> = {
   "/admin/configuracao": "Configuração",
   "/admin/fidelidade": "Loja · Visão geral",
   "/admin/fidelidade/recompensas": "Loja · Produtos",
+  "/admin/fidelidade/banners": "Loja · Banners",
+  "/admin/fidelidade/vouchers": "Loja · Vouchers",
   "/admin/fidelidade/resgates": "Loja · Pedidos",
   "/admin/fidelidade/extrato": "Loja · Caracoins",
   "/admin/fidelidade/configuracao": "Loja · Configurações",
   "/admin/rifa": "Rifa",
+  "/admin/rifa/reservas": "Rifa · Reservas",
+  "/admin/rifa/premios": "Rifa · Prêmios",
+  "/admin/rifa/configuracao": "Rifa · Configurações",
+  "/admin/rifa/nova": "Rifa · Nova campanha",
 };
 
 type Props = {

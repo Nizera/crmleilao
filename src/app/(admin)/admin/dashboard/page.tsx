@@ -188,7 +188,7 @@ export default async function DashboardPage({
       </div>
       <DashboardDatePicker key={period.from + period.to} period={period} today={today} />
       {periodError && <p role="alert" className="text-sm text-destructive">{periodError} Mostrando o dia completo de {formatDateBR(day)}.</p>}
-      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Todos os indicadores, listas e fretes consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
+      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Fechamento e frete usam a data e hora do pagamento. Os demais indicadores e listas consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
 
       {/* KPIs financeiros */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -211,7 +211,7 @@ export default async function DashboardPage({
                 {Math.abs(s.revenue.deltaPct)}% vs. {prevMonthLabel}
               </span>
             ) : (
-              `${monthLabel} · recebimentos confirmados${deltaHint ? ` · ${deltaHint}` : ""}`
+              `${monthLabel} · lotes cadastrados e pagos${deltaHint ? ` · ${deltaHint}` : ""}`
             )
           }
         />
@@ -302,13 +302,14 @@ export default async function DashboardPage({
       </div>
 
       {/* Fechamento + frete lado a lado no desktop */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-3">
         <ClosingCard
           closing={s.closing}
           ready={s.ready.closing}
           key={`closing:${period.from}/${period.to}`}
           period={period}
         />
+        <KpiCard label="Total recebido no período" icon={WalletIcon} value={s.ready.closing && s.ready.freight ? formatBRL(Math.round((s.closing.receivedOn+s.freight.total)*100)/100) : "—"} hint="Lotes + fretes pagos no intervalo. Sem valores da loja ou rifas; inclui somente seus fretes." />
         <FreightPeriodCard key={`freight:${period.from}/${period.to}`} stats={s.freight} period={period} ready={s.ready.freight} />
       </div>
 

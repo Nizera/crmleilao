@@ -16,9 +16,10 @@ const customerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const productId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 test('preços independentes e soma exata de quantidades em centavos', () => {
-  assert.deepEqual(productPrices({points_cost:100,cash_price:29.9,mixed_cash_price:9.9,mixed_points_cost:40}),[
-    {mode:'coins',cash:0,coins:100},{mode:'cash',cash:29.9,coins:0},{mode:'mixed',cash:9.9,coins:40},
-  ]);
+  assert.deepEqual(productPrices({points_cost:100,cash_price:29.9,mixed_cash_price:9.9,mixed_points_cost:40}),[]);
+  assert.deepEqual(productPrices({points_cost:100,cash_price:null}),[{mode:'coins',cash:0,coins:100}]);
+  assert.deepEqual(productPrices({points_cost:null,cash_price:29.9}),[{mode:'cash',cash:29.9,coins:0}]);
+  assert.equal(cartCheckoutSchema.safeParse({requestKey:crypto.randomUUID(),items:[{reward_id:productId,quantity:1,mode:'mixed',expected_cash:10,expected_coins:20}]}).success,false);
   assert.deepEqual(productPrices({points_cost:null,cash_price:null,mixed_cash_price:10,mixed_points_cost:null}),[]);
   assert.deepEqual(cartTotals([{quantity:3,expected_cash:0.1,expected_coins:2.5},{quantity:2,expected_cash:0.2,expected_coins:0}]),{cash:70,coins:750,quantity:5});
   assert.equal(cartCheckoutSchema.safeParse({requestKey:crypto.randomUUID(),items:[{reward_id:productId,quantity:-1,mode:'cash',expected_cash:10,expected_coins:0}]}).success,false);

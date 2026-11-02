@@ -5,6 +5,7 @@ import type { NextRequest } from "next/server";
 import { settleChargeByReference } from "@/lib/charges-server";
 import { getOrder, targetChargeStatus } from "@/lib/mercadopago";
 import { settleStoreMpOrder } from "@/lib/store-server";
+import { settleRafflePayment } from "@/lib/raffles-server";
 
 /**
  * Webhook do Mercado Pago (F3 — Orders API, tópico `order`).
@@ -265,6 +266,17 @@ async function handle(
   }
 
   const target = targetChargeStatus(order.status, order.statusDetail);
+  if (order.externalReference?.startsWith("raffle_")) {
+    try {
+      await settleRafflePayment(order);
+      revalidatePath("/painel/rifas", "layout");
+      revalidatePath("/admin/rifa", "layout");
+      revalidatePath("/admin/relatorios");
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: JSON_HEADERS });
+    } catch {
+      return new Response(JSON.stringify({ error: "retry" }), { status: 500, headers: JSON_HEADERS });
+    }
+  }
   if (order.externalReference?.startsWith("shop_")) {
     try {
       const result = await settleStoreMpOrder(order);

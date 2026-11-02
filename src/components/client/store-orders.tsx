@@ -7,14 +7,15 @@ import Link from "next/link";
 import { CheckCircle2, Copy, Loader2, Package, QrCode, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cancelSelfStoreOrderAction, syncSelfStoreOrderAction } from "@/app/actions/store";
-import { isStoreOrderOpen, priceLabel, safePixTicketUrl, storeFulfillmentLabels, storePaymentLabels, type StoreOrder } from "@/lib/store";
+import { isStoreOrderOpen, priceLabel, storeBRL, safePixTicketUrl, storeFulfillmentLabels, storePaymentLabels, type StoreOrder } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { usePaymentExpired } from "@/components/client/use-payment-expired";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export function StoreOrderCard({ order }: { order: StoreOrder }) {
   const router = useRouter();
   const [showPix, setShowPix] = useState(false);
-  const [expiredLocally, setExpiredLocally] = useState(false);
+  const expiredLocally = usePaymentExpired(order.expires_at);
   const [pending, startTransition] = useTransition();
   const checking = useRef(false);
   const active = isStoreOrderOpen(order);
@@ -50,11 +51,13 @@ export function StoreOrderCard({ order }: { order: StoreOrder }) {
   });
   return <article className={`rounded-xl border p-4 ${active ? "border-ouro/40 bg-amarelo/5" : "bg-card"}`}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="flex items-center gap-2 text-sm font-semibold">{order.payment_status === "paid" ? <CheckCircle2 className="size-4 text-emerald-600" /> : <Package className="size-4" />} Pedido {order.code}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(order.created_at).toLocaleDateString("pt-BR",{timeZone:"America/Sao_Paulo"})} · {storePaymentLabels[order.payment_status]}</p>{order.payment_status === "paid" && <p className="mt-1 text-xs font-semibold text-ouro-ink">{storeFulfillmentLabels[order.fulfillment_status]}</p>}</div><p className="text-sm font-bold text-ouro-ink">{priceLabel(Number(order.cash_total),Number(order.coins_total))}</p></div>
+    {Number(order.freight_amount)>0&&<p className="mt-2 text-xs text-muted-foreground">Total inclui {storeBRL(Number(order.freight_amount))} de frete do pacote. Produtos: {storeBRL(Math.max(0,Number(order.cash_total)-Number(order.freight_amount)))}{Number(order.coins_total)>0?` + ${order.coins_total} Caracoins`:""}.</p>}
+    {Number(order.discount_cash)>0 && <p className="mt-2 text-sm text-emerald-700">Voucher{order.voucher_name?` ${order.voucher_name}`:""}: −{storeBRL(Number(order.discount_cash))} · subtotal {storeBRL(Number(order.cash_subtotal))}</p>}
     <details className="mt-3" open={active}><summary className="cursor-pointer text-sm font-medium">Ver itens do pedido ({order.items.reduce((sum,item)=>sum+item.quantity,0)})</summary><ul className="mt-2 space-y-1 text-sm">{order.items.map((item) => <li key={item.id}>{item.quantity}× {item.name}</li>)}</ul></details>
-    {order.payment_status==='paid' && order.boxed_at && !order.shipment_id && <p className="mt-2 text-sm">Separado na sua caixa, aguardando envio junto dos seus lotes. Sem lotes ou frete disponível, a equipe combinará o envio com você.</p>}
+    {order.payment_status==='paid' && order.boxed_at && !order.shipment_id && <p className="mt-2 text-sm">Separado na sua caixa, aguardando envio. Pode seguir sozinho ou junto dos lotes, usando um único frete por pacote. O frete pago no pedido ou nos lotes será aproveitado.</p>}
     {order.shipment && <p className="mt-2 text-sm">Envio {order.shipment.code}{order.shipment.tracking_code ? ` · Rastreio ${order.shipment.tracking_code}` : ''} · <Link href="/painel/envios" className="font-medium underline">Acompanhar envio</Link></p>}
     {order.admin_note && <p className="mt-2 text-xs text-muted-foreground">Equipe: {order.admin_note}</p>}
-    {active && <><p className="mt-3 text-xs text-muted-foreground">A confirmação do Pix aparece automaticamente aqui. Os itens e as Caracoins estão reservados.</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => { setExpiredLocally(order.expires_at !== null && new Date(order.expires_at).getTime() < Date.now()); if (!order.qr_code && !order.ticket_url) update(); setShowPix(true); }}><QrCode />{order.payment_status === "creating" ? "Preparar pagamento" : "Pagar Pix"}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => update()}><RefreshCw className={pending ? "animate-spin" : ""} />Atualizar</Button><Button size="sm" variant="ghost" disabled={pending} onClick={() => { if (window.confirm("Cancelar este Pix e devolver as Caracoins reservadas?")) update(true); }}>Cancelar pedido</Button></div></>}
+    {active && <><p className="mt-3 text-xs text-muted-foreground">A confirmação do Pix aparece automaticamente aqui. Os itens e as Caracoins estão reservados.</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => { if (!order.qr_code && !order.ticket_url) update(); setShowPix(true); }}><QrCode />{order.payment_status === "creating" ? "Preparar pagamento" : "Pagar Pix"}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => update()}><RefreshCw className={pending ? "animate-spin" : ""} />Atualizar</Button><Button size="sm" variant="ghost" disabled={pending} onClick={() => { if (window.confirm("Cancelar este Pix e devolver as Caracoins reservadas?")) update(true); }}>Cancelar pedido</Button></div></>}
     <Sheet open={showPix && active} onOpenChange={setShowPix}><SheetContent className="overflow-y-auto data-[side=right]:w-full"><SheetHeader><SheetTitle>Pix do pedido {order.code}</SheetTitle><SheetDescription>{priceLabel(Number(order.cash_total),Number(order.coins_total))}. A confirmação será automática.</SheetDescription></SheetHeader><div className="grid gap-4 p-4">
       {expiredLocally ? <p className="text-sm">O prazo deste Pix terminou. Estamos verificando o encerramento para devolver sua reserva.</p> : order.qr_code ? <>
         {order.qr_code_base64 && <div className="flex justify-center"><Image alt="QR Code Pix do pedido" src={`data:image/png;base64,${order.qr_code_base64}`} width={224} height={224} unoptimized className="size-56 rounded-xl bg-white p-2" /></div>}

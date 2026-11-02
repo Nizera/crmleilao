@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
 import { handleStoreOrderAction } from "@/app/actions/store";
+import { boxRaffleAward } from "@/app/actions/raffles";
 import { handleLogisticsPendingAction } from "@/app/actions/logistics-pending";
 import { PrintButton } from "@/components/admin/reports/print-button";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ type Props = {
 };
 
 export function SeparationReportView({ initialDate, initialReport }: Props) {
+  const [storeDeclared,setStoreDeclared]=useState<Record<string,string>>({});
   const [date, setDate] = useState(initialDate);
   const [report, setReport] = useState(initialReport);
   const [customerId, setCustomerId] = useState(ALL);
@@ -249,20 +251,22 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                 {customer.storeOrders.map(order => <div key={order.id} className="mb-3 rounded-md border border-ouro/40 p-3 break-inside-avoid">
                   <p className="text-sm font-semibold">Loja · {order.code} {order.boxed_at ? '· Na caixa' : '· A separar'}</p>
                   <ul className="mt-2 grid gap-1 text-xs">{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><li key={index}>{item.quantity}× {item.name}</li>)}</ul>
-                  {!order.boxed_at && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
-                    const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');
+                  {order.fulfillment_status==='processing' && (!order.boxed_at||!order.shipping_declared_value) && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais (obrigatório para produtos em Caracoins)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} placeholder="Em reais, automático; em Caracoins, informe o valor" className="h-9 max-w-sm rounded-md border bg-background px-2"/></label>}
+                  {(!order.boxed_at||!order.shipping_declared_value) && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
+                    const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');form.set('declared_value',storeDeclared[order.id]??'');
                     const result=await handleStoreOrderAction(form);
                     if(!result.ok){toast.error(result.error);return;}
                     const refreshed=await getSeparationReportAction(date);if(refreshed.ok)setReport(refreshed.data);else toast.error(refreshed.error);
                   })}>{order.fulfillment_status==='awaiting'?'Iniciar separação':'Colocar na caixa do cliente'}</Button>}
                 </div>)}
                 {customer.logisticsPending.map(issue => <div key={issue.id} className="mb-3 rounded-md border border-amber-500/40 p-3 break-inside-avoid">
-                  <p className="text-sm font-semibold">Pendência logística — sem cobrança · {issue.code}</p>
+                  <p className="text-sm font-semibold">{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
                   <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
-                  {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
-                    const result = await handleLogisticsPendingAction(issue.id, "box");
+                  {issue.source_kind === "raffle" && (!issue.moved_at || !issue.shipping_declared_value) && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
+                  {(!issue.moved_at || (issue.source_kind === "raffle" && !issue.shipping_declared_value)) && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
+                    const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(storeDeclared[issue.id] ?? issue.shipping_declared_value)) : await handleLogisticsPendingAction(issue.id, "box");
                     if (!result.ok) { toast.error(result.error); return; }
                     const refreshed = await getSeparationReportAction(date);
                     if (refreshed.ok) setReport(refreshed.data); else toast.error(refreshed.error);

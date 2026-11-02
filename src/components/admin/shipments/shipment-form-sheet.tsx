@@ -56,7 +56,7 @@ export function ShipmentFormSheet({
         <SheetHeader className="border-b px-6 py-4">
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>
-            Agrupe os lotes pagos de um cliente, cotar e emita a etiqueta
+            Agrupe os lotes e pedidos pagos de um cliente, cote e emita a etiqueta
             SuperFrete.
           </SheetDescription>
         </SheetHeader>
@@ -202,7 +202,7 @@ function ShipmentForm({
 
   const pickedLots =
     context?.lots.filter((lot) => picked.has(lot.id)) ?? [];
-  const total = pickedLots.reduce(
+  const total = (context?.logisticsPending??[]).reduce((sum,item)=>sum+Number(item.shipping_declared_value??0),0)+(context?.storeOrders??[]).reduce((sum,order)=>sum+Number(order.shipping_declared_value??0),0)+pickedLots.reduce(
     (sum, lot) => sum + Number(lot.arremate_value),
     0,
   );
@@ -232,9 +232,11 @@ function ShipmentForm({
       return `Faltam dados do destinatário: ${context.missing.join(", ")}.`;
     }
     if (context.storeBlock) return context.storeBlock;
-    if (picked.size === 0) return "Selecione ao menos um lote.";
+    if(context.logisticsPending.some(i=>!i.moved_at||(i.source_kind==='raffle'&&Number(i.shipping_declared_value)<=0)))return "Confira os itens avulsos e o valor declarado dos prêmios no relatório.";
+    if (picked.size === 0 && !context.storeOrders.length && !context.logisticsPending.some(i=>i.source_kind==='raffle')) return "Selecione um lote ou separe um produto ou prêmio.";
+    if(context.storeOrders.some(o=>!o.boxed_at||!o.shipping_declared_value))return "Confira a separação e o valor declarado dos pedidos da loja.";
     if(declaredInvalid)return "Confira o valor declarado do pacote.";
-    if(declaredTotal<=0)return "Os lotes estão zerados. Informe o valor declarado do prêmio.";
+    if(declaredTotal<=0)return "Os itens estão zerados. Informe o valor declarado do prêmio.";
     if (insuranceMismatch) {
       return `Com seguro, o valor precisa ser igual ao subtotal da declaração (${formatBRL(declaredTotal)}).`;
     }
@@ -247,11 +249,12 @@ function ShipmentForm({
     setQuoting(true);
 
     quoteShipmentAction({
+        batchDate,
       customerId: selected.id,
       lotIds: [...picked],
       volume,
       insuranceValue,
-      declaredValue: declared,
+      declaredValue:declared,
     })
       .then((result) => {
         if (result.ok) {
@@ -279,7 +282,7 @@ function ShipmentForm({
         volume,
         batchDate: batchDate || null,
         insuranceValue,
-      declaredValue: declared,
+      declaredValue:declared,
       });
 
       if (!result.ok) {
@@ -412,10 +415,12 @@ function ShipmentForm({
               )}
 
               {context.logisticsPending.length > 0 && <div className="rounded-md border border-amber-500/40 p-3 text-sm">
+                {!picked.size&&!context.storeOrders.length&&context.logisticsPending.every(i=>i.source_kind==='raffle')&&<p className="mb-2 font-medium">Envio exclusivo de prêmio: frete por conta da empresa, sem usar crédito do cliente.</p>}
                 <p className="font-medium">Pendências logísticas para este envio</p>
                 {context.logisticsPending.map(issue => <p key={issue.id} className="mt-1 break-words text-xs">{issue.quantity} × {issue.title} · {issue.moved_at ? "Na caixa" : "A separar no relatório"}</p>)}
                 <p className="mt-2 text-xs text-muted-foreground">Incluídas automaticamente após a separação, sem cobrança adicional. Confira as dimensões e o peso do pacote.</p>
               </div>}
+              {context.storeOrders.length>0 && <div className="rounded-md border p-3 text-sm"><p className="font-medium">Pedidos da loja incluídos neste pacote</p>{context.storeOrders.map(order=><div key={order.id} className="mt-2 text-xs"><p>{order.code} · {order.boxed_at?'Na caixa':'A separar'} · {order.shipping_declared_value?formatBRL(Number(order.shipping_declared_value)):'Conferir valor declarado'}</p>{order.items.filter(i=>i.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity} × {item.name}</p>)}</div>)}<p className="mt-2 text-xs text-muted-foreground">O mesmo frete do pacote é usado com ou sem lotes de leilão.</p></div>}
               {context.lots.length === 0 ? (
                 <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
                   Nenhum lote pago disponível: todos já estão em envio ou ainda
@@ -556,7 +561,7 @@ function ShipmentForm({
                 <p
                   className={`text-xs ${insuranceMismatch ? "text-destructive" : "text-muted-foreground"}`}
                 >
-                  Sem seguro, deixe 0. Com seguro, use o valor da declaração
+                  Sem seguro, deixe 0. Com seguro, use o subtotal da declaração
                   ({formatBRL(total)}). Os Correios só cotam com seguro ≥ R$ 25,63.
                 </p>
               </div>

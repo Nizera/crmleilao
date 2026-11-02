@@ -10,6 +10,8 @@ export const LoyaltyField = ({ label, children }: { label: string; children: Rea
 const tabs = [
   ["resumo", "/admin/fidelidade", "Visão geral da loja", LayoutDashboard],
   ["recompensas", "/admin/fidelidade/recompensas", "Produtos", Gift],
+  ["banners", "/admin/fidelidade/banners", "Banners", Gift],
+  ["vouchers", "/admin/fidelidade/vouchers", "Vouchers", Gift],
   ["resgates", "/admin/fidelidade/resgates", "Pedidos", PackageCheck],
   ["extrato", "/admin/fidelidade/extrato", "Caracoins", History],
   ["configuracao", "/admin/fidelidade/configuracao", "Configurações", Settings2],
