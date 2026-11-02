@@ -107,6 +107,7 @@ function ShipmentForm({
   const [volumeTouched, setVolumeTouched] = useState(false);
   /** Editável; "0" (padrão) = sem seguro; a soma dos lotes é só a sugestão. */
   const [insurance, setInsurance] = useState("0");
+  const [declared,setDeclared]=useState("0");
 
   const [step, setStep] = useState<"form" | "quote">("form");
   const [options, setOptions] = useState<SfQuoteOption[] | null>(null);
@@ -212,9 +213,12 @@ function ShipmentForm({
       ? Math.round(parsed * 100) / 100
       : 0;
   })();
+  const parsedDeclared=Number(declared.trim().replace(",","."));
+  const declaredInvalid=!Number.isFinite(parsedDeclared)||parsedDeclared<0||parsedDeclared>100000;
+  const declaredTotal=parsedDeclared>0?Math.round(parsedDeclared*100)/100:Math.round(total*100)/100;
   const insuranceMismatch =
     insuranceValue > 0 &&
-    Math.round(insuranceValue * 100) !== Math.round(total * 100);
+    Math.round(insuranceValue * 100) !== Math.round(declaredTotal * 100);
 
   const blockedReason = (() => {
     if (!context) return null;
@@ -229,8 +233,10 @@ function ShipmentForm({
     }
     if (context.storeBlock) return context.storeBlock;
     if (picked.size === 0) return "Selecione ao menos um lote.";
+    if(declaredInvalid)return "Confira o valor declarado do pacote.";
+    if(declaredTotal<=0)return "Os lotes estão zerados. Informe o valor declarado do prêmio.";
     if (insuranceMismatch) {
-      return `Com seguro, o valor precisa ser igual ao subtotal da declaração (${formatBRL(total)}).`;
+      return `Com seguro, o valor precisa ser igual ao subtotal da declaração (${formatBRL(declaredTotal)}).`;
     }
     return null;
   })();
@@ -245,6 +251,7 @@ function ShipmentForm({
       lotIds: [...picked],
       volume,
       insuranceValue,
+      declaredValue: declared,
     })
       .then((result) => {
         if (result.ok) {
@@ -272,6 +279,7 @@ function ShipmentForm({
         volume,
         batchDate: batchDate || null,
         insuranceValue,
+      declaredValue: declared,
       });
 
       if (!result.ok) {
@@ -521,6 +529,7 @@ function ShipmentForm({
                 </p>
               </div>
 
+              <div className="flex flex-col gap-2"><label htmlFor="shipment-declared-value" className="text-sm font-medium">Valor declarado do pacote (R$)</label><Input id="shipment-declared-value" inputMode="decimal" value={declared} onChange={e=>setDeclared(e.target.value)} disabled={pending} placeholder="0,00"/><p className="text-xs text-muted-foreground">Zero ou vazio usa a soma dos lotes ({formatBRL(total)}). Para prêmios, informe o valor do conteúdo. Não altera cobranças ou faturamento.</p><p className="text-xs font-medium">Valor da declaração: {formatBRL(declaredTotal)}</p></div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">Seguro declarado</p>
@@ -547,7 +556,7 @@ function ShipmentForm({
                 <p
                   className={`text-xs ${insuranceMismatch ? "text-destructive" : "text-muted-foreground"}`}
                 >
-                  Sem seguro, deixe 0. Com seguro, use o subtotal da declaração
+                  Sem seguro, deixe 0. Com seguro, use o valor da declaração
                   ({formatBRL(total)}). Os Correios só cotam com seguro ≥ R$ 25,63.
                 </p>
               </div>

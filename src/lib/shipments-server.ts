@@ -1,4 +1,5 @@
 import "server-only";
+import { shipmentValues } from "@/lib/shipment-values";
 
 import {
   cancelOrder,
@@ -22,7 +23,7 @@ import type {
   ShipmentVolume,
 } from "@/lib/shipments";
 import { spToday } from "@/lib/dates";
-import { formatBRL, nextShippingDate } from "@/lib/lots";
+import { nextShippingDate } from "@/lib/lots";
 import { notifyCustomer } from "@/lib/notifications-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isChargeActive } from "@/lib/charges";
@@ -782,6 +783,7 @@ export async function emitShipment(input: {
   batchDate?: string | null;
   /** Seguro editável no form; null = soma dos lotes. */
   insuranceValue?: number | null;
+  declaredValue?: unknown;
   createdBy: string | null;
 }): Promise<{ shipment: Shipment; warning?: string }> {
   const admin = createAdminClient();
@@ -822,25 +824,14 @@ export async function emitShipment(input: {
   const lotSubtotal = round2(
     picked.reduce((sum, lot) => sum + Number(lot.arremate_value), 0),
   );
-  const insuranceValue =
-    input.insuranceValue != null
-      ? input.insuranceValue
-      : lotSubtotal;
-  if (
-    insuranceValue > 0 &&
-    Math.round(insuranceValue * 100) !== Math.round(lotSubtotal * 100)
-  ) {
-    throw new Error(
-      `Com seguro, o valor precisa ser igual ao subtotal dos lotes (${formatBRL(lotSubtotal)}).`,
-    );
-  }
+  const {declaredValue,insuranceValue}=shipmentValues(lotSubtotal,input.declaredValue,input.insuranceValue);
 
   // Declaração de conteúdo: um item "Documento" pelo subtotal dos lotes.
   const products: SfProduct[] = [
     {
       name: "Documento",
       quantity: 1,
-      unitary_value: lotSubtotal,
+      unitary_value: declaredValue,
     },
   ];
 
@@ -866,6 +857,7 @@ export async function emitShipment(input: {
       carrier: null,
       price: cart.price,
       insurance_value: insuranceValue,
+      events:[{event:"declaration",received_at:new Date().toISOString(),detail:{declaredValue,lotSubtotal,insuranceValue,manual:Number(String(input.declaredValue??0).replace(",","."))>0}}],
       volume: input.volume,
       address: buildRecipient(customer),
       sf_order_id: cart.id,

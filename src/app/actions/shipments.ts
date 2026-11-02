@@ -1,4 +1,5 @@
 "use server";
+import { shipmentValues } from "@/lib/shipment-values";
 import { z } from "zod";
 import { allow } from "@/lib/ratelimit";
 
@@ -39,7 +40,7 @@ import { siteUrl, todayISO } from "@/lib/lots";
 import { freightPeriodForDate,freightPeriodEnd } from "@/lib/freight";
 import { isoDayAdd } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
-import { formatBRL, waMessageLink } from "@/lib/lots";
+import { waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -233,6 +234,7 @@ export async function quoteShipmentAction(input: {
   lotIds: unknown;
   volume: unknown;
   insuranceValue?: unknown;
+  declaredValue?: unknown;
 }): Promise<ActionResult<{ options: SfQuoteOption[]; errors: string[] }>> {
   try {
     await requireAdmin();
@@ -240,15 +242,7 @@ export async function quoteShipmentAction(input: {
     const lotIds = parseLotIds(input.lotIds);
     const volume = parseVolume(input.volume);
     const lotsInsurance = await insuranceFor(input.customerId, lotIds);
-    const insuranceValue = parseInsurance(input.insuranceValue) ?? lotsInsurance;
-    if (
-      insuranceValue > 0 &&
-      Math.round(insuranceValue * 100) !== Math.round(lotsInsurance * 100)
-    ) {
-      return failure(
-        `Com seguro, o valor precisa ser igual ao subtotal dos lotes (${formatBRL(lotsInsurance)}).`,
-      );
-    }
+    const { insuranceValue } = shipmentValues(lotsInsurance,input.declaredValue,input.insuranceValue);
 
     const origin = await getOrigin();
     if (!origin) {
@@ -299,6 +293,7 @@ export async function emitShipmentAction(input: {
   volume: unknown;
   batchDate?: string | null;
   insuranceValue?: unknown;
+  declaredValue?: unknown;
 }): Promise<ActionResult<{ shipment: Shipment; warning?: string }>> {
   try {
     const { profile } = await requireAdmin();
@@ -325,6 +320,7 @@ export async function emitShipmentAction(input: {
       volume,
       batchDate,
       insuranceValue: insuranceOverride,
+      declaredValue: input.declaredValue,
       createdBy: profile.id,
     });
 
