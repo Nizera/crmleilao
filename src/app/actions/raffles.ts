@@ -110,6 +110,20 @@ export async function recordRaffleWinner(input: unknown): Promise<ActionResult> 
     invalidate(); return { ok: true, data: null };
   } catch (error) { return failure(error); }
 }
+export async function lookupRaffleBuyer(campaign: string, number: number): Promise<ActionResult<{ number: number; name: string } | null>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") return { ok: false, error: "Seu perfil permite apenas consultar campanhas." };
+    if (!z.uuid().safeParse(campaign).success || !Number.isInteger(number) || number < 0 || number > 9999) return { ok: false, error: "Informe uma cota válida." };
+    if (!await allow("loyalty-read", profile.id)) return { ok: false, error: "Aguarde alguns segundos para consultar novamente." };
+    const { data, error } = await (await createClient()).from("raffle_orders")
+      .select("id,customer:customers(name)").eq("campaign_id", campaign).eq("status", "paid").contains("numbers", [number]).maybeSingle();
+    if (error) throw error;
+    if (!data) return { ok: true, data: null };
+    const customer = data.customer as unknown as { name: string | null } | null;
+    return { ok: true, data: { number, name: customer?.name || "Cliente cadastrado" } };
+  } catch (error) { return failure(error); }
+}
 export async function reserveRaffle(input: unknown): Promise<ActionResult<RaffleOrder>> {
   try {
     const { customer } = await requireCustomer();

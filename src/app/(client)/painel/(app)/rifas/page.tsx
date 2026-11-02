@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const page = Math.min(10000, Math.max(1, Math.trunc(Number(params.page) || 1)));
   const db = await createClient(); let content: React.ReactNode; let total = 0; let more = false;
   if (tab === "participate") {
-    const r = await db.from("raffle_campaigns").select("*", { count: "exact" }).in("status", ["open", "paused", "closed"]).is("archived_at",null).order("created_at", { ascending: false }).order("id").range((page - 1) * 10, page * 10 - 1);
+    const r = await db.from("raffle_campaigns").select("*", { count: "exact" }).in("status", ["open", "paused"]).is("archived_at",null).order("created_at", { ascending: false }).order("id").range((page - 1) * 10, page * 10 - 1);
     total = r.count ?? 0; more = page * 10 < total;
     content = r.error ? <RaffleUnavailable /> : r.data?.length ? <div className="grid gap-5 sm:grid-cols-2">{(r.data as Raffle[]).map(c => <RaffleCard key={c.id} campaign={c} />)}</div> : <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">As próximas campanhas aparecerão aqui.</p>;
   } else {

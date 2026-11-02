@@ -37,6 +37,7 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
     await db.exec(baseMigration);
     await db.exec(await readFile(new URL('../supabase/migrations/0044_raffle_optional_shipping_date.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/0052_raffle_photos.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/0053_raffle_close_after_results.sql', import.meta.url), 'utf8'));
     const draft = { title: 'Campanha teste', description: 'Regulamento da campanha teste.', total_numbers: 10, unit_price: 19.99, selection_mode: 'both', draw_method: 'external', draw_rules: 'Resultado externo com regra definida.', shipping_date: '2026-11-10', image_url: '', hide_winning_numbers: true, min_quantity: 1, max_quantity: 5 };
     await t.test('cliente e viewer não criam campanha nem liberam vendas', async () => {
       await as(a); await assert.rejects(scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]), /Acesso negado/);
@@ -121,7 +122,8 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await assert.rejects(db.query('select record_raffle_winner($1,1,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /pagamento confirmado/);
       await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'http://inseguro.invalid']), /HTTPS/);
       await db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']);
-      await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /já registrado/);
+      await assert.rejects(db.query('select record_raffle_winner($1,0,$2,$3)', [p, 'Resultado comprovado', 'https://example.invalid/resultado']), /Pause|já registrado/);
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'closed');
       await as(a);
       const mainAwards = await scalar('select get_raffle_awards(1)');
       const main = mainAwards.find(award => award.order_id === o && award.kind === 'main');
@@ -135,6 +137,19 @@ test('Rifas: reservas, isolamento, pagamentos e entrega de prêmios', async t =>
       await manage(next, 'close');
       const result = await scalar('select list_raffle_admin_orders($1,null,$2,1)', [next, '000']);
       assert.equal(result.total, 1); assert.equal(result.items[0].has_award, true);
+    });
+    await t.test('vários prêmios principais mantêm a pausa até o último ganhador', async () => {
+      await as(admin); const next = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]);
+      await manage(next, 'main', 'Prêmio principal', 2); await manage(next, 'open');
+      await as(a); const order = await reserve(next, [0, 1]); await settle(order, 'paid');
+      await as(admin); await manage(next, 'pause');
+      const prizes = (await db.query("select id from raffle_prizes where campaign_id=$1 and kind='main' order by id", [next])).rows;
+      await db.query('select record_raffle_winner($1,0,$2,$3)', [prizes[0].id, 'Resultado comprovado', 'https://example.invalid/resultado']);
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'paused');
+      await db.query('select record_raffle_winner($1,1,$2,$3)', [prizes[1].id, 'Resultado comprovado', 'https://example.invalid/resultado']);
+      assert.equal(await scalar('select status from raffle_campaigns where id=$1', [next]), 'closed');
+      await as(a); const awards = await scalar('select get_raffle_awards(1,$1::uuid[])', [[order]]);
+      assert.equal(awards.length, 2); assert.ok(awards.every(award => award.customer_id === a));
     });
     await t.test('galeria exige equipe com escrita, limita fotos e mantém capa e auditoria', async () => {
       await as(admin); const campaign = await scalar('select save_raffle_campaign($1::jsonb)', [JSON.stringify(draft)]);
