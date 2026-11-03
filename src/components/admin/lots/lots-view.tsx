@@ -53,6 +53,7 @@ import {
   buildLotMessage,
   formatBRL,
   formatDateBR,
+  lotImageUrl,
   LOT_STATUSES,
   LOT_STATUS_LABELS,
   waMessageLink,
@@ -163,7 +164,9 @@ export function LotsView({
     startTransition(async () => {
       const result = await getLotDetailAction(lot.id);
       if (!result.ok) { toast.error(result.error); return; }
-      const images = result.data.images ?? [];
+      const images = (result.data.images ?? [])
+        .map(path => lotImageUrl(path))
+        .filter((url): url is string => Boolean(url));
       if (!images.length) { toast.info("Este lote não possui imagens cadastradas."); return; }
       setGallery(images.map((src, index) => ({ src, alt: `Lote ${lot.code} · ${lot.title} · Foto ${index + 1}` })));
       setImageIndex(0);
