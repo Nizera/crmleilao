@@ -22,6 +22,11 @@ test('intervalo SP inclui início e exclui fim; não puxa pagos depois ou crédi
 test('frete da loja entra sem preço dos produtos; IDs de fontes diferentes não se confundem',()=>{
  const r=computePeriodReceipts([lot],[charge],[{...charge,status:'paid',cash_total:500}],thu);assert.equal(r.freightTotal,40);assert.equal(r.total,120);assert.equal(r.paidCustomers,1);
 });
+
+test('prêmio zerado não conta como venda recebida, mas seu frete permanece no fechamento',()=>{
+ const r=computePeriodReceipts([{...lot,arremate_value:0},{...lot,arremate_value:'0.00'}],[charge],[],thu);
+ assert.equal(r.paidLots,0);assert.equal(r.lotsTotal,0);assert.equal(r.freightTotal,20);assert.equal(r.total,20);assert.equal(r.paidCustomers,1);
+});
 test('consulta de fretes pagina, usa paid_at e inclui pagadores sem lote cadastrado no filtro',async()=>{
  const calls=[];const rows=Array.from({length:501},(_,id)=>({...charge,id:String(id)}));
  const db={from(table){const filters=[];return {select(){return this},eq(...a){filters.push(a);return this},gt(...a){filters.push(a);return this},gte(...a){filters.push(a);return this},lt(...a){filters.push(a);return this},order(){return this},async range(from,to){calls.push({table,filters});return {data:table==='charges'?rows.slice(from,to+1):[],error:null}}}}};

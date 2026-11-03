@@ -78,6 +78,48 @@ test('8 lotes de R$ 925 entram uma única vez no faturamento diário', async () 
   assert.equal(result.ranking[0].lots, 8);
 });
 
+test('prêmios zerados não reduzem ticket ou contam como vendas; logística e frete são preservados', async () => {
+  const rows = [
+    lot(100, { id: 'sale', shipping_date: '2026-10-28' }),
+    lot(200, { status: 'shipped' }),
+    lot(0, { id: 'prize', customer_id: 'winner', shipping_date: '2026-10-28' }),
+    lot('0.00', { status: 'delivered', customer_id: 'winner' }),
+    lot(0, { status: 'pending_payment', paid_at: null }),
+    lot(50, { status: 'pending_payment', paid_at: null }),
+    lot(999, { status: 'cancelled' }),
+  ];
+  const result = await statsFor(rows, undefined, undefined, {
+    charges: [{ id: 'prize-freight', customer_id: 'winner', status: 'approved', freight_amount: 20, paid_at: '2026-10-27T18:00:00Z' }],
+    shipment_lots: [{ lot_id: 'prize', shipment_id: 'prize-shipment', shipment: { id: 'prize-shipment', status: 'pending' } }],
+  });
+  assert.equal(result.revenue.ticket, 150);
+  assert.equal(result.revenue.total, 300);
+  assert.equal(result.revenue.paidLots, 2);
+  assert.equal(result.revenue.day, 350);
+  assert.equal(result.revenue.dayLots, 3);
+  assert.equal(result.charges.pendingLotsCount, 1);
+  assert.equal(result.closing.paidLotsOn, 2);
+  assert.equal(result.closing.receivedOn, 300);
+  assert.equal(result.ranking.length, 1);
+  assert.equal(result.ranking[0].lots, 2);
+  assert.equal(result.recentPayments.length, 2);
+  assert.equal(result.pipeline.find(row => row.status === 'paid').count, 2);
+  assert.equal(result.nextBatch.count, 2);
+  assert.equal(result.shipments.toShip, 1);
+  assert.equal(result.freight.total, 20);
+});
+
+test('período só com prêmios tem ticket zero e mantém itens para envio', async () => {
+  const result = await statsFor([lot(0, { shipping_date: '2026-10-28' }), lot('0.00')]);
+  assert.equal(result.revenue.ticket, 0);
+  assert.equal(result.revenue.paidLots, 0);
+  assert.equal(result.revenue.dayLots, 0);
+  assert.equal(result.closing.paidLotsOn, 0);
+  assert.equal(result.ranking.length, 0);
+  assert.equal(result.nextBatch.count, 1);
+  assert.equal(result.pipeline.find(row => row.status === 'paid').count, 2);
+});
+
 test('dia de São Paulo inclui pendentes, exclui cancelados e separa recebimento', async () => {
   const result = await statsFor([
     lot(30, { status: 'pending_payment', paid_at: null }),

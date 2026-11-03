@@ -59,6 +59,8 @@ type LotRow = {
   description: string | null;
   moved_at: string | null;
   auction_date: string;
+  arremate_value: number | string;
+  charge_id: string | null;
   status: LotStatus;
   created_at: string;
   customers: {
@@ -127,7 +129,7 @@ export async function getSeparationReport(
     const { data, error } = await admin
       .from("lots")
       .select(
-        `id, code, title, description, status, created_at, moved_at, auction_date,
+        `id, code, title, description, status, created_at, moved_at, auction_date, arremate_value, charge_id,
          customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state)`,
       )
       .eq("shipping_date", shippingDate)
@@ -148,23 +150,61 @@ export async function getSeparationReport(
   const physicalStore=(storeRows??[] as StoreRow[]).filter((o:StoreRow)=>o.physical) as StoreRow[];
 
 
+  // Um pacote liberado já passou pela conferência: pendências de outra data
+  // não podem retirar seu conteúdo da separação nem do histórico impresso.
+  const releasedLotIds = new Set<string>();
+  const releasedPrizeIds = new Set<string>();
+  for (let from = 0; from < rows.length; from += 200) {
+    const ids = rows.slice(from, from + 200).map(row => row.id);
+    const [links, prizes] = await Promise.all([
+      admin.from("shipment_lots")
+        .select("lot_id,shipment:shipments!inner(batch_date,status)")
+        .in("lot_id", ids).eq("shipment.batch_date", shippingDate)
+        .in("shipment.status", ["released", "posted", "delivered"]),
+      admin.from("external_prize_freight_releases").select("lot_id,customer_id").in("lot_id", ids),
+    ]);
+    if (links.error || prizes.error) throw new Error("Não foi possível conferir os pacotes e as liberações de frete dos prêmios.");
+    for (const link of links.data ?? []) releasedLotIds.add(link.lot_id);
+    for (const prize of prizes.data ?? []) {
+      const row = rows.slice(from, from + 200).find(lot => lot.id === prize.lot_id);
+      if (row && row.customers?.id === prize.customer_id && Number(row.arremate_value) === 0) releasedPrizeIds.add(prize.lot_id);
+    }
+  }
+
   const candidateIds = [...new Set([...rows.map((row) => row.customers?.id).filter((id): id is string => Boolean(id)),...physicalStore.map(o=>o.customer_id)])];
+  const paymentBlockedCustomers=new Set<string>();
+  const freightBlockedCustomers=new Set<string>();
   const blockedCustomers=new Set<string>();
   for(let from=0;from<candidateIds.length;from+=100){
    const ids=candidateIds.slice(from,from+100);
-   const [pending,charges,freights,storePending]=await Promise.all([
-    admin.from('lots').select('customer_id').in('customer_id',ids).eq('status','pending_payment'),
-    admin.from('charges').select('customer_id,status,expires_at').in('customer_id',ids).in('status',['pending','in_process']),
+   const [pending,freights,storePending]=await Promise.all([
+    admin.from('lots').select('customer_id,charge_id').in('customer_id',ids).eq('status','pending_payment').lte('shipping_date',shippingDate),
     admin.rpc('shipping_freight_states',{p_customers:ids}),
     admin.from('store_orders').select('customer_id,items:store_order_items(delivery_kind)').in('customer_id',ids).in('payment_status',['creating','pending','partially_refunded','payment_review']).is('shipment_id',null).lt('created_at',`${shippingDate}T23:59:59.999999-03:00`),
    ]);
-   if(pending.error||charges.error||freights.error||storePending.error)throw new Error('Não foi possível conferir os pagamentos e fretes da separação.');
-   for(const row of pending.data??[])blockedCustomers.add(row.customer_id);
-   for(const row of charges.data??[])if(isChargeActive(row as never))blockedCustomers.add(row.customer_id);
-   for(const row of freights.data??[])if(row.status!=='paid')blockedCustomers.add(row.customer_id);
-   for(const row of storePending.data??[])if(row.items.some(i=>i.delivery_kind==='physical'))blockedCustomers.add(row.customer_id);
+   if(pending.error||freights.error||storePending.error)throw new Error('Não foi possível conferir os pagamentos e fretes da separação.');
+   // Só cobranças relacionadas aos lotes deste envio ou a pendências vencidas.
+   const chargeIds=[...new Set([
+     ...rows.filter(row=>row.customers && ids.includes(row.customers.id)).map(row=>row.charge_id),
+     ...(pending.data??[]).map(row=>row.charge_id),
+   ].filter((id):id is string=>Boolean(id)))];
+   for(let offset=0;offset<chargeIds.length;offset+=100){
+     const charges=await admin.from('charges').select('customer_id,status,expires_at')
+       .in('customer_id',ids).in('id',chargeIds.slice(offset,offset+100)).in('status',['pending','in_process']);
+     if(charges.error)throw new Error('Não foi possível conferir as cobranças do envio selecionado.');
+     for(const row of charges.data??[])if(isChargeActive(row as never))paymentBlockedCustomers.add(row.customer_id);
+   }
+   for(const row of pending.data??[])paymentBlockedCustomers.add(row.customer_id);
+   for(const row of freights.data??[])if(row.status!=='paid')freightBlockedCustomers.add(row.customer_id);
+   for(const row of storePending.data??[])if(row.items.some(i=>i.delivery_kind==='physical'))paymentBlockedCustomers.add(row.customer_id);
   }
-  const eligibleRows = rows.filter((row) => row.customers && !blockedCustomers.has(row.customers.id));
+  for(const id of candidateIds)if(paymentBlockedCustomers.has(id)||freightBlockedCustomers.has(id))blockedCustomers.add(id);
+  const eligibleRows = rows.filter(row => {
+    if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
+    if (releasedLotIds.has(row.id)) return true;
+    return !paymentBlockedCustomers.has(row.customers.id)
+      && (!freightBlockedCustomers.has(row.customers.id) || releasedPrizeIds.has(row.id));
+  });
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();
   for(let from=0;from<itemIds.length;from+=200) {
@@ -259,7 +299,7 @@ export async function getSeparationReport(
     totals: {
       customers: customers.length,
       lots: customers.reduce((sum, customer) => sum + customer.lots.length, 0),
-      excludedCustomers: blockedCustomers.size,
+      excludedCustomers: candidateIds.filter(id => !byCustomer.has(id)).length,
     },
   };
 }

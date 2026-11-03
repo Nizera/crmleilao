@@ -25,7 +25,7 @@ export type DashboardStats = {
     freight: boolean;
   };
   revenue: {
-    /** Total dos lotes cadastrados no intervalo (SP), sem cancelados. */
+    /** Vendas com valor positivo cadastradas no intervalo (SP), sem cancelados. */
     day: number;
     dayLots: number;
     month: number;
@@ -81,6 +81,8 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   }
   const scoped = allLots.filter(lot => isInAuctionPeriod(lot.created_at, period));
   const active = scoped.filter(lot => lot.status !== "cancelled");
+  // Prêmios externos são lotes operacionais, mas não são vendas.
+  const sales = active.filter(lot => Number(lot.arremate_value) > 0);
   const customerIds = [...new Set(active.map(lot => lot.customer_id))];
   const lotIds = active.map(lot => lot.id);
   const [chargesRes, linksRes, usageRes, freightRes] = await Promise.all([
@@ -91,13 +93,13 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   ]);
   for (const result of [chargesRes, linksRes, usageRes, freightRes]) if (result.error) console.error("[dashboard] falha na consulta do período:", result.error.message);
   if (lotsError) console.error("[dashboard] falha nos lotes:", lotsError.message);
-  const paid = active.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
+  const paid = sales.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
   let receiptError=false;
   const receiptFreight=await loadFreightReceipts(db,period).catch(()=>{receiptError=true;return {charges:[],store:[]};});
   const receipts=computePeriodReceipts(allLots,receiptFreight.charges,receiptFreight.store,period);
-  const pending = active.filter(lot => lot.status === "pending_payment");
+  const pending = sales.filter(lot => lot.status === "pending_payment");
   const sum = (lots: ScopeLot[]) => lots.reduce((value, lot) => value + Number(lot.arremate_value), 0);
-  const allPaid = allLots.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
+  const allPaid = allLots.filter(lot => Number(lot.arremate_value) > 0 && REVENUE_STATUSES.has(lot.status) && lot.paid_at);
   const currentMonth = today.slice(0, 7);
   const [year, month] = currentMonth.split("-").map(Number);
   const previousMonth = new Date(Date.UTC(year, month - 2, 15)).toISOString().slice(0, 7);
@@ -135,7 +137,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   return {
     ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !lotsError && !linksRes.error, closing: !lotsError, freight: !receiptError && !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
     revenue: {
-      day: sum(active), dayLots: active.length, month: monthRevenue, prevMonth: previousRevenue,
+      day: sum(sales), dayLots: sales.length, month: monthRevenue, prevMonth: previousRevenue,
       deltaPct: previousRevenue > 0 ? Math.round((monthRevenue - previousRevenue) / previousRevenue * 100) : null,
       total: sum(allPaid), paidLots: allPaid.length, ticket: paid.length ? sum(paid) / paid.length : 0, months,
     },
@@ -165,4 +167,4 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   };
 }
 
-export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-month-registration-v4"], { tags: ["dashboard"], revalidate: 30 });
+export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-positive-sales-v5"], { tags: ["dashboard"], revalidate: 30 });

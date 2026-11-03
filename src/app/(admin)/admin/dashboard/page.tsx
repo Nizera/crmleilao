@@ -221,7 +221,7 @@ export default async function DashboardPage({
           icon={WalletIcon}
           hint={
             s.ready.lots
-              ? `${s.revenue.paidLots} ${s.revenue.paidLots === 1 ? "lote pago" : "lotes pagos"}`
+              ? `${s.revenue.paidLots} ${s.revenue.paidLots === 1 ? "lote pago com valor" : "lotes pagos com valor"}`
               : "aplique a migração 0002_lots.sql"
           }
         />
@@ -229,7 +229,7 @@ export default async function DashboardPage({
           label="Ticket médio"
           value={s.ready.lots ? formatBRL(s.revenue.ticket) : "—"}
           icon={TrendingUpIcon}
-          hint="por lote pago do período"
+          hint="por lote pago do período · exclui lotes zerados"
         />
         <KpiCard
           label="A receber do período"
@@ -294,7 +294,7 @@ export default async function DashboardPage({
           hint={
             s.ready.lots
               ? `${s.revenue.dayLots} ${
-                  s.revenue.dayLots === 1 ? "lote cadastrado" : "lotes cadastrados"
+                  s.revenue.dayLots === 1 ? "lote com valor" : "lotes com valor"
                 } no período selecionado`
               : "aplique a migração 0002_lots.sql"
           }
