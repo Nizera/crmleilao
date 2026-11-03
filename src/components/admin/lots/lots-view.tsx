@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   ArrowDownUp,
+  Images,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +21,7 @@ import { inviteLinkForCustomer } from "@/app/actions/invites";
 import { getLotDetailAction, logWaMessage, setLotStatus } from "@/app/actions/lots";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
+import { ImageLightbox } from "@/components/client/image-lightbox";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -110,6 +112,8 @@ export function LotsView({
   const [shift, setShift] = useState<keyof typeof LOT_SHIFTS>("day");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
+  const [gallery, setGallery] = useState<{ src: string; alt: string }[]>([]);
+  const [imageIndex, setImageIndex] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -152,6 +156,17 @@ export function LotsView({
       }
       setEditing(result.data);
       setSheetOpen(true);
+    });
+  };
+
+  const openImages = (lot: Lot) => {
+    startTransition(async () => {
+      const result = await getLotDetailAction(lot.id);
+      if (!result.ok) { toast.error(result.error); return; }
+      const images = result.data.images ?? [];
+      if (!images.length) { toast.info("Este lote não possui imagens cadastradas."); return; }
+      setGallery(images.map((src, index) => ({ src, alt: `Lote ${lot.code} · ${lot.title} · Foto ${index + 1}` })));
+      setImageIndex(0);
     });
   };
 
@@ -403,6 +418,10 @@ export function LotsView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onSelect={() => openImages(lot)}>
+                        <Images />
+                        Ver imagens
+                      </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => openEdit(lot)}>
                         <Pencil />
                         Editar
@@ -494,6 +513,7 @@ export function LotsView({
         </div>
       )}
 
+      <ImageLightbox images={gallery} index={imageIndex} onOpenChange={setImageIndex} />
       <LotFormSheet
         lot={editing}
         players={players}
