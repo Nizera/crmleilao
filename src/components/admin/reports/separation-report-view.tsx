@@ -2,6 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Eye, LoaderCircle } from "lucide-react";
+import { getLotDetailAction } from "@/app/actions/lots";
+import { ImageLightbox } from "@/components/client/image-lightbox";
 
 import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
 import { handleStoreOrderAction } from "@/app/actions/store";
@@ -19,13 +22,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatPhoneBR } from "@/lib/customers";
-import { formatDateBR, LOT_STATUS_LABELS } from "@/lib/lots";
+import { formatDateBR, lotImageUrl, LOT_STATUS_LABELS } from "@/lib/lots";
 import type { SeparationAddress, SeparationReport } from "@/lib/reports-server";
 import { WEEKDAY_LABELS_FULL } from "@/lib/settings";
+import { isoDayAdd, spDayOf, spTimeOf } from "@/lib/dates";
 
 const ALL = "all";
 const UNMOVED = "unmoved";
 const MOVED = "moved";
+
+function lotRegistrationLabel(createdAt: string): string {
+  if (!createdAt || Number.isNaN(Date.parse(createdAt))) return "";
+  const day = spDayOf(createdAt);
+  const time = spTimeOf(createdAt);
+  const hour = Number(time.slice(0, 2));
+  const period = hour >= 6 && hour < 12 ? "Manhã" : hour >= 12 && hour < 18 ? "Tarde" : "Noite";
+  const auctionDay = hour < 6 ? isoDayAdd(day, -1) : day;
+  return `Cadastro: ${formatDateBR(day)} às ${time} · ${period}${auctionDay !== day ? ` de ${formatDateBR(auctionDay)}` : ""}`;
+}
 
 /** Dia da semana por extenso de uma data ISO. Cálculo em UTC puro: idêntico
  *  no servidor e no cliente (sem hydration mismatch). */
@@ -59,7 +73,28 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
   const [customerId, setCustomerId] = useState(ALL);
   const [movementFilter, setMovementFilter] = useState(UNMOVED);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [gallery, setGallery] = useState<{ src: string; alt: string }[]>([]);
+  const [imageIndex, setImageIndex] = useState<number | null>(null);
+  const [loadingImages, setLoadingImages] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const openImages = async (id: string) => {
+    if (loadingImages) return;
+    setLoadingImages(id);
+    try {
+      const result = await getLotDetailAction(id);
+      if (!result.ok) { toast.error(result.error); return; }
+      const lot = result.data;
+      const images = (lot.images ?? []).map(path => lotImageUrl(path)).filter((url): url is string => Boolean(url));
+      if (!images.length) { toast.info("Este lote não possui imagens cadastradas."); return; }
+      setGallery(images.map((src, index) => ({ src, alt: `Lote ${lot.code} · ${lot.title} · Foto ${index + 1}` })));
+      setImageIndex(0);
+    } catch {
+      toast.error("Não foi possível carregar as imagens. Tente novamente.");
+    } finally {
+      setLoadingImages(null);
+    }
+  };
 
   // Se a data nova não trouxe o cliente selecionado, volta para "todos".
   const selectedId =
@@ -278,7 +313,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                     className="mb-3 overflow-hidden rounded-md border break-inside-avoid last:mb-0"
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-muted/40 px-3 py-1.5 print:bg-transparent">
-                      <p className="flex items-center gap-2 text-sm">
+                      <p className="flex min-w-0 flex-1 items-center gap-2 break-words text-sm">
                         {lot.movedAt ? (
                           <span className="rounded border px-1.5 py-0.5 text-[10px] print:hidden">Movimentado</span>
                         ) : (
@@ -289,12 +324,18 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                           {lot.code}
                         </span>
                         <span className="text-muted-foreground/60">·</span>
-                        {lot.title}
+                        <span className="min-w-0 break-words">{lot.title}</span>
                       </p>
+                      <div className="flex shrink-0 items-center gap-2">
                       <p className="text-xs text-muted-foreground">
                         {LOT_STATUS_LABELS[lot.status]}
                       </p>
+                      <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 print:hidden" aria-label={`Ver imagens do lote ${lot.code}`} title="Ver imagens" disabled={loadingImages !== null} onClick={() => void openImages(lot.id)}>
+                        {loadingImages === lot.id ? <LoaderCircle className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                      </Button>
+                      </div>
                     </div>
+                    {lot.createdAt && <p className="border-t px-3 py-1.5 text-[11px] leading-relaxed text-muted-foreground print:text-black">{lotRegistrationLabel(lot.createdAt)}</p>}
                     {(lot.movedItems.length > 0 || lot.description?.trim() || lot.notes?.trim()) && (
                       <div className="grid gap-1 px-3 py-2 text-xs print:text-black">
                         {lot.movedItems.length > 0 ? (
@@ -326,6 +367,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           })
         )}
       </div>
+      <div className="print:hidden"><ImageLightbox images={gallery} index={imageIndex} onOpenChange={setImageIndex} /></div>
     </div>
   );
 }

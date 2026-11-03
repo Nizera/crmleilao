@@ -11,6 +11,7 @@ const REPORT_LOTS_PAGE_SIZE = 500;
 
 export type SeparationLot = {
   id: string;
+  createdAt: string;
   code: string;
   title: string;
   description: string | null;
@@ -195,6 +196,7 @@ export async function getSeparationReport(
       status: row.status,
       movedAt: row.moved_at,
       movedItems: itemsByLot.get(row.id) ?? [],
+      createdAt: row.created_at,
     };
 
     const entry = byCustomer.get(customer.id) ?? {
