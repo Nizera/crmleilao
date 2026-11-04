@@ -4,5 +4,5 @@ export const metadata = { title: "Criar campanha" };
 export const instant = false;
 export default async function Page() {
   const { profile } = await requireAdmin();
-  return <main className="mx-auto grid w-full max-w-4xl gap-6 p-4 md:p-8"><h1 className="text-2xl font-bold">Criar rifa</h1>{profile.role === "viewer" ? <p>Seu perfil permite apenas consultar campanhas.</p> : <RaffleCreateForm />}</main>;
+  return <main className="grid min-w-0 gap-6 p-4 md:p-8"><header className="rf-heading"><div><p className="rf-eyebrow mb-2">RIFA / NOVA CAMPANHA</p><h1>Vamos criar sua próxima campanha</h1><p>Primeiro o rascunho. Você revisa e publica quando estiver tudo pronto.</p></div></header>{profile.role === "viewer" ? <p>Seu perfil permite apenas consultar campanhas.</p> : <RaffleCreateForm />}</main>;
 }

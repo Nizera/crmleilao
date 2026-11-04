@@ -80,7 +80,7 @@ const storeGroups = [{
 const sections = [
   { id: "leilao", title: "Leilão", url: "/admin/dashboard", icon: Gavel },
   { id: "loja", title: "Loja", url: "/admin/fidelidade", icon: Store },
-  { id: "rifa", title: "Rifa", url: "/admin/rifa", icon: Ticket },
+  { id: "rifa", title: "Rifa", url: "/admin/rifa/visao-geral", icon: Ticket },
 ];
 
 export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
@@ -88,7 +88,7 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const section = pathname === "/admin/fidelidade" || pathname.startsWith("/admin/fidelidade/")
     ? "loja" : pathname === "/admin/rifa" || pathname.startsWith("/admin/rifa/") ? "rifa" : "leilao";
   const groups = section === "loja" ? storeGroups : section === "rifa"
-    ? [{ label: "Rifa", items: [{ title: "Campanhas", url: "/admin/rifa", icon: Ticket, exact: true }, { title: "Reservas", url: "/admin/rifa/reservas", icon: ShoppingCart }, { title: "Prêmios e separação", url: "/admin/rifa/premios", icon: Gift }, { title: "Configurações", url: "/admin/rifa/configuracao", icon: Settings }] }]
+    ? [{ label: "Rifa", items: [{ title: "Visão geral", url: "/admin/rifa/visao-geral", icon: LayoutDashboard }, { title: "Campanhas", url: "/admin/rifa", icon: Ticket, exact: true }, { title: "Reservas", url: "/admin/rifa/reservas", icon: ShoppingCart }, { title: "Prêmios e separação", url: "/admin/rifa/premios", icon: Gift }, { title: "Configurações", url: "/admin/rifa/configuracao", icon: Settings }] }]
     : auctionGroups;
 
   return (
