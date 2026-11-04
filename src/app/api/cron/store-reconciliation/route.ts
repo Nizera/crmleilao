@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { reconcileStoreOrders } from '@/lib/store-server';
 import { reconcileRafflePayments } from '@/lib/raffles-server';
 
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
   }
   try {
     const started = Date.now();
+    const expiration = await createAdminClient().rpc('expire_due_caracoins',{p_limit:200});
+    if(expiration.error) throw new Error('Caracoins expiration unavailable');
     const result = await reconcileStoreOrders();
     // Reaproveita a chamada diária; o webhook continua sendo a confirmação imediata.
     const remaining = 53000 - (Date.now() - started);

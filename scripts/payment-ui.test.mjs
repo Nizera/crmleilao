@@ -25,6 +25,16 @@ test('Prazo de pagamento e valor declarado não alteram recursos nem aceitam pr�
 test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo vencido remove instrução de pagar', async () => {
   globalThis.__raffleUiAudit = { expired: false };
   let source = await read('../src/components/raffles/raffle-client.tsx');
+  const badgeSource='import React from '+real('react')+';\n'+(await read('../src/components/raffles/raffle-ui.tsx'))
+    .replace('import Link from "next/link";','const Link=({children})=>children;')
+    .replace(/from "lucide-react"/g,'from '+real('lucide-react'))
+    .replace('import { raffleStatus } from "@/lib/raffles";','const raffleStatus={paid:"Pago",review:"Em análise",pending:"Aguardando pagamento"};');
+  source=source.replace(/from "lucide-react"/g,'from '+real('lucide-react'))
+    .replace('import { RaffleBadge, RaffleProgress } from "@/components/raffles/raffle-ui";','import {RaffleBadge,RaffleProgress} from '+JSON.stringify(url(badgeSource))+';')
+    .replace('import { ImageLightbox } from "@/components/client/image-lightbox";','const ImageLightbox=()=>null;')
+    .replace('import { ReservationCountdown } from "@/components/raffles/reservation-countdown";','const ReservationCountdown=()=>null;')
+    .replace('import { rafflePhotos } from "@/lib/raffle-photos";','const rafflePhotos=()=>[];');
+
   source = 'import React from '+real('react')+';\n'+source
     .replace('import { useEffect, useRef, useState, useTransition } from "react";', 'import {useEffect,useRef,useState,useTransition} from '+real('react')+';')
     .replace('import { useRouter } from "next/navigation";', 'const useRouter=()=>({refresh(){},push(){}});')

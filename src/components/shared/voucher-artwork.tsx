@@ -3,7 +3,7 @@ import {Ticket} from 'lucide-react';
 import {storeBRL} from '@/lib/store';
 
 // Cada valor ganha uma arte da mesma coleção; não prende a imagem ao nome do cadastro.
-const artwork:Record<number,string>={1000:'/store/vouchers/voucher-10-v1.webp'};
+const artwork:Record<number,string>={500:'/store/vouchers/voucher-5-v2.webp',1000:'/store/vouchers/voucher-10-v2.webp',1500:'/store/vouchers/voucher-15-v2.webp',2000:'/store/vouchers/voucher-20-v2.webp'};
 export function VoucherArtwork({amount,compact=false}:{amount:number;compact?:boolean}){
  const image=Number.isFinite(amount)?artwork[Math.round(amount*100)]:undefined;
  return <div className={`relative overflow-hidden rounded-xl border border-ouro/20 bg-neutral-950 ${compact?'w-24 shrink-0':'w-full'}`}>

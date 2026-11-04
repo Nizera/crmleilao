@@ -50,7 +50,7 @@ export function LoyaltyRanking({
           })}
         </div>
         {enabled && <form action={updateLoyaltyRankingVisibility} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="visible" defaultChecked={rankVisible} className="accent-yellow-500" /> Quero aparecer no ranking</label><Button type="submit" size="sm" variant="outline">Salvar preferência</Button></form>}
-        <p className="text-xs text-muted-foreground">Pontos de ranking definem seu elo. O saldo de Caracoins para usar na loja é separado. Participar da lista pública é opcional; quem participa aparece com o primeiro nome e a inicial do sobrenome.</p>
+        <p className="text-xs text-muted-foreground">A primeira compra paga de lote rende um bônus único de 500 Caracoins e 500 pontos de ranking. Caracoins expiram em 90 dias; pontos de ranking não expiram. Pontos de ranking definem seu elo. O saldo de Caracoins para usar na loja é separado. Participar da lista pública é opcional; quem participa aparece com o primeiro nome e a inicial do sobrenome.</p>
       </CardContent>
     </Card>
   );
