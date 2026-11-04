@@ -13,7 +13,10 @@ test('política monetária: bônus único, FIFO, validade, isolamento e limite d
   await db.exec('create trigger award_points before update of status on lots for each row execute function award_lot_loyalty_points();');
   await db.query("insert into customers(id,name,email) values($1,'A','a@example.invalid'),($2,'B','b@example.invalid'),($3,'Antigo','old@example.invalid')",[a,b,old]);
   await db.query("insert into lots(id,customer_id,status,arremate_value) values($1,$2,'paid',100)",[crypto.randomUUID(),old]);
+  // Uma função de implantação anterior não pode impedir nem ser sobrescrita pela nova política.
+  await db.exec("create function public.guard_caracoins_ledger() returns trigger language plpgsql as $$begin raise exception 'sentinela da função anterior';end$$;");
   await db.exec(await migration('0058_caracoins_policy.sql'));
+  assert.match(await scalar("select pg_get_functiondef('public.guard_caracoins_ledger()'::regprocedure)"),/sentinela da função anterior/);
   await db.exec(await migration('0059_caracoins_expired_reversal.sql'));
   const paidLot=async(customer,value)=>{const id=crypto.randomUUID();await db.query("insert into lots(id,customer_id,status,arremate_value) values($1,$2,'pending_payment',$3)",[id,customer,value]);await db.query("update lots set status='paid' where id=$1",[id]);return id;};
   await db.query("select set_config('test.customer',$1,false)",[a]);

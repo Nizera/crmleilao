@@ -1,6 +1,6 @@
 -- Evita cobrar novamente moedas expiradas ao cancelar um lote pago.
 begin;
-create or replace function public.guard_caracoins_ledger() returns trigger
+create or replace function public.guard_caracoins_expiry_0058() returns trigger
 language plpgsql security definer set search_path='' as $$
 declare balance numeric;expired_reversal numeric;
 begin

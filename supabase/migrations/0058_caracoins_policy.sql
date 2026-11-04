@@ -35,7 +35,7 @@ end $$;
 revoke all on function public.expire_customer_caracoins(uuid) from public,anon,authenticated;
 grant execute on function public.expire_customer_caracoins(uuid) to service_role;
 
-create function public.guard_caracoins_ledger() returns trigger
+create function public.guard_caracoins_expiry_0058() returns trigger
 language plpgsql security definer set search_path='' as $$
 declare balance numeric;
 begin
@@ -50,8 +50,8 @@ begin
  end if;
  return new;
 end $$;
-revoke all on function public.guard_caracoins_ledger() from public,anon,authenticated;
-create trigger caracoins_expiry_guard before insert on public.loyalty_ledger for each row execute function public.guard_caracoins_ledger();
+revoke all on function public.guard_caracoins_expiry_0058() from public,anon,authenticated;
+create trigger caracoins_expiry_guard before insert on public.loyalty_ledger for each row execute function public.guard_caracoins_expiry_0058();
 
 create or replace function public.get_customer_loyalty_balance(p_customer_id uuid default null)
 returns numeric language plpgsql stable security definer set search_path='' as $$
