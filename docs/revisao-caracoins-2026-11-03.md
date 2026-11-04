@@ -2,7 +2,7 @@
 
 ## Resultado
 
-143 testes da suíte de release passaram. Build de produção e TypeScript passaram; lint dos arquivos alterados passou. Revisão visual realizada com componentes reais e dados fictícios, sem compras, com largura mobile de 390 px e desktop de 1280 px. Quatro imagens carregadas, sem estouro horizontal no mobile. Originais gerados por image_gen; WebP final totaliza aproximadamente 752 KB.
+143 testes da suíte de release e 2 testes de apresentação da rifa passaram (145 no total). Build de produção e TypeScript passaram; lint dos arquivos alterados passou. Revisão visual realizada com componentes reais e dados fictícios, sem compras, com largura mobile de 390 px e desktop de 1280 px. Quatro imagens carregadas, sem estouro horizontal no mobile. Originais gerados por image_gen; WebP final totaliza aproximadamente 752 KB.
 
 ## Fronteiras verificadas
 
