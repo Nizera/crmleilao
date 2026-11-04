@@ -1,4 +1,5 @@
 import "server-only";
+import { observedShipmentPrice } from "@/lib/shipment-price";
 import { shipmentValues } from "@/lib/shipment-values";
 import {listStoreShippingOrders,storeDeclaredTotal} from "@/lib/store-shipping";
 import { listLogisticsShippingItems } from "@/lib/logistics-shipping";
@@ -40,7 +41,7 @@ import { isChargeActive } from "@/lib/charges";
 /** Colunas comuns de listagem e detalhe (o detalhe soma o histórico `events`). */
 const SHIPMENT_BASE_COLUMNS = [
   "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
-  "price, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
+  "price, original_price, price_baseline_legacy, price_change_count, price_changed_at, price_checked_at, price_difference, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
   "cancelled_at, created_by, created_at, updated_at, freight_payer,",
   "customer:customers(id, name, phone_e164)",
@@ -223,6 +224,7 @@ export type ShipmentQueueRow = {
   lots: ShipmentQueueLot[];
   paidTotal: number;
   unpaidTotal: number;
+  blockingUnpaidTotal?: number;
   shippingDate: string | null;
   pendingShipment: Shipment | null;
   freightStatus: ShipmentFreightStatus;
@@ -281,7 +283,7 @@ export async function listShipmentQueue(params: {
     .select(
       "id, code, title, arremate_value, status, shipping_date, auction_date, customer_id, customers(id, name, phone_e164)",
     )
-    .neq("status", "cancelled")
+    .in("status", ["paid", "pending_payment"])
     .order("shipping_date", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -313,6 +315,7 @@ export async function listShipmentQueue(params: {
   const storeCustomers=(storeResult.data??[]).filter(o=>o.items.some(i=>i.delivery_kind==='physical')&&(!params.periodFrom||storeDate>=params.periodFrom)&&(!params.periodTo||storeDate<=params.periodTo));
   let prizeQuery=admin.from('logistics_pending').select('id,customer_id,shipping_date,customers(id,name,phone_e164)').eq('source_kind','raffle').is('cancelled_at',null).is('shipment_id',null).order('shipping_date').order('id');
   // Prêmio atrasado continua na fila da próxima saída, como no relatório.
+  if(params.periodFrom)prizeQuery=prizeQuery.gte('shipping_date',params.periodFrom);
   if(params.periodTo)prizeQuery=prizeQuery.lte('shipping_date',params.periodTo);
   const prizeResult=await prizeQuery.limit(QUEUE_LOTS_CAP+1);
   if(prizeResult.error)throw new Error('Não foi possível carregar os prêmios para a fila.');
@@ -397,6 +400,8 @@ export async function listShipmentQueue(params: {
   >();
 
   for (const row of rows) {
+    const linkedShipment = lotToShipment.get(row.id);
+    if (linkedShipment && ((params.periodFrom && linkedShipment.batch_date < params.periodFrom) || (params.periodTo && linkedShipment.batch_date > params.periodTo))) continue;
     const customer = row.customers;
     if (!customer) continue;
 
@@ -432,7 +437,7 @@ export async function listShipmentQueue(params: {
         .filter((lot) => lot.status !== "pending_payment")
         .reduce((sum, lot) => sum + lot.arremate_value, 0),
     );
-    const unpaidTotal = unpaidByCustomer.get(customerId) ?? 0;
+    const unpaidTotal = round2(entry.lots.filter(lot => lot.status === "pending_payment").reduce((sum, lot) => sum + lot.arremate_value, 0));
 
     queue.push({
       customerId,
@@ -441,6 +446,7 @@ export async function listShipmentQueue(params: {
       lots: entry.lots,
       paidTotal,
       unpaidTotal,
+      blockingUnpaidTotal: unpaidByCustomer.get(customerId) ?? 0,
       shippingDate:
         entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? (storeCustomers.some(o=>o.customer_id===customerId)?storeDate:params.periodTo??prizeCustomers.find(p=>p.customer_id===customerId)?.shipping_date??storeDate),
       pendingShipment: entry.pendingShipment,
@@ -459,7 +465,7 @@ export async function listShipmentQueue(params: {
   return {
     rows: queue.filter((row) => {
       const name = row.name?.toLowerCase() ?? "";
-      return name.includes(needle) || (digits.length >= 4 && row.phone_e164.includes(digits));
+      return name.includes(needle) || (digits.length >= 4 && row.phone_e164.includes(digits)) || row.pendingShipment?.tracking_code?.toLowerCase().includes(needle) || row.pendingShipment?.code.toLowerCase().includes(needle);
     }),
     truncated,
   };
@@ -753,7 +759,7 @@ async function applyOrderInfo(
 ): Promise<TransitionResult> {
   const target = normalizeSfStatus(info.status);
   const patch: Record<string, unknown> = {
-    price: info.price ?? shipment.price,
+    ...(observedShipmentPrice(info.price) != null ? { price: observedShipmentPrice(info.price), price_checked_at: new Date().toISOString(), price_observation_source: "api" } : {}),
     discount: info.discount ?? shipment.discount,
     ...(info.service_id != null ? { service_id: info.service_id } : {}),
     ...(info.print?.url ? { label_print_url: info.print.url } : {}),
@@ -779,7 +785,7 @@ async function applyOrderInfo(
   }
 
   if (target === "cancelled") patch.cancelled_at = shipment.cancelled_at ?? new Date().toISOString();
-  if (target === "posted" && !shipment.posted_at) patch.posted_at = new Date().toISOString();
+  if (target === "posted" && !shipment.posted_at && !patch.posted_at) patch.posted_at = new Date().toISOString();
   if (target === "delivered" && !shipment.delivered_at) {
     patch.delivered_at = new Date().toISOString();
   }
@@ -1138,6 +1144,15 @@ export async function applySuperfreteEvent(input: {
   const patch: Record<string, unknown> = {
     events: [...events, { event: input.event, received_at: now }].slice(-50),
   };
+  // Eventos fora de ordem não podem sobrescrever um preço mais recente.
+  // Consulta autenticada ao provedor em vez de confiar no preço do evento.
+  const currentInfo = await getOrderInfo(input.sfOrderId);
+  const currentPrice = observedShipmentPrice(currentInfo.price);
+  if (currentPrice != null) {
+    patch.price = currentPrice;
+    patch.price_checked_at = now;
+    patch.price_observation_source = "api";
+  }
   if (tracking) patch.tracking_code = tracking;
   if (trackingUrl) patch.tracking_url = trackingUrl;
   if (target === "released") {

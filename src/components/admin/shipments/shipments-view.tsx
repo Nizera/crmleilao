@@ -31,6 +31,7 @@ import {
 import { ShipmentDetailSheet } from "@/components/admin/shipments/shipment-detail-sheet";
 import { ShipmentFormSheet } from "@/components/admin/shipments/shipment-form-sheet";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
+import type { ShipmentCostSummary } from "@/lib/shipments";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -80,6 +81,9 @@ type Props = {
   pageSize: number;
   q: string;
   status: string;
+  priceChanges?: string;
+  summary?: ShipmentCostSummary | null;
+  historyDateFiltered?: boolean;
   /** Busca por cliente no histórico atingiu o teto de ids. */
   qTruncated?: boolean;
   /** Fila leu mais lotes no período do que o teto permite. */
@@ -89,6 +93,7 @@ type Props = {
   /** Dia de envio da fila (YYYY-MM-DD, SP). */
   date: string;
   migrationReady: boolean;
+  migrationFile?: string;
   originReady: boolean;
   superfreteReady: boolean;
   sandbox: boolean;
@@ -102,11 +107,15 @@ export function ShipmentsView({
   pageSize,
   q,
   status,
+  priceChanges = "all",
+  summary = null,
+  historyDateFiltered = false,
   qTruncated,
   queueTruncated,
   queue,
   date,
   migrationReady,
+  migrationFile = "0006_shipments.sql",
   originReady,
   superfreteReady,
   sandbox,
@@ -120,6 +129,18 @@ export function ShipmentsView({
   const [emitTarget, setEmitTarget] = useState<ShipmentQueueRow | null>(null);
   const [detail, setDetail] = useState<Shipment | null>(null);
   const [activatingWebhook, setActivatingWebhook] = useState(false);
+  const [freightFilter, setFreightFilter] = useState("all");
+  const [queueStatus, setQueueStatus] = useState("all");
+  const [queueSort, setQueueSort] = useState("name");
+  const displayedQueue = [...(queue ?? [])].filter(row => {
+    const freightMatches = freightFilter === "all" || (freightFilter === "unpaid" ? !row.companyFreight && ["due", "awaiting"].includes(row.freightStatus) : freightFilter === "company" ? row.companyFreight : !row.companyFreight && row.freightStatus === freightFilter);
+    const shipmentMatches = queueStatus === "all" || (queueStatus === "unissued" ? !row.pendingShipment || row.pendingShipment.status === "cancelled" : row.pendingShipment?.status === queueStatus);
+    return freightMatches && shipmentMatches;
+  }).sort((a, b) => {
+    const unpaid = (row: ShipmentQueueRow) => !row.companyFreight && ["due", "awaiting"].includes(row.freightStatus) ? 1 : 0;
+    const primary = queueSort === "unpaid" ? unpaid(b) - unpaid(a) : queueSort === "paid_total" ? b.paidTotal - a.paidTotal : queueSort === "unpaid_total" ? b.unpaidTotal - a.unpaidTotal : 0;
+    return primary || (a.name ?? a.phone_e164).localeCompare(b.name ?? b.phone_e164, "pt-BR") || a.customerId.localeCompare(b.customerId);
+  });
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const canCreate = migrationReady && originReady && superfreteReady;
@@ -131,11 +152,15 @@ export function ShipmentsView({
     nextPage: number,
     nextDate: string,
     nextView: "fila" | "historico",
+    nextCost = priceChanges,
+    nextHistoryDate = historyDateFiltered ? nextDate : "",
   ) => {
     const params = new URLSearchParams();
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
     if (nextView === "historico") {
       params.set("vista", "historico");
+      if (nextHistoryDate) params.set("d", nextHistoryDate);
+      if (nextCost !== "all") params.set("cost", nextCost);
       if (nextStatus !== "all") params.set("status", nextStatus);
       if (nextPage > 1) params.set("p", String(nextPage));
     } else {
@@ -151,7 +176,7 @@ export function ShipmentsView({
   };
 
   const setDay = (nextDate: string) => {
-    router.replace(buildHref(query, status, 1, nextDate, "fila"));
+    router.replace(buildHref(query, status, 1, nextDate, isQueue ? "fila" : "historico", priceChanges, nextDate));
   };
 
   const updateDetail = (shipment: Shipment) => {
@@ -299,9 +324,9 @@ export function ShipmentsView({
           <h2 className="text-xl font-semibold tracking-tight">Envios</h2>
           <p className="text-sm text-muted-foreground">
             {isQueue
-              ? queue.length === 0
+              ? displayedQueue.length === 0
                 ? "Nenhum cliente no período selecionado."
-                : `${queue.length} ${queue.length === 1 ? "cliente" : "clientes"} no período.`
+                : `${displayedQueue.length} ${displayedQueue.length === 1 ? "cliente" : "clientes"} no período.`
               : total === 0
                 ? "Nenhum envio ainda — agrupe os lotes pagos e emita a etiqueta."
                 : `${total} ${total === 1 ? "envio" : "envios"} no total.`}
@@ -332,7 +357,7 @@ export function ShipmentsView({
               canCreate
                 ? undefined
                 : !migrationReady
-                  ? "Aplique a migração 0006_shipments.sql."
+                  ? `Aplique a migração ${migrationFile}.`
                   : !originReady
                     ? "Preencha o endereço de origem em Configuração."
                     : "Configure SUPERFRETE_TOKEN no .env."
@@ -346,7 +371,7 @@ export function ShipmentsView({
 
       {!migrationReady && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-          Migração pendente: aplique <code>0006_shipments.sql</code> no SQL
+          Migração pendente: aplique <code>{migrationFile}</code> no SQL
           Editor do Supabase para habilitar os envios.
         </p>
       )}
@@ -384,14 +409,19 @@ export function ShipmentsView({
         </div>
       )}
 
+      {migrationReady && <section aria-label="Resumo das etiquetas" className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Etiquetas {isQueue || historyDateFiltered ? `de ${formatDateBR(date)}` : "do histórico filtrado"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary?.labels ?? "—"}</p><p className="mt-1 text-xs text-muted-foreground">{summary ? `${summary.cancelled} cancelada(s) fora dos totais` : "Resumo indisponível. Confira a migration 0057."}</p></div>
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Total dos valores de emissão</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary ? formatBRL(summary.emissionTotal) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">Custo das etiquetas, separado do frete cobrado do cliente. {summary?.legacyPrices ? `${summary.legacyPrices} etiqueta(s) antiga(s) usam o primeiro valor disponível.` : ""}{summary?.unknownPrices ? ` ${summary.unknownPrices} etiqueta(s) sem valor informado.` : ""}</p></div>
+        <p className="text-xs text-muted-foreground sm:col-span-2">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida.</p>
+      </section>}
       <div className="flex flex-wrap items-center gap-2">
-        <form onSubmit={search} className="flex min-w-56 flex-1 items-center gap-2">
-          <div className="relative min-w-56 flex-1">
+        <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={isQueue ? "Buscar por cliente" : "Buscar por código, rastreio ou cliente"}
+              placeholder="Buscar por cliente, código ou rastreio"
               className="pl-9"
             />
           </div>
@@ -412,10 +442,10 @@ export function ShipmentsView({
           )}
         </form>
 
-        {isQueue && (
+        {(
           <Input
             type="date"
-            value={date}
+            value={isQueue || historyDateFiltered ? date : ""}
             onChange={(event) => {
               const value = event.target.value;
               if (/^\d{4}-\d{2}-\d{2}$/.test(value)) setDay(value);
@@ -424,7 +454,9 @@ export function ShipmentsView({
             aria-label="Dia do envio"
           />
         )}
+        {!isQueue && historyDateFiltered && <Button variant="ghost" size="sm" onClick={() => router.replace(buildHref(query, status, 1, "", "historico", priceChanges, ""))}>Todas as datas</Button>}
 
+        {!isQueue && <label className="grid gap-1 text-xs font-medium">Alteração de custo<select aria-label="Alteração de custo da etiqueta" className="h-10 max-w-full rounded-md border bg-background px-3 text-sm" value={priceChanges} onChange={e => router.replace(buildHref(query, status, 1, date, "historico", e.target.value))}><option value="all">Todos os custos</option><option value="changed">Fretes com alteração</option><option value="increase">Aumento em relação ao inicial</option><option value="decrease">Redução em relação ao inicial</option></select></label>}
         {!isQueue && (
           <Select
             value={status}
@@ -451,7 +483,7 @@ export function ShipmentsView({
           size="sm"
           onClick={() =>
             router.replace(
-              buildHref(query, isQueue ? status : "all", 1, date, isQueue ? "historico" : "fila"),
+              buildHref(query, isQueue ? status : "all", 1, date, isQueue ? "historico" : "fila", priceChanges, date),
             )
           }
         >
@@ -459,10 +491,18 @@ export function ShipmentsView({
         </Button>
       </div>
 
+      {isQueue && <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 xl:grid-cols-3">
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Pagamento do frete<select aria-label="Pagamento do frete" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={freightFilter} onChange={e => setFreightFilter(e.target.value)}><option value="all">Todos os fretes</option><option value="unpaid">Fretes não pagos</option><option value="due">Fretes pendentes</option><option value="awaiting">Aguardando confirmação</option><option value="paid">Fretes pagos</option><option value="company">Por conta da empresa</option></select></label>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option><option value="posted">Postados</option><option value="delivered">Entregues</option></select></label>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Ordenar por<select aria-label="Ordenar fila de envios" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueSort} onChange={e => setQueueSort(e.target.value)}><option value="name">Cliente · A a Z</option><option value="unpaid">Fretes não pagos primeiro</option><option value="paid_total">Maior total pago em lotes</option><option value="unpaid_total">Maior valor de lotes não pagos</option></select></label>
+        {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); }}>Limpar filtros da fila</Button>}
+        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">Exibindo {displayedQueue.length} de {queue?.length ?? 0} clientes carregados para o dia selecionado. Envios emitidos também podem ser consultados no histórico.</p>
+      </div>}
+
       {isQueue ? (
         <div className="overflow-x-auto rounded-md border">
           <Table>
-            <TableHeader>
+            <TableHeader className="max-lg:hidden">
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Lotes</TableHead>
@@ -470,11 +510,12 @@ export function ShipmentsView({
                 <TableHead className="hidden md:table-cell">Não pago</TableHead>
                 <TableHead className="hidden md:table-cell">Envio</TableHead>
                 <TableHead>Frete</TableHead>
+                <TableHead>Emissão</TableHead>
                 <TableHead className="w-44">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {queue.map((row) => {
+              {displayedQueue.map((row) => {
                 const shipment = row.pendingShipment;
                 const byStatus = row.lots.reduce<Record<string, number>>((acc, lot) => {
                   acc[lot.status] = (acc[lot.status] ?? 0) + 1;
@@ -482,8 +523,8 @@ export function ShipmentsView({
                 }, {});
 
                 return (
-                  <TableRow key={row.customerId}>
-                    <TableCell>
+                  <TableRow key={row.customerId} className="max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-2 max-lg:p-2 max-lg:[&>td]:min-w-0 max-lg:[&>td]:whitespace-normal max-lg:[&>td]:before:mb-1 max-lg:[&>td]:before:block max-lg:[&>td]:before:text-[10px] max-lg:[&>td]:before:font-medium max-lg:[&>td]:before:text-muted-foreground max-lg:[&>td]:before:content-[attr(data-label)]">
+                    <TableCell data-label="Cliente" className="max-lg:col-span-2">
                       <Link
                         href={`/admin/clientes/${row.customerId}`}
                         className="font-medium hover:underline"
@@ -494,7 +535,7 @@ export function ShipmentsView({
                         {formatPhoneBR(row.phone_e164)}{(row.storeOrderCount??0)>0&&<span className="block text-ouro-ink">{row.storeOrderCount} pedido(s) da loja</span>}{(row.raffleAwardCount??0)>0&&<span className="block text-ouro-ink">{row.raffleAwardCount} prêmio(s) de rifa</span>}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell data-label="Lotes" className="text-sm text-muted-foreground">
                       <TooltipProvider delayDuration={200}>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -522,16 +563,16 @@ export function ShipmentsView({
                         </span>
                       ))}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">
+                    <TableCell data-label="Total pago" className="whitespace-nowrap font-medium">
                       {formatBRL(row.paidTotal)}
                     </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground md:table-cell">
+                    <TableCell data-label="Não pago" className="whitespace-nowrap text-sm text-muted-foreground">
                       {row.unpaidTotal > 0 ? formatBRL(row.unpaidTotal) : "—"}
                     </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
+                    <TableCell data-label="Data prevista" className="whitespace-nowrap text-muted-foreground">
                       {row.shippingDate ? formatDateBR(row.shippingDate) : "—"}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm">
+                    <TableCell data-label="Frete" className="whitespace-nowrap text-sm">
                       {freightLabel(row)}
                       {shipment?.tracking_code && (
                         <span className="block font-mono text-xs text-muted-foreground">
@@ -539,7 +580,12 @@ export function ShipmentsView({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Emissão" className="whitespace-nowrap text-sm font-medium">
+                      {shipment ? formatBRL(shipment.original_price ?? shipment.price) : "—"}
+                      {shipment?.price_baseline_legacy && <span className="block text-[10px] font-normal text-muted-foreground">Primeiro valor registrado</span>}
+                      {!!shipment?.price_change_count && <span className="block text-[11px] text-amber-700 dark:text-amber-400">Atual: {formatBRL(shipment.price)}</span>}
+                    </TableCell>
+                    <TableCell data-label="Ações" className="max-lg:col-span-2">
                       {shipment ? (
                         <div className="flex items-center gap-1">
                           <Button
@@ -565,10 +611,10 @@ export function ShipmentsView({
                       ) : (
                         <div className="flex items-center gap-1"><Button
                           size="sm"
-                          disabled={!canCreate || row.unpaidTotal > 0 || row.hasActiveCharge || (!row.companyFreight && row.freightStatus !== "paid")}
+                          disabled={!canCreate || (row.blockingUnpaidTotal ?? row.unpaidTotal) > 0 || row.hasActiveCharge || (!row.companyFreight && row.freightStatus !== "paid")}
                           onClick={() => setEmitTarget(row)}
                           title={
-                            row.unpaidTotal > 0
+                            (row.blockingUnpaidTotal ?? row.unpaidTotal) > 0
                               ? "Há lotes pendentes de pagamento para este cliente."
                               : row.hasActiveCharge
                                 ? "O cliente tem uma cobrança aguardando pagamento."
@@ -592,9 +638,9 @@ export function ShipmentsView({
                 );
               })}
 
-              {queue.length === 0 && (
+              {displayedQueue.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center">
+                    <TableCell colSpan={8} className="h-32 text-center">
                     <span className="text-muted-foreground">
                       {q ? "Nenhum cliente corresponde à busca." : "Nenhum cliente no período."}
                     </span>
@@ -613,7 +659,7 @@ export function ShipmentsView({
                 <TableHead>Cliente</TableHead>
                 <TableHead className="hidden md:table-cell">Lotes</TableHead>
                 <TableHead className="hidden lg:table-cell">Transportadora</TableHead>
-                <TableHead>Valor</TableHead>
+                <TableHead>Emissão</TableHead>
                 <TableHead className="hidden lg:table-cell">Rastreio</TableHead>
                 <TableHead className="hidden md:table-cell">Envio</TableHead>
                 <TableHead>Status</TableHead>
@@ -625,7 +671,7 @@ export function ShipmentsView({
                 const lotCodes =
                   shipment.lots?.map((lot) => lot.code).join(", ") ?? "";
                 const finalPrice =
-                  shipment.price != null ? Number(shipment.price) : null;
+                  shipment.original_price != null ? Number(shipment.original_price) : shipment.price != null ? Number(shipment.price) : null;
 
                 return (
                   <TableRow key={shipment.id}>
@@ -656,6 +702,7 @@ export function ShipmentsView({
                     </TableCell>
                     <TableCell className="whitespace-nowrap font-medium">
                       {finalPrice != null ? formatBRL(finalPrice) : "—"}
+                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Custo alterado · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap font-mono text-xs lg:table-cell">
                       {shipment.tracking_code ?? "—"}

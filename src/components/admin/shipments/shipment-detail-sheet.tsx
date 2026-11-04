@@ -21,6 +21,7 @@ import {
   payShipmentAction,
   printShipmentAction,
   syncShipmentAction,
+  getShipmentPriceHistoryAction,
 } from "@/app/actions/shipments";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,8 @@ export function ShipmentDetailSheet({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<{ id: string; count: number; items?: Shipment["priceHistory"]; error?: string } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const run = (key: string, task: () => Promise<{ ok: boolean; error?: string; data?: Shipment }>) => {
     setPending(key);
@@ -170,6 +173,28 @@ export function ShipmentDetailSheet({
         </SheetHeader>
 
         <div className="flex flex-col gap-5 px-6 py-5">
+          <section className="grid gap-3 rounded-lg border p-3 text-sm">
+            <h3 className="font-semibold">Custo da etiqueta</h3>
+            <dl className="grid grid-cols-2 gap-3">
+              <Field label={shipment.price_baseline_legacy ? "Primeiro valor registrado" : "Valor na emissão"} value={formatBRL(shipment.original_price ?? null)} />
+              <Field label="Último valor informado" value={formatBRL(shipment.price)} />
+              <Field label="Diferença acumulada" value={shipment.price_difference == null ? "—" : `${Number(shipment.price_difference) > 0 ? "+" : ""}${formatBRL(shipment.price_difference)}`} />
+              <Field label="Alterações registradas" value={String(shipment.price_change_count ?? 0)} />
+            </dl>
+            <p className="text-xs text-muted-foreground">{shipment.price_baseline_legacy ? "Etiqueta anterior ao controle: alterações passadas e o valor original da emissão não estão disponíveis. " : ""}Este é o custo interno informado pela SuperFrete. Não altera o frete cobrado do cliente. Ajustes lançados somente no extrato da carteira podem não aparecer na consulta da etiqueta.</p>
+            {shipment.price_checked_at && <p className="text-xs text-muted-foreground">Última consulta de valor: {new Date(shipment.price_checked_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>}
+            <Button type="button" size="sm" variant="outline" disabled={historyLoading} onClick={async () => {
+              setHistoryLoading(true);
+              try {
+                const result = await getShipmentPriceHistoryAction(shipment.id);
+                setPriceHistory({ id: shipment.id, count: shipment.price_change_count ?? 0, ...(result.ok ? { items: result.data } : { error: result.error }) });
+              } catch { setPriceHistory({ id: shipment.id, count: shipment.price_change_count ?? 0, error: "Não foi possível carregar o histórico." }); }
+              finally { setHistoryLoading(false); }
+            }}>{historyLoading ? "Carregando…" : "Consultar histórico de valores"}</Button>
+            {priceHistory?.id === shipment.id && priceHistory.count === (shipment.price_change_count ?? 0) && <div className="grid gap-2 text-xs">
+              {priceHistory.error ? <p role="alert">{priceHistory.error}</p> : priceHistory.items?.length ? <><p className="text-muted-foreground">Últimas {priceHistory.items.length} alterações registradas (até 50).</p>{priceHistory.items.map(item => <p key={item.id} className="rounded-md bg-muted p-2"><strong>{formatBRL(item.previous_price)} → {formatBRL(item.current_price)}</strong><span className="mt-1 block text-muted-foreground">Identificado em {new Date(item.observed_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span></p>)}</> : <p className="text-muted-foreground">Nenhuma alteração registrada desde o início do controle.</p>}
+            </div>}
+          </section>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <Field label="Transportadora" value={shipment.carrier ?? shipment.service_name ?? "—"} />
             <Field label="Envio (terça)" value={formatDateBR(shipment.batch_date)} />

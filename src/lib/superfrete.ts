@@ -66,7 +66,11 @@ function sfToken(): string {
 
 /** URL pública que recebe os eventos (cadastrada via POST /api/v0/webhook). */
 export function sfWebhookUrl(): string {
-  return `${siteUrl()}/api/webhooks/superfrete`;
+  const url = new URL(process.env.SUPERFRETE_WEBHOOK_URL?.trim() || `${siteUrl()}/api/webhooks/superfrete`);
+  if (url.protocol !== "https:" || url.username || url.password || url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname.endsWith(".local") || url.hostname === "[::1]" || /^(?:127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(url.hostname)) {
+    throw new Error("O webhook da SuperFrete precisa de uma URL pública HTTPS. Configure SUPERFRETE_WEBHOOK_URL com o endereço de produção; localhost não recebe eventos da transportadora.");
+  }
+  return url.href;
 }
 
 async function sfFetch(

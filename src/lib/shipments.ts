@@ -10,6 +10,8 @@ export type ShipmentStatus =
   | "delivered"
   | "cancelled";
 
+export type ShipmentCostSummary = { labels: number; cancelled: number; emissionTotal: number; unknownPrices: number; legacyPrices: number };
+
 export const SHIPMENT_STATUSES: ShipmentStatus[] = [
   "pending",
   "released",
@@ -68,6 +70,13 @@ export type Shipment = {
   service_name: string | null;
   carrier: string | null;
   price: number | null;
+  original_price?: number | null;
+  price_baseline_legacy?: boolean;
+  price_change_count?: number;
+  price_changed_at?: string | null;
+  price_checked_at?: string | null;
+  price_difference?: number | null;
+  priceHistory?: { id: number; previous_price: number; current_price: number; observed_at: string; source: string }[];
   discount: number | null;
   delivery_time: number | null;
   insurance_value: number | null;

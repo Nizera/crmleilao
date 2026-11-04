@@ -21,7 +21,9 @@ export async function notifyCustomer(input: {
 }): Promise<void> {
   try {
     const admin = createAdminClient();
-    const { error } = await admin.from("customer_notifications").upsert(
+    // INSERT respeita também o índice único parcial da migration 0017.
+    // ON CONFLICT sem o predicado do índice não pode inferir esse índice.
+    const { error } = await admin.from("customer_notifications").insert(
       {
         customer_id: input.customerId,
         kind: input.kind,
@@ -30,9 +32,8 @@ export async function notifyCustomer(input: {
         href: input.href ?? null,
         dedupe_key: input.dedupeKey,
       },
-      { onConflict: "customer_id,dedupe_key", ignoreDuplicates: true },
     );
-    if (error) console.error("[notifications] gravar:", error.message);
+    if (error && error.code !== "23505") console.error("[notifications] gravar:", error.message);
   } catch (error) {
     console.error(
       "[notifications] gravar:",

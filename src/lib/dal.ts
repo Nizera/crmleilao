@@ -1229,6 +1229,8 @@ export type ShipmentPage = {
 export async function listShipments(params: {
   q?: string;
   status?: ShipmentStatus | "all";
+  priceChanges?: "all" | "changed" | "increase" | "decrease";
+  batchDate?: string;
   page?: number;
   pageSize?: number;
 }): Promise<ShipmentPage> {
@@ -1247,6 +1249,10 @@ export async function listShipments(params: {
   if (params.status && params.status !== "all") {
     query = query.eq("status", params.status);
   }
+  if (params.priceChanges && params.priceChanges !== "all") query = query.gt("price_change_count", 0);
+  if (params.priceChanges === "increase") query = query.gt("price_difference", 0);
+  if (params.priceChanges === "decrease") query = query.lt("price_difference", 0);
+  if (params.batchDate) query = query.eq("batch_date", params.batchDate);
 
   // Mesma sanitização do `name`: o valor entra dentro de `.or()` do PostgREST
   // (delimitadores `,` `()`, escape `\` e aspas de citação). Sem isso uma

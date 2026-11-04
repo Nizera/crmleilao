@@ -47,6 +47,17 @@ import { createClient } from "@/lib/supabase/server";
 import { waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
+export async function getShipmentPriceHistoryAction(id: string): Promise<ActionResult<NonNullable<Shipment["priceHistory"]>>> {
+  try {
+    await requireAdmin();
+    if (!z.uuid().safeParse(id).success) return failure("Envio inválido.");
+    const { data, error } = await (await createClient()).from("shipment_price_history")
+      .select("id,previous_price,current_price,observed_at,source").eq("shipment_id", id)
+      .order("observed_at", { ascending: false }).order("id", { ascending: false }).limit(50);
+    if (error) return failure("Não foi possível carregar o histórico de custo.");
+    return { ok: true, data: data ?? [] };
+  } catch (error) { rethrowIfRedirect(error); return failure("Não foi possível carregar o histórico de custo."); }
+}
 export async function releaseExternalPrizeFreight(customerId:string,lotIds:string[],reason:string):Promise<ActionResult>{
  try{
   const {profile}=await requireAdmin();
