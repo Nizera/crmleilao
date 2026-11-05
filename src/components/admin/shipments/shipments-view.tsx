@@ -1,4 +1,5 @@
 "use client";
+import { shipmentHistoryHref } from "@/lib/shipment-navigation";
 
 import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
@@ -369,6 +370,13 @@ export function ShipmentsView({
         </div>
       </div>
 
+      <nav aria-label="Áreas de envios" className="flex flex-wrap gap-2">
+        <Button asChild variant={isQueue ? "default" : "outline"}><Link aria-current={isQueue ? "page" : undefined} href={buildHref(query, "all", 1, date, "fila", "all")}>Fila de preparação</Link></Button>
+        <Button asChild variant={!isQueue && priceChanges === "all" ? "default" : "outline"}><Link aria-current={!isQueue && priceChanges === "all" ? "page" : undefined} href={shipmentHistoryHref({query})}>Etiquetas emitidas</Link></Button>
+        <Button asChild variant={!isQueue && priceChanges !== "all" ? "default" : "outline"}><Link aria-current={!isQueue && priceChanges !== "all" ? "page" : undefined} href={shipmentHistoryHref({query,cost:"changed"})}>Custos alterados</Link></Button>
+      </nav>
+      <p className="text-sm text-muted-foreground">{isQueue ? "Preparação dos pacotes para a data selecionada. Para consultar etiquetas já postadas, use Etiquetas emitidas ou Custos alterados." : historyDateFiltered ? `Etiquetas previstas para ${formatDateBR(date)}. Você pode remover a data para consultar os outros períodos.` : "Mostrando etiquetas de todas as datas. Selecione uma data abaixo para consultar um período específico."}</p>
+
       {!migrationReady && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
           Migração pendente: aplique <code>{migrationFile}</code> no SQL
@@ -412,7 +420,7 @@ export function ShipmentsView({
       {migrationReady && <section aria-label="Resumo das etiquetas" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Etiquetas {isQueue || historyDateFiltered ? `de ${formatDateBR(date)}` : "do histórico filtrado"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary?.labels ?? "—"}</p><p className="mt-1 text-xs text-muted-foreground">{summary ? `${summary.cancelled} cancelada(s) fora dos totais` : "Resumo indisponível. Confira a migration 0057."}</p></div>
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Total dos valores de emissão</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary ? formatBRL(summary.emissionTotal) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">Custo das etiquetas, separado do frete cobrado do cliente. {summary?.legacyPrices ? `${summary.legacyPrices} etiqueta(s) antiga(s) usam o primeiro valor disponível.` : ""}{summary?.unknownPrices ? ` ${summary.unknownPrices} etiqueta(s) sem valor informado.` : ""}</p></div>
-        <div className="sm:col-span-2">{isQueue && <Button variant="outline" size="sm" onClick={() => router.replace(buildHref(query, "all", 1, date, "historico", "all", date))}>Ver todas as etiquetas</Button>}<p className="mt-2 text-xs text-muted-foreground">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida. {isQueue && "A fila abaixo mostra apenas pacotes ainda em preparação; postados ficam no histórico."}</p></div>
+        <div className="sm:col-span-2"><p className="mt-2 text-xs text-muted-foreground">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida. {isQueue && "A fila abaixo mostra apenas pacotes ainda em preparação; postados ficam no histórico."}</p></div>
       </section>}
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
@@ -478,22 +486,12 @@ export function ShipmentsView({
           </Select>
         )}
 
-        <Button
-          variant={isQueue ? "outline" : "ghost"}
-          size="sm"
-          onClick={() =>
-            router.replace(
-              buildHref(query, isQueue ? status : "all", 1, date, isQueue ? "historico" : "fila", priceChanges, date),
-            )
-          }
-        >
-          {isQueue ? "Ver histórico" : "Ver fila do dia"}
-        </Button>
+
       </div>
 
       {isQueue && <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Pagamento do frete<select aria-label="Pagamento do frete" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={freightFilter} onChange={e => setFreightFilter(e.target.value)}><option value="all">Todos os fretes</option><option value="unpaid">Fretes não pagos</option><option value="due">Fretes pendentes</option><option value="awaiting">Aguardando confirmação</option><option value="paid">Fretes pagos</option><option value="company">Por conta da empresa</option></select></label>
-        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option><option value="posted">Postados</option><option value="delivered">Entregues</option></select></label>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => { const value = e.target.value; if (value === "posted" || value === "delivered") router.push(shipmentHistoryHref({query,status:value})); else setQueueStatus(value); }}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option><option value="posted">Ver postados · todas as datas</option><option value="delivered">Ver entregues · todas as datas</option></select></label>
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Ordenar por<select aria-label="Ordenar fila de envios" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueSort} onChange={e => setQueueSort(e.target.value)}><option value="name">Cliente · A a Z</option><option value="unpaid">Fretes não pagos primeiro</option><option value="paid_total">Maior total pago em lotes</option><option value="unpaid_total">Maior valor de lotes não pagos</option></select></label>
         {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); }}>Limpar filtros da fila</Button>}
         <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">Exibindo {displayedQueue.length} de {queue?.length ?? 0} clientes carregados para o dia selecionado. Envios emitidos também podem ser consultados no histórico.</p>

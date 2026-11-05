@@ -95,3 +95,12 @@ test('consulta SuperFrete valida identidade da etiqueta e impõe timeout',async(
  await assert.rejects(api.getOrderInfo('etiqueta-certa',500),/dados do pedido/);
  remoteId='etiqueta-certa';assert.equal((await api.getOrderInfo(remoteId,500)).id,remoteId);assert.ok(signal instanceof AbortSignal);
 });
+
+
+test('abas de etiquetas e custos não herdam a data da próxima preparação',()=>{
+ const nav={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/shipment-navigation.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:nav,URLSearchParams});
+ const all=new URL(nav.shipmentHistoryHref(),'https://example.invalid');assert.equal(all.searchParams.get('vista'),'historico');assert.equal(all.searchParams.has('d'),false);assert.equal(all.searchParams.has('p'),false);
+ const adjusted=new URL(nav.shipmentHistoryHref({query:'AP685604329BR',cost:'changed'}),'https://example.invalid');assert.equal(adjusted.searchParams.get('cost'),'changed');assert.equal(adjusted.searchParams.get('q'),'AP685604329BR');assert.equal(adjusted.searchParams.has('d'),false);
+ const explicit=new URL(nav.shipmentHistoryHref({date:'2026-11-03',status:'posted'}),'https://example.invalid');assert.equal(explicit.searchParams.get('d'),'2026-11-03');assert.equal(explicit.searchParams.get('status'),'posted');
+ const malicious=new URL(nav.shipmentHistoryHref({query:'x&cost=all',cost:'changed'}),'https://example.invalid');assert.equal(malicious.searchParams.get('q'),'x&cost=all');assert.equal(malicious.searchParams.get('cost'),'changed');
+});
