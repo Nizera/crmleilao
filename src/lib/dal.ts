@@ -1235,7 +1235,7 @@ export async function listShipments(params: {
   pageSize?: number;
 }): Promise<ShipmentPage> {
   const supabase = await createClient();
-  const page = Math.max(1, params.page ?? 1);
+  let page = Number.isSafeInteger(params.page) && Number(params.page) > 0 ? Number(params.page) : 1;
   const pageSize = Math.min(50, Math.max(5, params.pageSize ?? 10));
   const from = (page - 1) * pageSize;
 
@@ -1291,7 +1291,15 @@ export async function listShipments(params: {
     query = query.or(filters.join(","));
   }
 
-  const { data, count, error } = await query;
+  let { data, count, error } = await query;
+  if (error?.code === "PGRST103") {
+    page = 1;
+    ({ data, count, error } = await query.range(0, pageSize - 1));
+  }
+  if (!error && count && (page - 1) * pageSize >= count) {
+    page = Math.max(1, Math.ceil(count / pageSize));
+    ({ data, count, error } = await query.range((page - 1) * pageSize, page * pageSize - 1));
+  }
   if (error) throw new Error(`Falha ao listar envios: ${error.message}`);
 
   const rows = (data ?? []) as unknown as Shipment[];

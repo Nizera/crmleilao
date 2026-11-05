@@ -1,5 +1,5 @@
 import "server-only";
-import { observedShipmentPrice } from "@/lib/shipment-price";
+import { superfreteOrderPrice } from "@/lib/shipment-price";
 import { shipmentValues } from "@/lib/shipment-values";
 import {listStoreShippingOrders,storeDeclaredTotal} from "@/lib/store-shipping";
 import { listLogisticsShippingItems } from "@/lib/logistics-shipping";
@@ -13,6 +13,7 @@ import {
   fallbackTrackingUrl,
   getOrderInfo,
   normalizeSfStatus,
+  sfConfigured,
   sfWebhookUrl,
   sfServiceLabel,
   tagPrintUrl,
@@ -759,7 +760,7 @@ async function applyOrderInfo(
 ): Promise<TransitionResult> {
   const target = normalizeSfStatus(info.status);
   const patch: Record<string, unknown> = {
-    ...(observedShipmentPrice(info.price) != null ? { price: observedShipmentPrice(info.price), price_checked_at: new Date().toISOString(), price_observation_source: "api" } : {}),
+    ...(superfreteOrderPrice(info, shipment.price, shipment.original_price) != null ? { price: superfreteOrderPrice(info, shipment.price, shipment.original_price), price_checked_at: new Date().toISOString(), price_observation_source: "api" } : {}),
     discount: info.discount ?? shipment.discount,
     ...(info.service_id != null ? { service_id: info.service_id } : {}),
     ...(info.print?.url ? { label_print_url: info.print.url } : {}),
@@ -1049,6 +1050,39 @@ export async function payShipment(id: string): Promise<Shipment> {
   return updated;
 }
 
+/** Reconciliação diária: valores de postagem podem chegar depois do webhook. */
+export async function reconcileShipmentCosts(budgetMs = 12000): Promise<{ checked: number; failed: number }> {
+  if (!sfConfigured() || budgetMs < 1000) return { checked: 0, failed: 0 };
+  const deadline = Date.now() + Math.min(15000, budgetMs);
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("shipments")
+    .select("id")
+    .in("status", ["posted", "delivered"])
+    .gte("batch_date", new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10))
+    .or(`price_checked_at.is.null,price_checked_at.lt.${new Date(Date.now() - 12 * 3600000).toISOString()}`)
+    .order("price_checked_at", { ascending: true, nullsFirst: true })
+    .limit(60);
+  if (error) throw new Error("Não foi possível consultar os custos dos envios.");
+  let checked = 0; let failed = 0;
+  for (let offset = 0; offset < (data?.length ?? 0) && deadline - Date.now() > 1000; offset += 3) {
+    const results = await Promise.allSettled((data ?? []).slice(offset, offset + 3).map(async row => {
+      const shipment = await getShipmentById(row.id);
+      // Pode ter sido cancelado por outra operação desde a seleção.
+      if (!shipment || !["posted", "delivered"].includes(shipment.status)) return false;
+      const remaining = deadline - Date.now();
+      if (remaining < 500) return false;
+      const info = await getOrderInfo(shipment.sf_order_id, Math.min(8000, remaining));
+      await applyOrderInfo(shipment, info);
+      return true;
+    }));
+    for (const result of results) {
+      if (result.status === "rejected") failed++;
+      else if (result.value) checked++;
+    }
+  }
+  return { checked, failed };
+}
+
 export async function syncShipment(id: string): Promise<Shipment> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
@@ -1147,7 +1181,7 @@ export async function applySuperfreteEvent(input: {
   // Eventos fora de ordem não podem sobrescrever um preço mais recente.
   // Consulta autenticada ao provedor em vez de confiar no preço do evento.
   const currentInfo = await getOrderInfo(input.sfOrderId);
-  const currentPrice = observedShipmentPrice(currentInfo.price);
+  const currentPrice = superfreteOrderPrice(currentInfo, shipment.price, shipment.original_price);
   if (currentPrice != null) {
     patch.price = currentPrice;
     patch.price_checked_at = now;

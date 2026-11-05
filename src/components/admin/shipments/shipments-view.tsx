@@ -412,7 +412,7 @@ export function ShipmentsView({
       {migrationReady && <section aria-label="Resumo das etiquetas" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Etiquetas {isQueue || historyDateFiltered ? `de ${formatDateBR(date)}` : "do histórico filtrado"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary?.labels ?? "—"}</p><p className="mt-1 text-xs text-muted-foreground">{summary ? `${summary.cancelled} cancelada(s) fora dos totais` : "Resumo indisponível. Confira a migration 0057."}</p></div>
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Total dos valores de emissão</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary ? formatBRL(summary.emissionTotal) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">Custo das etiquetas, separado do frete cobrado do cliente. {summary?.legacyPrices ? `${summary.legacyPrices} etiqueta(s) antiga(s) usam o primeiro valor disponível.` : ""}{summary?.unknownPrices ? ` ${summary.unknownPrices} etiqueta(s) sem valor informado.` : ""}</p></div>
-        <p className="text-xs text-muted-foreground sm:col-span-2">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida.</p>
+        <div className="sm:col-span-2">{isQueue && <Button variant="outline" size="sm" onClick={() => router.replace(buildHref(query, "all", 1, date, "historico", "all", date))}>Ver todas as etiquetas</Button>}<p className="mt-2 text-xs text-muted-foreground">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida. {isQueue && "A fila abaixo mostra apenas pacotes ainda em preparação; postados ficam no histórico."}</p></div>
       </section>}
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
@@ -702,7 +702,7 @@ export function ShipmentsView({
                     </TableCell>
                     <TableCell className="whitespace-nowrap font-medium">
                       {finalPrice != null ? formatBRL(finalPrice) : "—"}
-                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Custo alterado · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
+                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Atual: {formatBRL(shipment.price)} · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap font-mono text-xs lg:table-cell">
                       {shipment.tracking_code ?? "—"}

@@ -75,7 +75,7 @@ export function sfWebhookUrl(): string {
 
 async function sfFetch(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number } = {},
 ): Promise<unknown> {
   const response = await fetch(`${sfBaseUrl()}${path}`, {
     method: options.method ?? "GET",
@@ -89,6 +89,7 @@ async function sfFetch(
     },
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     cache: "no-store",
+    ...(options.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
   });
 
   const json: unknown = await response.json().catch(() => null);
@@ -297,6 +298,7 @@ export type SfOrderInfo = {
   id: string;
   status: string;
   price: number;
+  service_posted?: { total_with_discount?: number | string | null } | null;
   discount: number;
   service_id: number | null;
   tracking: string | null;
@@ -308,11 +310,12 @@ export type SfOrderInfo = {
 };
 
 /** Status, rastreio e PDF da etiqueta. */
-export async function getOrderInfo(orderId: string): Promise<SfOrderInfo> {
+export async function getOrderInfo(orderId: string, timeoutMs = 15000): Promise<SfOrderInfo> {
   const json = (await sfFetch(
     `/api/v0/order/info/${encodeURIComponent(orderId)}`,
+    { timeoutMs },
   )) as SfOrderInfo;
-  if (!json?.id) {
+  if (!json?.id || json.id !== orderId) {
     throw new Error("SuperFrete não devolveu os dados do pedido.");
   }
   return json;

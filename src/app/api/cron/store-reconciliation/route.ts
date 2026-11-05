@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { reconcileStoreOrders } from '@/lib/store-server';
 import { reconcileRafflePayments } from '@/lib/raffles-server';
+import { reconcileShipmentCosts } from '@/lib/shipments-server';
 
 export const maxDuration = 60;
 export async function GET(request: Request) {
@@ -20,11 +21,14 @@ export async function GET(request: Request) {
     // Reaproveita a chamada diária; o webhook continua sendo a confirmação imediata.
     const remaining = 53000 - (Date.now() - started);
     const raffles = remaining > 1500 ? await reconcileRafflePayments(Math.min(18000, remaining)) : { checked: 0, failed: 0 };
+    const freightBudget = Math.min(12000, 53000 - (Date.now() - started));
+    const shipments = freightBudget > 1500 ? await reconcileShipmentCosts(freightBudget).catch(() => ({ checked: 0, failed: 1 })) : { checked: 0, failed: 0 };
     revalidatePath('/painel', 'layout');
     revalidatePath('/admin/fidelidade', 'layout');
     revalidatePath('/painel/rifas', 'layout');
     revalidatePath('/admin/rifa', 'layout');
-    return Response.json({ ...result, raffles });
+    revalidatePath('/admin/envios');
+    return Response.json({ ...result, raffles, shipments });
   } catch {
     return Response.json({error:'reconciliation_unavailable'}, {status:503});
   }

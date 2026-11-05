@@ -15,11 +15,11 @@ test('webhook consulta preço atual autenticado e ignora preço antigo do evento
  const code=ts.transpileModule(fs.readFileSync('src/lib/shipments-server.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  const api={};vm.runInNewContext(code,{exports:api,Date,console,require:n=>({
   '@/lib/supabase/admin':{createAdminClient:()=>db},
-  '@/lib/superfrete':{getOrderInfo:async()=>{consulted++;return {id:'remote',price:'25.50'};},fallbackTrackingUrl:()=>null},
+  '@/lib/superfrete':{getOrderInfo:async()=>{consulted++;return {id:'remote',price:'25.50',service_posted:{total_with_discount:'37.78'}};},fallbackTrackingUrl:()=>null},
   '@/lib/shipment-price':exports,
  }[n]??{})});
  const result=await api.applySuperfreteEvent({sfOrderId:'remote',event:'order.posted',data:{price:1}});
- assert.equal(result.ok,true);assert.equal(consulted,1);assert.equal(patch.price,25.5);assert.equal(patch.price_observation_source,'api');assert.ok(patch.price_checked_at);
+ assert.equal(result.ok,true);assert.equal(consulted,1);assert.equal(patch.price,37.78);assert.equal(patch.price_observation_source,'api');assert.ok(patch.price_checked_at);
 });
 test('histórico: baseline real/legado, idempotência, retorno ao original e proteção de acesso',async()=>{
  const db=new PGlite();
@@ -49,4 +49,49 @@ test('histórico: baseline real/legado, idempotência, retorno ao original e pro
  await assert.rejects(db.query('delete from shipment_price_history'),/permission denied/);
  await db.exec('reset role');await db.exec(migration);assert.equal((await db.query('select count(*)::int n from shipment_price_history')).rows[0].n,2);
  }finally{await db.close();}
+});
+
+
+test('aferição real da postagem tem prioridade sobre o valor original da API',()=>{
+ assert.equal(exports.superfreteOrderPrice({price:31.73,service_posted:{total_with_discount:37.78}}),37.78);
+ assert.equal(exports.superfreteOrderPrice({price:25.36,service_posted:{total_with_discount:'23.85'}}),23.85);
+ for(const posted of [null,{},[],{total_with_discount:0},{total_with_discount:-1},{total_with_discount:'37,78'}]) assert.equal(exports.superfreteOrderPrice({price:31.73,service_posted:posted}),31.73);
+ assert.equal(exports.superfreteOrderPrice({price:31.73,service_posted:{total_without_discount:45.5},discount:9.27}),31.73);
+ assert.equal(exports.superfreteOrderPrice({price:31.73},37.78,31.73),37.78);
+ assert.equal(exports.superfreteOrderPrice({price:31.73,service_posted:{total_with_discount:31.73}},37.78,31.73),31.73);
+ assert.equal(exports.superfreteOrderPrice(null),null);
+});
+
+test('histórico paginado volta a uma página válida após reduzir os resultados',async()=>{
+ const source=fs.readFileSync('src/lib/dal.ts','utf8');const start=source.indexOf('export async function listShipments(');const end=source.indexOf('/**',start+10);
+ for(const outOfRangeError of [false,true]){
+  const calls=[];let from=0;let ran=0;
+  const query={select(){return this;},order(){return this;},range(a,b){from=a;calls.push(['range',a,b]);return this;},gt(k,v){calls.push(['gt',k,v]);return this;},lt(){return this;},eq(k,v){calls.push(['eq',k,v]);return this;},then(resolve){ran++;return Promise.resolve(from>0?{data:[],count:outOfRangeError?null:1,error:outOfRangeError?{code:'PGRST103'}:null}:{data:[{id:'AP685604329BR'}],count:1,error:null}).then(resolve);}};
+  const api={};vm.runInNewContext(ts.transpileModule(source.slice(start,end),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:api,createClient:async()=>({from:()=>query}),SHIPMENT_COLUMNS:'id',attachLots:async rows=>rows});
+  const result=await api.listShipments({page:2,priceChanges:'changed',batchDate:'2026-11-03'});
+  assert.equal(result.page,1);assert.equal(result.rows[0].id,'AP685604329BR');assert.equal(result.total,1);assert.equal(ran,2);
+  assert.ok(calls.some(c=>c[0]==='gt'&&c[1]==='price_change_count'&&c[2]===0));
+  assert.ok(calls.some(c=>c[0]==='eq'&&c[1]==='batch_date'&&c[2]==='2026-11-03'));
+ }
+});
+
+
+test('conciliação diária limita escopo, ignora cancelados e isola falha de provedor',async()=>{
+ const source=fs.readFileSync('src/lib/shipments-server.ts','utf8');const start=source.indexOf('export async function reconcileShipmentCosts(');const end=source.indexOf('export async function syncShipment(',start);
+ let configured=true;const filters=[];const changed=[];const requested=[];
+ const query={select(){return this;},in(k,v){filters.push([k,...v]);return this;},gte(k,v){filters.push([k,v]);return this;},or(v){filters.push(['or',v]);return this;},order(){return this;},limit(n){filters.push(['limit',n]);return Promise.resolve({data:[{id:'ok'},{id:'fail'},{id:'cancelled'}],error:null});}};
+ const api={};vm.runInNewContext(ts.transpileModule(source.slice(start,end),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:api,Date,sfConfigured:()=>configured,createAdminClient:()=>({from:()=>query}),getShipmentById:async id=>({id,status:id==='cancelled'?'cancelled':'posted',sf_order_id:id}),getOrderInfo:async(id,timeout)=>{requested.push(id);assert.ok(timeout>0&&timeout<=8000);if(id==='fail')throw Error('provedor indisponível');return {id,price:31.73,service_posted:{total_with_discount:37.78}};},applyOrderInfo:async(s,info)=>changed.push([s.id,info.service_posted.total_with_discount])});
+ assert.deepEqual(JSON.parse(JSON.stringify(await api.reconcileShipmentCosts(10000))),{checked:1,failed:1});
+ assert.deepEqual(changed,[['ok',37.78]]);assert.ok(!requested.includes('cancelled'));
+ assert.ok(filters.some(x=>x[0]==='status'&&x[1]==='posted'&&x[2]==='delivered'));
+ assert.ok(filters.some(x=>x[0]==='limit'&&x[1]===60));
+ configured=false;assert.equal((await api.reconcileShipmentCosts()).checked,0);
+ configured=true;assert.equal((await api.reconcileShipmentCosts(0)).checked,0);
+});
+
+test('consulta SuperFrete valida identidade da etiqueta e impõe timeout',async()=>{
+ let remoteId='outra-etiqueta',signal;
+ const api={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/superfrete.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:api,AbortSignal,URL,process:{env:{SUPERFRETE_TOKEN:'fixture-only',SUPERFRETE_SANDBOX:'false'}},require:()=>({}),fetch:async(url,options)=>{signal=options.signal;return {ok:true,json:async()=>({id:remoteId,price:31.73})};}});
+ await assert.rejects(api.getOrderInfo('etiqueta-certa',500),/dados do pedido/);
+ remoteId='etiqueta-certa';assert.equal((await api.getOrderInfo(remoteId,500)).id,remoteId);assert.ok(signal instanceof AbortSignal);
 });
