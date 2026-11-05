@@ -1,5 +1,4 @@
 "use client";
-import { shipmentHistoryHref } from "@/lib/shipment-navigation";
 
 import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
@@ -154,7 +153,7 @@ export function ShipmentsView({
     nextDate: string,
     nextView: "fila" | "historico",
     nextCost = priceChanges,
-    nextHistoryDate = historyDateFiltered ? nextDate : "",
+    nextHistoryDate = isQueue || historyDateFiltered ? nextDate : "",
   ) => {
     const params = new URLSearchParams();
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
@@ -166,6 +165,9 @@ export function ShipmentsView({
       if (nextPage > 1) params.set("p", String(nextPage));
     } else {
       params.set("d", nextDate);
+      if (nextCost !== "all") params.set("cost", nextCost);
+      if (nextStatus !== "all") params.set("status", nextStatus);
+      if (nextPage > 1) params.set("p", String(nextPage));
     }
     const search = params.toString();
     return `/admin/envios${search ? `?${search}` : ""}`;
@@ -370,13 +372,6 @@ export function ShipmentsView({
         </div>
       </div>
 
-      <nav aria-label="Áreas de envios" className="flex flex-wrap gap-2">
-        <Button asChild variant={isQueue ? "default" : "outline"}><Link aria-current={isQueue ? "page" : undefined} href={buildHref(query, "all", 1, date, "fila", "all")}>Fila de preparação</Link></Button>
-        <Button asChild variant={!isQueue && priceChanges === "all" ? "default" : "outline"}><Link aria-current={!isQueue && priceChanges === "all" ? "page" : undefined} href={shipmentHistoryHref({query})}>Etiquetas emitidas</Link></Button>
-        <Button asChild variant={!isQueue && priceChanges !== "all" ? "default" : "outline"}><Link aria-current={!isQueue && priceChanges !== "all" ? "page" : undefined} href={shipmentHistoryHref({query,cost:"changed"})}>Custos alterados</Link></Button>
-      </nav>
-      <p className="text-sm text-muted-foreground">{isQueue ? "Preparação dos pacotes para a data selecionada. Para consultar etiquetas já postadas, use Etiquetas emitidas ou Custos alterados." : historyDateFiltered ? `Etiquetas previstas para ${formatDateBR(date)}. Você pode remover a data para consultar os outros períodos.` : "Mostrando etiquetas de todas as datas. Selecione uma data abaixo para consultar um período específico."}</p>
-
       {!migrationReady && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
           Migração pendente: aplique <code>{migrationFile}</code> no SQL
@@ -417,10 +412,12 @@ export function ShipmentsView({
         </div>
       )}
 
-      {migrationReady && <section aria-label="Resumo das etiquetas" className="grid gap-3 sm:grid-cols-2">
+      {migrationReady && <section aria-label="Resumo das etiquetas" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Etiquetas {isQueue || historyDateFiltered ? `de ${formatDateBR(date)}` : "do histórico filtrado"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary?.labels ?? "—"}</p><p className="mt-1 text-xs text-muted-foreground">{summary ? `${summary.cancelled} cancelada(s) fora dos totais` : "Resumo indisponível. Confira a migration 0057."}</p></div>
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Total dos valores de emissão</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary ? formatBRL(summary.emissionTotal) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">Custo das etiquetas, separado do frete cobrado do cliente. {summary?.legacyPrices ? `${summary.legacyPrices} etiqueta(s) antiga(s) usam o primeiro valor disponível.` : ""}{summary?.unknownPrices ? ` ${summary.unknownPrices} etiqueta(s) sem valor informado.` : ""}</p></div>
-        <div className="sm:col-span-2">{isQueue && <Button asChild variant="outline" size="sm"><Link href={shipmentHistoryHref({ query, date })}>Ver todas as etiquetas</Link></Button>}<p className="mt-2 text-xs text-muted-foreground">Resumo de todas as etiquetas que correspondem à data e à busca, incluindo as já postadas. No histórico, também considera status e alteração de custo; não se limita à página exibida. {isQueue && "A fila abaixo mostra apenas pacotes ainda em preparação; postados ficam no histórico."}</p></div>
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">Total atualizado</p><p className="mt-2 text-2xl font-semibold">{summary?.currentTotal != null ? formatBRL(summary.currentTotal) : "—"}</p><p className="text-xs text-muted-foreground">Inclui ajustes após postagem, sem canceladas.</p></div>
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">Ajustes após postagem</p><p className="mt-2 text-2xl font-semibold">{summary?.adjustmentTotal != null ? formatBRL(summary.adjustmentTotal) : "—"}</p><p className="text-xs text-muted-foreground">{summary?.changedLabels ?? "—"} etiqueta(s) com alteração.</p></div>
+        <div className="sm:col-span-2 xl:col-span-4">{isQueue && <Button asChild variant="outline" size="sm"><Link href={buildHref(query, "all", 1, date, "fila", "all")}>Ver todas as etiquetas</Link></Button>}<p className="mt-2 text-xs text-muted-foreground">Todas as etiquetas da data e dos filtros selecionados, incluindo postadas e entregues. Totais de todas as páginas.</p>{summary && summary.currentTotal == null && <p>Aplique a migration 0060 para carregar os totais atualizados.</p>}</div>
       </section>}
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
@@ -464,12 +461,12 @@ export function ShipmentsView({
         )}
         {!isQueue && historyDateFiltered && <Button variant="ghost" size="sm" onClick={() => router.replace(buildHref(query, status, 1, "", "historico", priceChanges, ""))}>Todas as datas</Button>}
 
-        {!isQueue && <label className="grid gap-1 text-xs font-medium">Alteração de custo<select aria-label="Alteração de custo da etiqueta" className="h-10 max-w-full rounded-md border bg-background px-3 text-sm" value={priceChanges} onChange={e => router.replace(buildHref(query, status, 1, date, "historico", e.target.value))}><option value="all">Todos os custos</option><option value="changed">Fretes com alteração</option><option value="increase">Aumento em relação ao inicial</option><option value="decrease">Redução em relação ao inicial</option></select></label>}
-        {!isQueue && (
+        {<label className="grid gap-1 text-xs font-medium">Alteração de custo<select aria-label="Alteração de custo da etiqueta" className="h-10 max-w-full rounded-md border bg-background px-3 text-sm" value={priceChanges} onChange={e => router.replace(buildHref(query, status, 1, date, isQueue ? "fila" : "historico", e.target.value))}><option value="all">Todos os custos</option><option value="changed">Fretes com alteração</option><option value="increase">Aumento em relação ao inicial</option><option value="decrease">Redução em relação ao inicial</option></select></label>}
+        {(
           <Select
             value={status}
             onValueChange={(value) =>
-              router.replace(buildHref(query, value, 1, date, "historico"))
+              router.replace(buildHref(query, value, 1, date, isQueue ? "fila" : "historico"))
             }
           >
             <SelectTrigger className="w-52">
@@ -489,15 +486,188 @@ export function ShipmentsView({
 
       </div>
 
+      <h3 className="font-semibold">Etiquetas da data selecionada</h3>
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Código</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead className="hidden md:table-cell">Lotes</TableHead>
+                <TableHead className="hidden lg:table-cell">Transportadora</TableHead>
+                <TableHead>Emissão</TableHead>
+                <TableHead className="hidden lg:table-cell">Rastreio</TableHead>
+                <TableHead className="hidden md:table-cell">Envio</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((shipment) => {
+                const lotCodes =
+                  shipment.lots?.map((lot) => lot.code).join(", ") ?? "";
+                const finalPrice =
+                  shipment.price != null ? Number(shipment.price) : shipment.original_price != null ? Number(shipment.original_price) : null;
+
+                return (
+                  <TableRow key={shipment.id}>
+                    <TableCell className="font-mono text-xs">
+                      {shipment.code}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/admin/clientes/${shipment.customer_id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {shipment.customer?.name ?? "Sem nome"}
+                      </Link>
+                      <span className="block text-xs text-muted-foreground">
+                        {shipment.customer
+                          ? formatPhoneBR(shipment.customer.phone_e164)
+                          : ""}
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
+                      <span title={lotCodes}>
+                        {shipment.lots?.length ?? 0}
+                        {lotCodes ? ` · ${lotCodes}` : ""}
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground lg:table-cell">
+                      {shipment.carrier ?? shipment.service_name ?? "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {finalPrice != null ? formatBRL(finalPrice) : "—"}
+                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Emissão: {formatBRL(shipment.original_price ?? null)} · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap font-mono text-xs lg:table-cell">
+                      {shipment.tracking_code ?? "—"}
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
+                      {formatDateBR(shipment.batch_date)}
+                    </TableCell>
+                    <TableCell>
+                      <ShipmentStatusBadge status={shipment.status} />
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Ações do envio ${shipment.code}`}
+                            disabled={busyId === shipment.id}
+                          >
+                            {busyId === shipment.id ? (
+                              <Loader2 className="animate-spin" />
+                            ) : (
+                              <MoreHorizontal />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setDetail(shipment)}>
+                            <ExternalLink />
+                            Ver detalhes
+                          </DropdownMenuItem>
+                          {shipment.status !== "cancelled" && (
+                            <DropdownMenuItem onClick={() => sync(shipment)}>
+                              <RefreshCw />
+                              Sincronizar
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => print(shipment)}>
+                            <Printer />
+                            Etiqueta PDF
+                          </DropdownMenuItem>
+                          {["released","posted","delivered"].includes(shipment.status) && (
+                            <DropdownMenuItem onClick={() => notify(shipment)}>
+                              <ExternalLink />
+                              Enviar ao cliente
+                            </DropdownMenuItem>
+                          )}
+                          {canPayShipment(shipment.status) && (
+                            <DropdownMenuItem onClick={() => pay(shipment)}>
+                              <Wallet />
+                              Pagar etiqueta
+                            </DropdownMenuItem>
+                          )}
+                          {canCancelShipment(shipment.status) && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => cancel(shipment)}>
+                                <Ban />
+                                Cancelar envio
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+
+              {rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-32 text-center">
+                    <span className="text-muted-foreground">
+                      {q || status !== "all"
+                        ? "Nenhum envio corresponde aos filtros."
+                        : "Nenhum envio ainda."}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      {total > pageSize && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Página {page} de {pages} · {total} envios
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={buildHref(q, status, page - 1, date, isQueue ? "fila" : "historico")}>
+                  <ChevronLeft />
+                  Anterior
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                <ChevronLeft />
+                Anterior
+              </Button>
+            )}
+            {page < pages ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={buildHref(q, status, page + 1, date, isQueue ? "fila" : "historico")}>
+                  <ChevronRight />
+                  Próxima
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                <ChevronRight />
+                Próxima
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isQueue && <h3 className="font-semibold">Pacotes aguardando preparação</h3>}
       {isQueue && <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Pagamento do frete<select aria-label="Pagamento do frete" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={freightFilter} onChange={e => setFreightFilter(e.target.value)}><option value="all">Todos os fretes</option><option value="unpaid">Fretes não pagos</option><option value="due">Fretes pendentes</option><option value="awaiting">Aguardando confirmação</option><option value="paid">Fretes pagos</option><option value="company">Por conta da empresa</option></select></label>
-        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => { const value = e.target.value; if (value === "posted" || value === "delivered") router.push(shipmentHistoryHref({query,status:value})); else setQueueStatus(value); }}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option><option value="posted">Ver postados · todas as datas</option><option value="delivered">Ver entregues · todas as datas</option></select></label>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option></select></label>
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Ordenar por<select aria-label="Ordenar fila de envios" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueSort} onChange={e => setQueueSort(e.target.value)}><option value="name">Cliente · A a Z</option><option value="unpaid">Fretes não pagos primeiro</option><option value="paid_total">Maior total pago em lotes</option><option value="unpaid_total">Maior valor de lotes não pagos</option></select></label>
         {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); }}>Limpar filtros da fila</Button>}
-        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">Exibindo {displayedQueue.length} de {queue?.length ?? 0} clientes carregados para o dia selecionado. Envios emitidos também podem ser consultados no histórico.</p>
+        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">Exibindo {displayedQueue.length} de {queue?.length ?? 0} clientes carregados para o dia selecionado. Etiquetas emitidas aparecem na listagem acima.</p>
       </div>}
 
-      {isQueue ? (
+      {isQueue && (
         <div className="overflow-x-auto rounded-md border">
           <Table>
             <TableHeader className="max-lg:hidden">
@@ -647,178 +817,6 @@ export function ShipmentsView({
               )}
             </TableBody>
           </Table>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="hidden md:table-cell">Lotes</TableHead>
-                <TableHead className="hidden lg:table-cell">Transportadora</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead className="hidden lg:table-cell">Rastreio</TableHead>
-                <TableHead className="hidden md:table-cell">Envio</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((shipment) => {
-                const lotCodes =
-                  shipment.lots?.map((lot) => lot.code).join(", ") ?? "";
-                const finalPrice =
-                  shipment.original_price != null ? Number(shipment.original_price) : shipment.price != null ? Number(shipment.price) : null;
-
-                return (
-                  <TableRow key={shipment.id}>
-                    <TableCell className="font-mono text-xs">
-                      {shipment.code}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/admin/clientes/${shipment.customer_id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {shipment.customer?.name ?? "Sem nome"}
-                      </Link>
-                      <span className="block text-xs text-muted-foreground">
-                        {shipment.customer
-                          ? formatPhoneBR(shipment.customer.phone_e164)
-                          : ""}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      <span title={lotCodes}>
-                        {shipment.lots?.length ?? 0}
-                        {lotCodes ? ` · ${lotCodes}` : ""}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground lg:table-cell">
-                      {shipment.carrier ?? shipment.service_name ?? "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">
-                      {finalPrice != null ? formatBRL(finalPrice) : "—"}
-                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Atual: {formatBRL(shipment.price)} · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap font-mono text-xs lg:table-cell">
-                      {shipment.tracking_code ?? "—"}
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
-                      {formatDateBR(shipment.batch_date)}
-                    </TableCell>
-                    <TableCell>
-                      <ShipmentStatusBadge status={shipment.status} />
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Ações do envio ${shipment.code}`}
-                            disabled={busyId === shipment.id}
-                          >
-                            {busyId === shipment.id ? (
-                              <Loader2 className="animate-spin" />
-                            ) : (
-                              <MoreHorizontal />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setDetail(shipment)}>
-                            <ExternalLink />
-                            Ver detalhes
-                          </DropdownMenuItem>
-                          {shipment.status !== "cancelled" && (
-                            <DropdownMenuItem onClick={() => sync(shipment)}>
-                              <RefreshCw />
-                              Sincronizar
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => print(shipment)}>
-                            <Printer />
-                            Etiqueta PDF
-                          </DropdownMenuItem>
-                          {["released","posted","delivered"].includes(shipment.status) && (
-                            <DropdownMenuItem onClick={() => notify(shipment)}>
-                              <ExternalLink />
-                              Enviar ao cliente
-                            </DropdownMenuItem>
-                          )}
-                          {canPayShipment(shipment.status) && (
-                            <DropdownMenuItem onClick={() => pay(shipment)}>
-                              <Wallet />
-                              Pagar etiqueta
-                            </DropdownMenuItem>
-                          )}
-                          {canCancelShipment(shipment.status) && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => cancel(shipment)}>
-                                <Ban />
-                                Cancelar envio
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
-                    <span className="text-muted-foreground">
-                      {q || status !== "all"
-                        ? "Nenhum envio corresponde aos filtros."
-                        : "Nenhum envio ainda."}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isQueue && total > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Página {page} de {pages} · {total} envios
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page - 1, date, "historico")}>
-                  <ChevronLeft />
-                  Anterior
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                <ChevronLeft />
-                Anterior
-              </Button>
-            )}
-            {page < pages ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page + 1, date, "historico")}>
-                  <ChevronRight />
-                  Próxima
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                <ChevronRight />
-                Próxima
-              </Button>
-            )}
-          </div>
         </div>
       )}
 

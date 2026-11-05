@@ -60,20 +60,21 @@ export default async function EnviosPage({
       });
       queue = result.rows;
       queueTruncated = result.truncated;
-    } else {
+    }
+    {
       data = await listShipments({
         q,
         priceChanges,
         status: status as ShipmentStatus | "all",
         page,
-        batchDate: ISO.test(rawDate) ? date : undefined,
+        batchDate: useQueue || ISO.test(rawDate) ? date : undefined,
       });
     }
     const summaryResult = await (await createClient()).rpc("get_shipment_cost_summary", {
       p_day: useQueue || ISO.test(rawDate) ? date : null,
       p_query: q.trim().replace(/[,\x27\x22%()\\]/g, " ").trim().slice(0, 64),
-      p_status: useQueue ? "all" : status,
-      p_cost: useQueue ? "all" : priceChanges,
+      p_status: status,
+      p_cost: priceChanges,
     });
     if (!summaryResult.error) summary = summaryResult.data as ShipmentCostSummary;
   } catch (error) {

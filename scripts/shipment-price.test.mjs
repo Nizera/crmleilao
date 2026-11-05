@@ -41,13 +41,19 @@ test('histórico: baseline real/legado, idempotência, retorno ao original e pro
  await db.exec("select set_config('test.admin','true',false);insert into shipments(price,batch_date) select 10,'2026-11-03'::date from generate_series(1,30);insert into shipments(price,batch_date,status) values(100,'2026-11-03','cancelled')");
  const summary=(await db.query("select get_shipment_cost_summary('2026-11-03','','all','all') s")).rows[0].s;
  assert.equal(summary.labels,30);assert.equal(summary.cancelled,1);assert.equal(Number(summary.emissionTotal),300);
+ await db.exec(fs.readFileSync('supabase/migrations/0060_shipment_current_totals.sql','utf8'));
+ await db.exec("update shipments set price=12 where batch_date='2026-11-03' and status<>'cancelled';update shipments set price=999 where status='cancelled'");
+ const updated=(await db.query("select get_shipment_cost_summary('2026-11-03','','all','all') s")).rows[0].s;
+ assert.equal(Number(updated.emissionTotal),300);assert.equal(Number(updated.currentTotal),360);assert.equal(Number(updated.adjustmentTotal),60);assert.equal(updated.changedLabels,30);
+ const otherDay=(await db.query("select get_shipment_cost_summary('2026-11-10','','all','all') s")).rows[0].s;assert.equal(otherDay.currentTotal,0);
+
  await db.query("update shipments set tracking_code='AA123456789BR' where id=$1",[id]);
  const byTracking=(await db.query("select get_shipment_cost_summary(null,'AA123456789BR','all','changed') s")).rows[0].s;assert.equal(byTracking.labels,1);assert.equal(Number(byTracking.emissionTotal),20);
  await db.exec("set role authenticated;select set_config('test.admin','false',false)");assert.equal((await db.query('select * from shipment_price_history')).rows.length,0);
  assert.equal((await db.query("select get_shipment_cost_summary() s")).rows[0].s.labels,0);
- await db.exec("select set_config('test.admin','true',false)");assert.equal((await db.query('select * from shipment_price_history')).rows.length,2);
+ await db.exec("select set_config('test.admin','true',false)");assert.equal((await db.query('select * from shipment_price_history')).rows.length,33);
  await assert.rejects(db.query('delete from shipment_price_history'),/permission denied/);
- await db.exec('reset role');await db.exec(migration);assert.equal((await db.query('select count(*)::int n from shipment_price_history')).rows[0].n,2);
+ await db.exec('reset role');await db.exec(migration);assert.equal((await db.query('select count(*)::int n from shipment_price_history')).rows[0].n,33);
  }finally{await db.close();}
 });
 
