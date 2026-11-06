@@ -403,6 +403,7 @@ export function LotsView({
                 </TableCell>
                 <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
                   <LotStatusBadge status={lot.status} size="sm" />
+                  {lot.payment_expired_at && <span className="mt-1 block text-[10px] text-muted-foreground">Prazo de 24h encerrado</span>}
                 </TableCell>
                 <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                   {formatDateBR(lot.shipping_date)}

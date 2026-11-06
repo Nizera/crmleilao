@@ -1,3 +1,4 @@
+import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -29,7 +30,7 @@ export default async function CustomerLotPage({
   const { customer } = await requireCustomer();
 
   const lot = await getLotByCode(code);
-  if (!lot || lot.customer_id !== customer.id) notFound();
+  if (!lot || lot.payment_expired_at || lot.customer_id !== customer.id) notFound();
 
   const images = lot.images
     .map((path) => lotImageUrl(path))
@@ -52,6 +53,7 @@ export default async function CustomerLotPage({
         <LotStatusBadge status={lot.status} />
       </div>
 
+      <AuctionPaymentNotice lots={[lot]}/>
       {ownedCharge && (
         <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
           {ownedCharge.status === "approved" ? (

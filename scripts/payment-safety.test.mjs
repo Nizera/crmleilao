@@ -40,7 +40,7 @@ function fixture({ states = ['created', 'canceled'], reference = 'REF', noOrder 
     return query;
   } };
   const api = load('src/lib/charges-server.ts', {
-    'server-only': {}, '@/lib/charges': { isChargeOpen: status => ['pending','in_process'].includes(status) },
+    'server-only': {}, '@/lib/auction-deadlines':{auctionDeadlineExpired:()=>false}, '@/lib/charges': { isChargeOpen: status => ['pending','in_process'].includes(status) },
     '@/lib/supabase/admin': { createAdminClient: () => client },
     '@/lib/lots': { formatBRL: String },
     '@/lib/notifications-server': { notifyCustomer: async () => {} },

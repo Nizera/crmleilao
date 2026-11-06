@@ -86,7 +86,7 @@ export default async function ClientHomePage() {
   const [lots, charges, freight, spending, shipments, shipmentsTotal, rankPoints] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
-      listLots({ images: true, description: true }),
+      listLots({ hideExpired: true, images: true, description: true }),
       listCustomerCharges(customer.id),
       getCustomerFreightState(customer.id),
       getCustomerSpendingSummary(customer.id),
@@ -199,7 +199,7 @@ export default async function ClientHomePage() {
 
       <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} showFreightStatus={false} />
 
-      <ClientLotsList
+      <ClientLotsList showDeadlineNotice={false}
         lots={recentLots}
         subtitle={lotsSubtitle ?? undefined}
       />

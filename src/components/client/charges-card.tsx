@@ -1,5 +1,7 @@
 "use client";
 
+import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
+import {auctionDeadlineExpired} from "@/lib/auction-deadlines";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -101,6 +103,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       lots.filter(
         (lot) =>
           lot.status === "pending_payment" &&
+          !auctionDeadlineExpired(lot.payment_due_at) &&
           (!lot.charge_id || !activeChargeIds.has(lot.charge_id)),
       ),
     [lots, activeChargeIds],
@@ -203,6 +206,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
+        <AuctionPaymentNotice lots={lots}/>
         {showFreightStatus && freight.status === "due" && (
           <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <p className="font-medium">

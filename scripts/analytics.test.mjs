@@ -28,6 +28,7 @@ function statsFor(lots, from, to, extra = {}) {
     let rows = [...(tables[table] || [])];
     const query = {
       select() { return this; },
+      is(key,value) {rows=rows.filter(r=>(r[key]??null)===value);return this;},
       eq(key,value) { rows=rows.filter(r=>r[key]===value);return this; },
       gt(key,value) { rows=rows.filter(r=>Number(r[key])>value);return this; },
       gte(key,value) { rows=rows.filter(r=>Date.parse(r[key])>=Date.parse(value));return this; },
@@ -396,4 +397,9 @@ test('fechamento e frete têm identidades distintas ao trocar o período', () =>
   for (const keys of identities) assert.equal(new Set(keys).size, 2, 'componentes irmãos não podem compartilhar a mesma chave');
   assert.notEqual(identities[0][0], identities[1][0], 'fechamento deve reiniciar ao trocar de período');
   assert.notEqual(identities[0][1], identities[1][1], 'filtro do frete deve reiniciar ao trocar de período');
+});
+
+test('lotes expirados automaticamente não aparecem em nenhuma KPI do dashboard',async()=>{
+ const kept=lot(40,{status:'pending_payment',paid_at:null});const expired=lot(80,{status:'cancelled',paid_at:null,payment_expired_at:'2026-10-28T00:00:00Z'});
+ const before=await statsFor([kept],'2026-10-27T00:00','2026-10-28T23:59');const after=await statsFor([kept,expired],'2026-10-27T00:00','2026-10-28T23:59');assert.deepEqual(JSON.parse(JSON.stringify(after)),JSON.parse(JSON.stringify(before)));
 });

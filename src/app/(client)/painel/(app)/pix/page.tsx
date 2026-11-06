@@ -10,7 +10,7 @@ import { ClientChargesCard } from "@/components/client/charges-card";
 export default async function ClientPixPage() {
   const { customer } = await requireCustomer();
   const [lots, charges, chargesTotal, freight] = await Promise.all([
-    listLots({ images: true }),
+    listLots({ hideExpired: true, images: true }),
     listCustomerCharges(customer.id),
     countCustomerCharges(customer.id),
     getCustomerFreightState(customer.id),

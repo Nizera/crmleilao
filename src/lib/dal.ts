@@ -110,7 +110,7 @@ export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
 /** Colunas sempre presentes de um lote (listagens e detalhe). */
 const LOT_BASE_COLUMNS = [
   "id, code, customer_id, title, arremate_value, status,",
-  "charge_id,",
+  "charge_id, payment_due_at, payment_expired_at,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id)",
 ].join(" ");
@@ -152,6 +152,7 @@ const LOT_COLUMNS = lotColumns({ description: true, images: true, items: true })
 export const listLots = cache(
   async (
     opts: {
+      hideExpired?: boolean;
       notes?: boolean;
       images?: boolean;
       items?: boolean;
@@ -161,7 +162,7 @@ export const listLots = cache(
     const supabase = await createClient();
     const lots: Lot[] = [];
     for (let from = 0; ; from += 500) {
-      const { data, error } = await supabase
+      let query = supabase
       .from("lots")
       .select(
         lotColumns({
@@ -174,6 +175,8 @@ export const listLots = cache(
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, from + 499);
+      if(opts.hideExpired)query=query.is("payment_expired_at",null);
+      const {data,error}=await query;
 
     if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
 

@@ -1,5 +1,7 @@
 "use client";
 
+import {auctionDeadlineLabel} from "@/lib/auction-deadlines";
+import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
@@ -16,9 +18,10 @@ type Props = {
   lots: Lot[];
   /** Subtítulo do cabeçalho (ex.: "2 lotes arrematados em 18/10/2026"). */
   subtitle?: string;
+  showDeadlineNotice?: boolean;
 };
 
-export function ClientLotsList({ lots, subtitle }: Props) {
+export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
@@ -87,6 +90,7 @@ export function ClientLotsList({ lots, subtitle }: Props) {
 
       </div>
 
+      {showDeadlineNotice && <AuctionPaymentNotice lots={lots}/>}
       <ul className="flex flex-col gap-2">
         {visibleRows.map(({ lot, images, startIndex }) => {
           const cover = images[0] ?? null;
@@ -156,6 +160,7 @@ export function ClientLotsList({ lots, subtitle }: Props) {
                     Envio {formatDateBR(lot.shipping_date)}
                   </span>
                 </div>
+                {pending && lot.payment_due_at && <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">Pagar até {auctionDeadlineLabel(lot.payment_due_at)}</p>}
                 <div className="mt-auto flex items-center justify-between gap-2 pt-2">
                   <span className="truncate text-[10px] font-medium uppercase text-muted-foreground">
                     Lance vencedor: você

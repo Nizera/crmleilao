@@ -1,4 +1,5 @@
 import "server-only";
+import {auctionDeadlineExpired} from "@/lib/auction-deadlines";
 
 import {
   isChargeActive,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/charges";
 import {
   cancelPixOrder,
+  qrFrom,
   createPixOrder,
   getOrder,
   targetChargeStatus,
@@ -43,13 +45,13 @@ export type TransitionResult = { ok: boolean; reason?: string };
 /** Lotes `pending_payment` do cliente que ainda não estão numa cobrança aberta. */
 export async function listEligibleLots(customerId: string): Promise<ChargeLotRef[]> {
   const refs = await listEligibleLotRefs(customerId);
-  return refs.map(({ id, code, title, arremate_value, status, auction_date }) => ({
+  return refs.map(({ id, code, title, arremate_value, status, auction_date, payment_due_at }) => ({
     id,
     code,
     title,
     arremate_value,
     status,
-    auction_date,
+    auction_date, payment_due_at,
   }));
 }
 
@@ -65,7 +67,7 @@ export async function listEligibleLotRefs(
   const { data, error } = await admin
     .from("lots")
     .select(
-      "id, code, title, arremate_value, status, auction_date, charge_id, charge:charges(status, expires_at)",
+      "id, code, title, arremate_value, status, auction_date, payment_due_at, charge_id, charge:charges(status, expires_at)",
     )
     .eq("customer_id", customerId)
     .eq("status", "pending_payment")
@@ -80,7 +82,7 @@ export async function listEligibleLotRefs(
   };
 
   return ((data ?? []) as unknown as Row[])
-    .filter((row) => !row.charge || !isChargeActive(row.charge))
+    .filter((row) => !auctionDeadlineExpired(row.payment_due_at) && (!row.charge || !isChargeActive(row.charge)))
     .map((row) => ({
       id: row.id,
       code: row.code,
@@ -89,6 +91,7 @@ export async function listEligibleLotRefs(
       status: row.status,
       auction_date: row.auction_date,
       charge_id: row.charge_id,
+      payment_due_at: row.payment_due_at,
     }));
 }
 
@@ -307,16 +310,15 @@ export async function createCharge(input: {
           : digits.length === 14
             ? { type: "CNPJ", number: digits }
             : undefined,
-    });
+    }, {waitForQr:false});
   } catch (error) {
-    // A order pode ter chegado a existir no MP antes da rede falhar. Desfaz o
-    // reclame mesmo assim (o caso comum é não ter sido criada) e deixa o
-    // external_reference no log para conferir no painel do Mercado Pago.
+    // Uma resposta perdida pode esconder um Pix real. Preserva o registro
+    // para recuperar a mesma referência, inclusive ao vencer o prazo do lote.
     console.error(
       `[charges] falha ao criar Pix (${externalReference}):`,
       error instanceof Error ? error.message : error,
     );
-    await rollback();
+    // Mantém a cobrança e os vínculos: uma resposta perdida pode esconder um Pix válido.
     throw error;
   }
 
@@ -514,15 +516,27 @@ export async function markChargePaid(chargeId: string): Promise<TransitionResult
   return applyTransition(charge, "approved", { paidAt: new Date().toISOString() });
 }
 
+/** Recupera a mesma ordem após resposta perdida; nunca troca a referência idempotente. */
+export async function recoverChargeOrder(chargeId:string,signal?:AbortSignal):Promise<void>{
+ const charge=await getChargeById(chargeId);if(!charge||charge.mp_payment_id||!isChargeOpen(charge.status))return;
+ const admin=createAdminClient();const {data:customer,error}=await admin.from('customers').select('name,email,cpf_cnpj').eq('id',charge.customer_id).single();
+ if(error||!customer?.email)throw new Error('Não foi possível recuperar o Pix.');
+ const [first,...rest]=(customer.name||'Cliente').trim().split(/\s+/);const digits=(customer.cpf_cnpj||'').replace(/\D/g,'');
+ const order=await createPixOrder({amount:Number(charge.amount),description:charge.description||'Arremates acumulados',externalReference:charge.external_reference,payerEmail:customer.email.trim(),payerFirstName:first,payerLastName:rest.join(' ')||undefined,identification:digits.length===11||digits.length===14?{type:digits.length===11?'CPF':'CNPJ',number:digits}:undefined},{waitForQr:false,signal});
+ if(Math.round(order.amount*100)!==Math.round(Number(charge.amount)*100))throw new Error('Pagamento divergente.');
+ const saved=await admin.from('charges').update({mp_payment_id:order.orderId,qr_code:order.qrCode,qr_code_base64:order.qrCodeBase64,ticket_url:order.ticketUrl,expires_at:order.dateOfExpiration}).eq('id',charge.id).in('status',['pending','in_process']).or(`mp_payment_id.is.null,mp_payment_id.eq.${order.orderId}`);
+ if(saved.error)throw new Error('Não foi possível recuperar a identificação do Pix.');
+}
+
 /** Cancelamento manual: devolve os lotes para elegíveis (status fica cancelled). */
-export async function cancelCharge(chargeId: string): Promise<TransitionResult> {
+export async function cancelCharge(chargeId: string, signal?: AbortSignal): Promise<TransitionResult> {
   const charge = await getChargeById(chargeId);
   if (!charge) return { ok: false, reason: "not_found" };
   if (!isChargeOpen(charge.status)) return { ok: false, reason: `already_${charge.status}` };
   // Sem ordem confirmada, pode haver uma criação em andamento. Não liberar
   // os lotes com base em ausência de ID, timeout ou resposta 404.
   if (!charge.mp_payment_id) return { ok: false, reason: "no_order" };
-  const order = await getOrder(charge.mp_payment_id);
+  const order = await getOrder(charge.mp_payment_id,signal);
   if (!order) return { ok: false, reason: "order_not_found" };
   if (order.externalReference !== charge.external_reference) return { ok: false, reason: "reference_mismatch" };
 
@@ -542,8 +556,8 @@ export async function cancelCharge(chargeId: string): Promise<TransitionResult> 
   }
   // Mesmo que o POST falhe, consultar novamente: o pagamento ou cancelamento
   // pode ter sido concluído durante a requisição.
-  await cancelPixOrder(order.id);
-  const confirmed = await getOrder(order.id);
+  await cancelPixOrder(order.id,signal);
+  const confirmed = await getOrder(order.id,signal);
   if (!confirmed) return { ok: false, reason: "cancellation_unconfirmed" };
   if (confirmed.externalReference !== charge.external_reference) return { ok: false, reason: "reference_mismatch" };
   return settle(confirmed);
@@ -559,8 +573,9 @@ export async function syncChargeWithMp(chargeId: string): Promise<TransitionResu
   if (!charge) return { ok: false, reason: "not_found" };
   if (!isChargeOpen(charge.status)) return { ok: false, reason: `already_${charge.status}` };
 
-  const orderId = charge.mp_payment_id?.trim();
-  if (!orderId) return { ok: false, reason: "no_order" };
+  let orderId = charge.mp_payment_id?.trim();
+  if (!orderId){await recoverChargeOrder(charge.id);orderId=(await getChargeById(charge.id))?.mp_payment_id?.trim();}
+  if(!orderId)return {ok:false,reason:"no_order"};
 
   const order = await getOrder(orderId);
   if (!order) return { ok: false, reason: "order_not_found" };
@@ -570,6 +585,12 @@ export async function syncChargeWithMp(chargeId: string): Promise<TransitionResu
     return { ok: false, reason: "reference_mismatch" };
   }
 
+  if(Math.round(order.amount*100)!==Math.round(Number(charge.amount)*100))return {ok:false,reason:"amount_mismatch"};
+  const qr=qrFrom(order.raw);
+  if(qr.qrCode||qr.ticketUrl){
+    const saved=await createAdminClient().from('charges').update({qr_code:qr.qrCode,qr_code_base64:qr.qrCodeBase64,ticket_url:qr.ticketUrl}).eq('id',charge.id).eq('mp_payment_id',order.id).in('status',['pending','in_process']);
+    if(saved.error)throw new Error('Não foi possível atualizar o QR do Pix.');
+  }
   const target = targetChargeStatus(order.status, order.statusDetail);
   if (!target) return { ok: false, reason: `mp_${order.status || "desconhecido"}` };
 

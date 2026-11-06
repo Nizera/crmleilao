@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,6 +44,18 @@ type QrState = {
  */
 export function useChargeQr() {
   const [state, setState] = useState<QrState | null>(null);
+  const waitingId=state?.data&&!state.loading&&!state.data.qr_code&&!state.data.ticket_url?state.id:null;
+  useEffect(()=>{
+    if(!waitingId)return;let disposed=false,checking=false,attempts=0;
+    const timer=setInterval(async()=>{
+      if(checking||attempts>=8)return;checking=true;attempts++;
+      try{const result=await getSelfChargeQrAction(waitingId);if(!disposed)setState(previous=>previous?.id!==waitingId?previous:{...previous,loading:false,data:result.ok?result.data:previous.data,error:result.ok?null:result.error});}
+      catch{ /* Mantém o mesmo Pix, disponível para tentar novamente. */ }
+      finally{checking=false;if(attempts>=8)clearInterval(timer);}
+    },3000);
+    return()=>{disposed=true;clearInterval(timer);};
+  },[waitingId]);
+
 
   const open = (chargeId: string) => {
     setState({ id: chargeId, data: null, error: null, loading: true });

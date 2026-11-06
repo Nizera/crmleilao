@@ -73,7 +73,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   const allLots: ScopeLot[] = [];
   let lotsError: { message: string } | null = null;
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await db.from("lots").select(LOT_SELECT).order("id", { ascending: true }).range(offset, offset + 499);
+    const { data, error } = await db.from("lots").select(LOT_SELECT).is("payment_expired_at",null).order("id", { ascending: true }).range(offset, offset + 499);
     if (error) { lotsError = error; break; }
     const page = (data ?? []) as unknown as ScopeLot[];
     allLots.push(...page);

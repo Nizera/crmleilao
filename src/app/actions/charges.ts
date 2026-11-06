@@ -24,6 +24,7 @@ import { requireAdmin, requireCustomer, searchCustomers, type Customer } from "@
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { z } from "zod";
+import {allow} from "@/lib/ratelimit";
 
 export async function getPendingPaymentTotalAction(customerId:string):Promise<ActionResult<{total:number}>>{
  try{await requireAdmin();if(!z.uuid().safeParse(customerId).success)return {ok:false,error:"Cliente inválido."};
@@ -241,6 +242,7 @@ export async function syncSelfChargeAction(id: string): Promise<ActionResult> {
     const { customer } = await requireCustomer();
     const own = await requireOwnCharge(id, customer.id);
     if (!own.ok) return own;
+    if(!await allow("auction-sync",customer.id))return failure("Aguarde alguns segundos para conferir o Pix novamente.");
     const result = await syncChargeWithMp(own.data.id);
     if (!result.ok) return failure(transitionMessage(result.reason));
     revalidateChargePaths();
@@ -273,7 +275,9 @@ export async function getSelfChargeQrAction(id: string): Promise<
     const own = await requireOwnCharge(id, customer.id);
     if (!own.ok) return own;
 
-    const charge = own.data;
+    let charge = own.data;
+    if(!charge.qr_code && ["pending","in_process"].includes(charge.status)){if(!await allow("auction-sync",customer.id))return failure("Aguarde alguns segundos para conferir o Pix novamente.");await syncChargeWithMp(charge.id);charge=await getChargeById(charge.id)??charge;}
+    if(!["pending","in_process"].includes(charge.status))return failure("Este Pix já foi encerrado. Atualize o painel para conferir o pagamento.");
     return {
       ok: true,
       data: {
