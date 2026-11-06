@@ -61,7 +61,7 @@ test('Webhook: HMAC obrigatório, valor consultado no provedor e replay encaminh
 
 test('Loja: falha após criar não perde ID e QR é atualizado sem outro POST',async()=>{
  let posts=0,gets=0;const state={id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',customer_id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',external_reference:'shop_fixture',code:'LJ-fixture',payment_status:'creating',mp_order_id:null,cash_total:10,items:[]};
- const db={from(table){let values;return {select(){return this;},update(v){values=v;return this;},eq(){return this;},or(){return this;},single:async()=>({data:{email:'fixture@example.invalid',name:'Fixture'}}),then(resolve){if(table==='store_orders'&&values)Object.assign(state,values);return Promise.resolve({error:null}).then(resolve);}};},rpc:async()=>({error:null})};
+ const db={from(table){let values;return {select(){return this;},update(v){values=v;return this;},eq(){return this;},or(){return this;},single:async()=>({data:{email:'fixture@example.invalid',name:'Fixture'}}),then(resolve){if(table==='store_orders'&&values)Object.assign(state,values);return Promise.resolve({error:null}).then(resolve);}};},rpc:async()=>({error:null,data:true})};
  globalThis.__storeAudit={db,createPixOrder:async()=>{posts++;return {orderId:'ORD_fixture',amount:10,qrCode:null,qrCodeBase64:null,ticketUrl:null,dateOfExpiration:null};},getOrder:async()=>{gets++;return {id:'ORD_fixture',externalReference:'shop_fixture',amount:10,status:'action_required',statusDetail:'waiting_payment',raw:{transactions:{payments:[{payment_method:{qr_code:'fake-ready-qr'}}]}}};}};
  let source=await read('../src/lib/store-server.ts');
  source=source.replace('import "server-only";','')

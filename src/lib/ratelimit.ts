@@ -19,6 +19,7 @@ export type RateBucket =
   | "lot-ai"
   | "loyalty-read"
   | "store-catalog-write"
+  | "store-cancel"
   | "store-checkout"
   | "store-sync"
   | "raffle-sync"
@@ -36,6 +37,7 @@ const RULES: Record<RateBucket, { limit: number; window: number }> = {
   "lot-ai": { limit: 8, window: 3600 },
   "loyalty-read": { limit: 120, window: 60 },
   "store-catalog-write": { limit: 60, window: 300 },
+  "store-cancel": { limit: 8, window: 60 },
   "store-checkout": { limit: 12, window: 300 },
   "store-sync": { limit: 15, window: 60 },
   "raffle-sync": { limit: 12, window: 60 },

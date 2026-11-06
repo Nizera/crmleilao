@@ -10,8 +10,7 @@ import {createAdminClient} from "@/lib/supabase/admin";
 import { allow } from "@/lib/ratelimit";
 import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 import { cartCheckoutSchema, isStoreOrderOpen, type StoreOrder } from "@/lib/store";
-import { ensureStorePix, getOwnStoreOrder, reconcileStoreOrders, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
-import { cancelPixOrder } from "@/lib/mercadopago";
+import { cancelStoreOrder, ensureStorePix, getOwnStoreOrder, reconcileStoreOrders, STORE_ORDER_COLUMNS, syncStoreOrder } from "@/lib/store-server";
 import type {StoreFreightQuote} from "@/lib/store-freight";
 import { STORE_PREVIEW_MESSAGE } from '@/lib/store-availability';
 
@@ -44,9 +43,9 @@ export async function checkoutStoreAction(input: unknown): Promise<ActionResult<
     if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };
     const db = await createClient();
     const items=parsed.data.items.map((item,index)=>index===0?{...item,expected_freight_amount:parsed.data.expectedFreight??0}:item);
-    const {data:id,error}=await isLocalStorePilot(customer.id)?await createAdminClient().rpc('run_local_store_pilot',{p_customer:customer.id,p_operation:'checkout',p_request_key:parsed.data.requestKey,p_items:items,p_voucher:parsed.data.voucherId??null}):await db.rpc("checkout_store_cart_v2", { p_request_key: parsed.data.requestKey, p_items: items, p_voucher: parsed.data.voucherId ?? null });
+    const {data:id,error}=await isLocalStorePilot(customer.id)?await createAdminClient().rpc('run_local_store_pilot',{p_customer:customer.id,p_operation:'checkout',p_request_key:parsed.data.requestKey,p_items:items,p_voucher:parsed.data.voucherId??null}):await db.rpc("checkout_store_cart_cancellable", { p_request_key: parsed.data.requestKey, p_items: items, p_voucher: parsed.data.voucherId ?? null });
     if(error?.code==='42883' && error.message.includes('checkout_store_cart_live'))return {ok:false,error:'Atualização interna da loja pendente. Aplique a migration 0042 e tente novamente.'};
-    if(error?.code==='PGRST202')return {ok:false,error:'Aplique a migration 0040 para habilitar o teste local.'};
+    if(error?.code==='PGRST202')return {ok:false,error:'Atualização da loja pendente. Aplique a migration 0061 e tente novamente.'};
     if (error) {
       if (domainError(error.message)) return { ok: false, error: error.message };
       throw error;
@@ -69,7 +68,7 @@ export async function syncSelfStoreOrderAction(id: string): Promise<ActionResult
     if (!await allow("store-sync", customer.id)) return { ok: false, error: "Aguarde alguns segundos para consultar novamente." };
     const order = await getOwnStoreOrder(id, customer.id);
     if (!order) return { ok: false, error: "Pedido não encontrado." };
-    if (isStoreOrderOpen(order)) { await ensureStorePix(order); await syncStoreOrder(await getOwnStoreOrder(id, customer.id) ?? order); }
+    if (isStoreOrderOpen(order)) { if(order.cancellation_requested_at) await cancelStoreOrder(order); else {await ensureStorePix(order); await syncStoreOrder(await getOwnStoreOrder(id, customer.id) ?? order);} }
     const updated = await getOwnStoreOrder(id, customer.id);
     if (!updated) throw new Error("Pedido não encontrado.");
     if (updated.payment_status !== order.payment_status) invalidateStore();
@@ -81,21 +80,16 @@ export async function cancelSelfStoreOrderAction(id: string): Promise<ActionResu
   try {
     const { customer } = await requireCustomer();
     if (!z.uuid().safeParse(id).success) return { ok: false, error: "Pedido inválido." };
-    if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };
-    let order = await getOwnStoreOrder(id, customer.id);
-    if (!order || !isStoreOrderOpen(order)) return { ok: false, error: "Este pedido não possui Pix aberto para cancelar." };
-    await ensureStorePix(order);
-    order = await getOwnStoreOrder(id, customer.id);
-    if (!order?.mp_order_id) throw new Error("Pix ainda sem identificação; retome o pagamento antes de cancelar.");
-    await syncStoreOrder(order);
-    const beforeCancel = await getOwnStoreOrder(id, customer.id);
-    if (beforeCancel && isStoreOrderOpen(beforeCancel)) {
-      // Só libera moedas/estoque quando a RECONSULTA confirmar o cancelamento.
-      await cancelPixOrder(order.mp_order_id);
-      await syncStoreOrder(order);
+    if (!await allow("store-cancel", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };
+    const order = await getOwnStoreOrder(id, customer.id);
+    if (!order) return {ok:false,error:"Pedido não encontrado."};
+    const result=await cancelStoreOrder(order);
+    const updated=await getOwnStoreOrder(id,customer.id);
+    if(!result.ok){
+      invalidateStore();
+      return {ok:false,error:["paid","payment_review","partially_refunded"].includes(result.reason??"") ? "Este pedido já recebeu um pagamento. O cancelamento do Pix não pode desfazer essa compra; fale com a equipe." : result.reason==="processing" ? "O banco está processando este Pix. O pedido de cancelamento ficou registrado; vamos conferir automaticamente. Não pague novamente." : "Seu pedido de cancelamento ficou registrado. Estamos aguardando a confirmação do Mercado Pago; estoque, voucher e frete serão liberados após o encerramento."};
     }
-    const updated = await getOwnStoreOrder(id, customer.id);
-    if (!updated || isStoreOrderOpen(updated)) return { ok: false, error: "O Mercado Pago ainda não confirmou o cancelamento. O pedido continua reservado; tente novamente." };
+    if(!updated)throw new Error("Pedido não encontrado.");
     invalidateStore();
     return { ok: true, data: updated };
   } catch (error) { return failed(error); }

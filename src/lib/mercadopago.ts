@@ -308,13 +308,13 @@ export async function getOrder(orderId: string, signal?: AbortSignal): Promise<M
  * Qualquer outra resposta (rede, 4xx/5xx) devolve `false` e o chamador
  * mantém a cobrança local em vez de apagá-la.
  */
-export async function cancelPixOrder(orderId: string): Promise<boolean> {
+export async function cancelPixOrder(orderId: string, signal?: AbortSignal): Promise<boolean> {
   if (!/^[A-Za-z][A-Za-z0-9_-]{3,}$/.test(orderId)) return false;
 
   try {
     const response = await fetch(`${MP_API}/v1/orders/${orderId}/cancel`, {
       method: "POST",
-      signal: AbortSignal.timeout(10000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
       headers: {
         Authorization: `Bearer ${mpAccessToken()}`,
         "Content-Type": "application/json",

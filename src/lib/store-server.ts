@@ -20,6 +20,9 @@ export async function ensureStorePix(order: StoreOrder, signal = AbortSignal.tim
   if (!customer.email?.trim()) throw new Error("Preencha seu e-mail em Meus dados antes de pagar por Pix.");
   const [firstName, ...lastName] = (customer.name || "Cliente").trim().split(/\s+/);
   const document = (customer.cpf_cnpj || "").replace(/\D/g, "");
+  const {data:claimed,error:claimError}=await admin.rpc("claim_store_pix_creation",{p_order:order.id});
+  if(claimError)throw claimError;
+  if(!claimed){const {data,error}=await admin.from("store_orders").select(STORE_ORDER_COLUMNS).eq("id",order.id).single();if(error)throw error;return data as StoreOrder;}
   const payment = await createPixOrder({
     amount: Number(order.cash_total), description: `Loja Os Caras das Legends · ${order.code}`,
     externalReference: order.external_reference, payerEmail: customer.email.trim(),
@@ -70,6 +73,34 @@ export async function syncStoreOrder(order: StoreOrder, signal?: AbortSignal) {
   await settleStoreMpOrder(payment);
 }
 
+/** Cancela somente após conferir o estado real no provedor; nunca estorna um pagamento. */
+export async function cancelStoreOrder(order: StoreOrder, signal?: AbortSignal): Promise<{ok:boolean;reason?:string}> {
+  const admin=createAdminClient();
+  const {error}=await admin.rpc("request_store_order_cancellation",{p_order:order.id,p_customer:order.customer_id});
+  if(error)throw error;
+  const reload=async()=>{const {data,error}=await admin.from("store_orders").select(STORE_ORDER_COLUMNS).eq("id",order.id).single();if(error)throw error;return data as StoreOrder;};
+  let current=await reload();
+  if(!isStoreOrderOpen(current)) return {ok:["cancelled","expired","failed"].includes(current.payment_status),reason:current.payment_status};
+  if(!current.mp_order_id){await ensureStorePix(current,signal);current=await reload();}
+  if(!isStoreOrderOpen(current))return {ok:["cancelled","expired","failed"].includes(current.payment_status),reason:current.payment_status};
+  if(!current.mp_order_id)return {ok:false,reason:"unconfirmed"};
+  const remote=await getOrder(current.mp_order_id,signal);
+  const matches=(p:MpOrder|null)=>p&&p.externalReference===current.external_reference&&Math.round(p.amount*100)===Math.round(Number(current.cash_total)*100);
+  if(!matches(remote))return {ok:false,reason:"unconfirmed"};
+  if(targetChargeStatus(remote!.status,remote!.statusDetail)){
+    await settleStoreMpOrder(remote!);
+  }else{
+    if(!["created","action_required"].includes(remote!.status))return {ok:false,reason:"processing"};
+    const {cancelPixOrder}=await import("@/lib/mercadopago");
+    await cancelPixOrder(remote!.id,signal);
+    const confirmed=await getOrder(remote!.id,signal);
+    if(!matches(confirmed))return {ok:false,reason:"unconfirmed"};
+    await settleStoreMpOrder(confirmed!);
+  }
+  const updated=await reload();
+  return {ok:["cancelled","expired","failed"].includes(updated.payment_status),reason:updated.payment_status};
+}
+
 /** Chamado por cron autenticado e pelo ADM; nunca libera reservas pelo relógio local. */
 export async function reconcileStoreOrders() {
   const admin = createAdminClient();
@@ -82,7 +113,8 @@ export async function reconcileStoreOrders() {
     const results=await Promise.all(data.map(async(row:StoreOrder)=>{
       try{
         const signal=AbortSignal.timeout(Math.max(500,Math.min(12000,budget-(Date.now()-started)-500)));
-        const order=await ensureStorePix(row,signal);await syncStoreOrder(order,signal);
+        if(row.cancellation_requested_at){const result=await cancelStoreOrder(row,signal);if(!result.ok&&!["paid","payment_review","partially_refunded"].includes(result.reason??""))throw new Error("Cancelamento ainda não confirmado.");}
+        else {const order=await ensureStorePix(row,signal);await syncStoreOrder(order,signal);}
         const {error}=await admin.from('store_orders').update({reconciliation_error:null}).eq('id',row.id);
         if(error)throw error;
         return true;

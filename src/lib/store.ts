@@ -57,6 +57,8 @@ export function cartTotals(items: CartLine[]) {
 
 export type StoreOrderItem = { id: string; reward_id: string; name: string; image_path: string | null; quantity: number; price_mode: PriceMode; unit_cash: number; unit_coins: number };
 export type StoreOrder = {
+  pix_creation_started_at?: string | null;
+  cancellation_requested_at?: string | null;
   freight_amount?:number;
   voucher_id?: string | null; voucher_name?: string | null; discount_cash?: number; cash_subtotal?: number;
   boxed_at?: string | null; shipment_id?: string | null;
