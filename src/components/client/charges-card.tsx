@@ -206,7 +206,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
-        <AuctionPaymentNotice lots={lots}/>
+        <AuctionPaymentNotice lots={lots} payDisabled={pending} onPay={()=>{if(active){qr.open(active.id);return;}const target=document.getElementById("gerar-pix-lotes");target?.scrollIntoView({behavior:"smooth",block:"center"});target?.focus({preventScroll:true});}}/>
         {showFreightStatus && freight.status === "due" && (
           <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <p className="font-medium">
@@ -414,6 +414,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
               </p>
             ) : (
               <Button
+                id="gerar-pix-lotes"
                 onClick={generate}
                 disabled={pending}
                 className="w-full rounded-xl py-6 text-sm font-bold uppercase tracking-wider"
