@@ -182,6 +182,16 @@ export async function createSelfChargeAction(
 ): Promise<ActionResult<{ charge: Charge }>> {
   try {
     const { customer } = await requireCustomer();
+    // Validação esperada: orientar o cliente sem expor erros internos.
+    const { data: paymentProfile, error: paymentProfileError } = await createAdminClient()
+      .from("customers")
+      .select("email")
+      .eq("id", customer.id)
+      .single();
+    if (paymentProfileError) throw new Error("Falha ao conferir cadastro para pagamento.");
+    if (!paymentProfile.email?.trim()) {
+      return failure("Para gerar seu Pix, cadastre seu e-mail em Meus dados. Depois, volte aqui e tente novamente. Se precisar, peça ajuda à equipe.");
+    }
     const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
       return failure("Você já tem uma cobrança aguardando pagamento.");
