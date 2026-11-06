@@ -1,7 +1,5 @@
 import { ShipmentsView } from "@/components/admin/shipments/shipments-view";
 import { listShipments, requireAdmin, type ShipmentPage } from "@/lib/dal";
-import type { ShipmentStatus, ShipmentCostSummary } from "@/lib/shipments";
-import { createClient } from "@/lib/supabase/server";
 import { sfConfigured, sfSandbox } from "@/lib/superfrete";
 import {
   getOrigin,
@@ -39,10 +37,9 @@ export default async function EnviosPage({
   const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : "all";
   const page = Math.max(1, Number(first(params.p)) || 1);
 
-  // Fila: um único dia de envio (manual ou o próximo). Histórico: só quando
-  // pedir explicitamente.
+  // Uma lista por data prevista: etiquetas e pacotes ainda sem emissão.
   const rawDate = first(params.d);
-  const useQueue = first(params.vista) !== "historico";
+  const useQueue = true;
   const date = ISO.test(rawDate) ? rawDate : await nextShipmentDate();
 
   let queue: ShipmentQueueRow[] = [];
@@ -50,7 +47,6 @@ export default async function EnviosPage({
   let data: ShipmentPage = { rows: [], total: 0, page, pageSize: 10 };
   let migrationReady = true;
   let migrationFile = "0006_shipments.sql";
-  let summary: ShipmentCostSummary | null = null;
   try {
     if (useQueue) {
       const result = await listShipmentQueue({
@@ -64,19 +60,21 @@ export default async function EnviosPage({
     {
       data = await listShipments({
         q,
-        priceChanges,
-        status: status as ShipmentStatus | "all",
-        page,
+        priceChanges: "all",
+        status: "all",
+        page: 1,
+        pageSize: 50,
         batchDate: useQueue || ISO.test(rawDate) ? date : undefined,
       });
     }
-    const summaryResult = await (await createClient()).rpc("get_shipment_cost_summary", {
-      p_day: useQueue || ISO.test(rawDate) ? date : null,
-      p_query: q.trim().replace(/[,\x27\x22%()\\]/g, " ").trim().slice(0, 64),
-      p_status: status,
-      p_cost: priceChanges,
-    });
-    if (!summaryResult.error) summary = summaryResult.data as ShipmentCostSummary;
+    const labelRows = [...data.rows];
+    for (let labelPage = 2; labelRows.length < data.total && labelPage <= 40; labelPage++) {
+      const next = await listShipments({q, status: "all", page: labelPage, pageSize: 50, batchDate: useQueue || ISO.test(rawDate) ? date : undefined});
+      if (!next.rows.length) break;
+      labelRows.push(...next.rows);
+    }
+    queueTruncated ||= labelRows.length < data.total;
+    data = {...data, rows: labelRows};
   } catch (error) {
     if (error instanceof Error && /original_price|price_change_count|price_checked_at|price_difference|price_baseline_legacy/.test(error.message)) migrationFile = "0057_shipment_price_history.sql";
     if (
@@ -96,10 +94,9 @@ export default async function EnviosPage({
   return (
     <ShipmentsView
       {...data}
-      queue={useQueue ? queue : null}
+      queue={queue}
       queueTruncated={useQueue && queueTruncated}
       date={date}
-      summary={summary}
       historyDateFiltered={!useQueue && ISO.test(rawDate)}
       q={q}
       status={status}

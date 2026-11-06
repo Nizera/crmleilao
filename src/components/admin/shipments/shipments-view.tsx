@@ -1,20 +1,14 @@
 "use client";
 
+import { unifiedShipmentRows, shipmentListSummary } from "@/lib/shipment-list";
 import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Ban,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
   Loader2,
   MoreHorizontal,
   Plus,
-  Printer,
-  RefreshCw,
   Search,
-  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,17 +31,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -65,8 +51,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  SHIPMENT_STATUSES,
-  SHIPMENT_STATUS_LABELS,
   canCancelShipment,
   canPayShipment,
   type Shipment,
@@ -108,7 +92,7 @@ export function ShipmentsView({
   q,
   status,
   priceChanges = "all",
-  summary = null,
+  summary: serverSummary = null,
   historyDateFiltered = false,
   qTruncated,
   queueTruncated,
@@ -130,19 +114,28 @@ export function ShipmentsView({
   const [detail, setDetail] = useState<Shipment | null>(null);
   const [activatingWebhook, setActivatingWebhook] = useState(false);
   const [freightFilter, setFreightFilter] = useState("all");
-  const [queueStatus, setQueueStatus] = useState("all");
+  const [queueStatus, setQueueStatus] = useState(status);
+  const [costFilter, setCostFilter] = useState(priceChanges);
+  const [listPage, setListPage] = useState(1);
   const [queueSort, setQueueSort] = useState("name");
-  const displayedQueue = [...(queue ?? [])].filter(row => {
+  const allRows = unifiedShipmentRows(queue ?? [], rows);
+  const displayedQueue = allRows.filter(row => {
     const freightMatches = freightFilter === "all" || (freightFilter === "unpaid" ? !row.companyFreight && ["due", "awaiting"].includes(row.freightStatus) : freightFilter === "company" ? row.companyFreight : !row.companyFreight && row.freightStatus === freightFilter);
-    const shipmentMatches = queueStatus === "all" || (queueStatus === "unissued" ? !row.pendingShipment || row.pendingShipment.status === "cancelled" : row.pendingShipment?.status === queueStatus);
-    return freightMatches && shipmentMatches;
+    const shipmentMatches = queueStatus === "all" || (queueStatus === "unissued" ? !row.pendingShipment : row.pendingShipment?.status === queueStatus);
+    const delta = Number(row.pendingShipment?.price_difference ?? 0);
+    const costMatches = costFilter === "all" || (!!row.pendingShipment && (costFilter === "changed" ? delta !== 0 : costFilter === "increase" ? delta > 0 : delta < 0));
+    return freightMatches && shipmentMatches && costMatches;
   }).sort((a, b) => {
     const unpaid = (row: ShipmentQueueRow) => !row.companyFreight && ["due", "awaiting"].includes(row.freightStatus) ? 1 : 0;
     const primary = queueSort === "unpaid" ? unpaid(b) - unpaid(a) : queueSort === "paid_total" ? b.paidTotal - a.paidTotal : queueSort === "unpaid_total" ? b.unpaidTotal - a.unpaidTotal : 0;
     return primary || (a.name ?? a.phone_e164).localeCompare(b.name ?? b.phone_e164, "pt-BR") || a.customerId.localeCompare(b.customerId);
   });
 
-  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const summary = shipmentListSummary(displayedQueue);
+  const pages = Math.max(1, Math.ceil(displayedQueue.length / 20));
+  const visiblePage = Math.min(listPage, pages);
+  const visibleRows = displayedQueue.slice((visiblePage - 1) * 20, visiblePage * 20);
+  void serverSummary; void pageSize; void page;
   const canCreate = migrationReady && originReady && superfreteReady;
   const isQueue = queue !== null;
 
@@ -175,11 +168,11 @@ export function ShipmentsView({
 
   const search = (event: FormEvent) => {
     event.preventDefault();
-    router.replace(buildHref(query, status, 1, date, isQueue ? "fila" : "historico"));
+    router.replace(buildHref(query, queueStatus, 1, date, "fila", costFilter));
   };
 
   const setDay = (nextDate: string) => {
-    router.replace(buildHref(query, status, 1, nextDate, isQueue ? "fila" : "historico", priceChanges, nextDate));
+    router.replace(buildHref(query, queueStatus, 1, nextDate, "fila", costFilter, nextDate));
   };
 
   const updateDetail = (shipment: Shipment) => {
@@ -256,9 +249,7 @@ export function ShipmentsView({
   /** Status do frete de uma linha da fila. */
   const freightLabel = (row: ShipmentQueueRow) => {
     const label = row.companyFreight ? "Frete por conta da empresa (prêmio)" : row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
-    return row.pendingShipment
-      ? `${SHIPMENT_STATUS_LABELS[row.pendingShipment.status]} · ${label}`
-      : label;
+    return label;
   };
   const releaseFreight=(row:ShipmentQueueRow)=>{
     const ids=row.lots.filter(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status)).map(l=>l.id);
@@ -417,7 +408,7 @@ export function ShipmentsView({
         <div className="rounded-xl border bg-card p-4"><p className="text-xs font-medium text-muted-foreground">Total dos valores de emissão</p><p className="mt-2 text-2xl font-semibold tabular-nums">{summary ? formatBRL(summary.emissionTotal) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">Custo das etiquetas, separado do frete cobrado do cliente. {summary?.legacyPrices ? `${summary.legacyPrices} etiqueta(s) antiga(s) usam o primeiro valor disponível.` : ""}{summary?.unknownPrices ? ` ${summary.unknownPrices} etiqueta(s) sem valor informado.` : ""}</p></div>
         <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">Total atualizado</p><p className="mt-2 text-2xl font-semibold">{summary?.currentTotal != null ? formatBRL(summary.currentTotal) : "—"}</p><p className="text-xs text-muted-foreground">Inclui ajustes após postagem, sem canceladas.</p></div>
         <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">Ajustes após postagem</p><p className="mt-2 text-2xl font-semibold">{summary?.adjustmentTotal != null ? formatBRL(summary.adjustmentTotal) : "—"}</p><p className="text-xs text-muted-foreground">{summary?.changedLabels ?? "—"} etiqueta(s) com alteração.</p></div>
-        <div className="sm:col-span-2 xl:col-span-4">{isQueue && <Button asChild variant="outline" size="sm"><Link href={buildHref(query, "all", 1, date, "fila", "all")}>Ver todas as etiquetas</Link></Button>}<p className="mt-2 text-xs text-muted-foreground">Todas as etiquetas da data e dos filtros selecionados, incluindo postadas e entregues. Totais de todas as páginas.</p>{summary && summary.currentTotal == null && <p>Aplique a migration 0060 para carregar os totais atualizados.</p>}</div>
+        <div className="sm:col-span-2 xl:col-span-4">{isQueue && <Button asChild variant="outline" size="sm"><Link href={buildHref(query, "all", 1, date, "fila", "all")} onClick={()=>{setQueueStatus("all");setCostFilter("all");setFreightFilter("all");setListPage(1);}}>Ver todas as etiquetas</Link></Button>}<p className="mt-2 text-xs text-muted-foreground">Todas as etiquetas da data e dos filtros selecionados, incluindo postadas e entregues. Totais de todas as páginas.</p>{summary && summary.currentTotal == null && <p>Aplique a migration 0060 para carregar os totais atualizados.</p>}</div>
       </section>}
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
@@ -461,210 +452,19 @@ export function ShipmentsView({
         )}
         {!isQueue && historyDateFiltered && <Button variant="ghost" size="sm" onClick={() => router.replace(buildHref(query, status, 1, "", "historico", priceChanges, ""))}>Todas as datas</Button>}
 
-        {<label className="grid gap-1 text-xs font-medium">Alteração de custo<select aria-label="Alteração de custo da etiqueta" className="h-10 max-w-full rounded-md border bg-background px-3 text-sm" value={priceChanges} onChange={e => router.replace(buildHref(query, status, 1, date, isQueue ? "fila" : "historico", e.target.value))}><option value="all">Todos os custos</option><option value="changed">Fretes com alteração</option><option value="increase">Aumento em relação ao inicial</option><option value="decrease">Redução em relação ao inicial</option></select></label>}
-        {(
-          <Select
-            value={status}
-            onValueChange={(value) =>
-              router.replace(buildHref(query, value, 1, date, isQueue ? "fila" : "historico"))
-            }
-          >
-            <SelectTrigger className="w-52">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os status</SelectItem>
-              {SHIPMENT_STATUSES.map((item) => (
-                <SelectItem key={item} value={item}>
-                  {SHIPMENT_STATUS_LABELS[item]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+
 
 
       </div>
 
-      <h3 className="font-semibold">Etiquetas da data selecionada</h3>
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="hidden md:table-cell">Lotes</TableHead>
-                <TableHead className="hidden lg:table-cell">Transportadora</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead className="hidden lg:table-cell">Rastreio</TableHead>
-                <TableHead className="hidden md:table-cell">Envio</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((shipment) => {
-                const lotCodes =
-                  shipment.lots?.map((lot) => lot.code).join(", ") ?? "";
-                const finalPrice =
-                  shipment.price != null ? Number(shipment.price) : shipment.original_price != null ? Number(shipment.original_price) : null;
 
-                return (
-                  <TableRow key={shipment.id}>
-                    <TableCell className="font-mono text-xs">
-                      {shipment.code}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/admin/clientes/${shipment.customer_id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {shipment.customer?.name ?? "Sem nome"}
-                      </Link>
-                      <span className="block text-xs text-muted-foreground">
-                        {shipment.customer
-                          ? formatPhoneBR(shipment.customer.phone_e164)
-                          : ""}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      <span title={lotCodes}>
-                        {shipment.lots?.length ?? 0}
-                        {lotCodes ? ` · ${lotCodes}` : ""}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground lg:table-cell">
-                      {shipment.carrier ?? shipment.service_name ?? "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">
-                      {finalPrice != null ? formatBRL(finalPrice) : "—"}
-                      {!!shipment.price_change_count && <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Emissão: {formatBRL(shipment.original_price ?? null)} · {Number(shipment.price_difference) > 0 ? "+" : ""}{formatBRL(shipment.price_difference ?? 0)}</span>}
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap font-mono text-xs lg:table-cell">
-                      {shipment.tracking_code ?? "—"}
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
-                      {formatDateBR(shipment.batch_date)}
-                    </TableCell>
-                    <TableCell>
-                      <ShipmentStatusBadge status={shipment.status} />
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Ações do envio ${shipment.code}`}
-                            disabled={busyId === shipment.id}
-                          >
-                            {busyId === shipment.id ? (
-                              <Loader2 className="animate-spin" />
-                            ) : (
-                              <MoreHorizontal />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setDetail(shipment)}>
-                            <ExternalLink />
-                            Ver detalhes
-                          </DropdownMenuItem>
-                          {shipment.status !== "cancelled" && (
-                            <DropdownMenuItem onClick={() => sync(shipment)}>
-                              <RefreshCw />
-                              Sincronizar
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => print(shipment)}>
-                            <Printer />
-                            Etiqueta PDF
-                          </DropdownMenuItem>
-                          {["released","posted","delivered"].includes(shipment.status) && (
-                            <DropdownMenuItem onClick={() => notify(shipment)}>
-                              <ExternalLink />
-                              Enviar ao cliente
-                            </DropdownMenuItem>
-                          )}
-                          {canPayShipment(shipment.status) && (
-                            <DropdownMenuItem onClick={() => pay(shipment)}>
-                              <Wallet />
-                              Pagar etiqueta
-                            </DropdownMenuItem>
-                          )}
-                          {canCancelShipment(shipment.status) && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => cancel(shipment)}>
-                                <Ban />
-                                Cancelar envio
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
-                    <span className="text-muted-foreground">
-                      {q || status !== "all"
-                        ? "Nenhum envio corresponde aos filtros."
-                        : "Nenhum envio ainda."}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      {total > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Página {page} de {pages} · {total} envios
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page - 1, date, isQueue ? "fila" : "historico")}>
-                  <ChevronLeft />
-                  Anterior
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                <ChevronLeft />
-                Anterior
-              </Button>
-            )}
-            {page < pages ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildHref(q, status, page + 1, date, isQueue ? "fila" : "historico")}>
-                  <ChevronRight />
-                  Próxima
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                <ChevronRight />
-                Próxima
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {isQueue && <h3 className="font-semibold">Pacotes aguardando preparação</h3>}
-      {isQueue && <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 xl:grid-cols-3">
+      {isQueue && <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 xl:grid-cols-4">
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Pagamento do frete<select aria-label="Pagamento do frete" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={freightFilter} onChange={e => setFreightFilter(e.target.value)}><option value="all">Todos os fretes</option><option value="unpaid">Fretes não pagos</option><option value="due">Fretes pendentes</option><option value="awaiting">Aguardando confirmação</option><option value="paid">Fretes pagos</option><option value="company">Por conta da empresa</option></select></label>
-        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="all">Todas as situações</option><option value="unissued">Sem etiqueta ativa</option><option value="pending">Etiqueta pendente</option><option value="released">Etiqueta emitida · aguardando postagem</option></select></label>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Situação do envio<select aria-label="Situação do envio na fila" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="all">Todas as situações</option><option value="unissued">Não emitidos</option><option value="pending">Etiqueta pendente</option><option value="released">Aguardando postagem</option><option value="posted">Postados</option><option value="delivered">Entregues</option><option value="cancelled">Cancelados</option></select></label>
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Ordenar por<select aria-label="Ordenar fila de envios" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueSort} onChange={e => setQueueSort(e.target.value)}><option value="name">Cliente · A a Z</option><option value="unpaid">Fretes não pagos primeiro</option><option value="paid_total">Maior total pago em lotes</option><option value="unpaid_total">Maior valor de lotes não pagos</option></select></label>
-        {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); }}>Limpar filtros da fila</Button>}
-        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">Exibindo {displayedQueue.length} de {queue?.length ?? 0} clientes carregados para o dia selecionado. Etiquetas emitidas aparecem na listagem acima.</p>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">Alteração de valor<select aria-label="Alteração de custo" className="h-10 rounded-md border bg-background px-3 text-sm" value={costFilter} onChange={e=>{setCostFilter(e.target.value);setListPage(1);}}><option value="all">Todos os valores</option><option value="changed">Com alteração</option><option value="increase">Aumento</option><option value="decrease">Redução</option></select></label>
+        {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name" || costFilter !== "all") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); setCostFilter("all"); setListPage(1); }}>Limpar filtros</Button>}
+        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-4">Exibindo {displayedQueue.length} de {allRows.length} registros da data selecionada.</p>
       </div>}
 
       {isQueue && (
@@ -678,12 +478,12 @@ export function ShipmentsView({
                 <TableHead className="hidden md:table-cell">Não pago</TableHead>
                 <TableHead className="hidden md:table-cell">Envio</TableHead>
                 <TableHead>Frete</TableHead>
-                <TableHead>Emissão</TableHead>
+                <TableHead>Custo atual</TableHead>
                 <TableHead className="w-44">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayedQueue.map((row) => {
+              {visibleRows.map((row) => {
                 const shipment = row.pendingShipment;
                 const byStatus = row.lots.reduce<Record<string, number>>((acc, lot) => {
                   acc[lot.status] = (acc[lot.status] ?? 0) + 1;
@@ -691,7 +491,7 @@ export function ShipmentsView({
                 }, {});
 
                 return (
-                  <TableRow key={row.customerId} className="max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-2 max-lg:p-2 max-lg:[&>td]:min-w-0 max-lg:[&>td]:whitespace-normal max-lg:[&>td]:before:mb-1 max-lg:[&>td]:before:block max-lg:[&>td]:before:text-[10px] max-lg:[&>td]:before:font-medium max-lg:[&>td]:before:text-muted-foreground max-lg:[&>td]:before:content-[attr(data-label)]">
+                  <TableRow key={shipment?.id ?? `customer-${row.customerId}`} className="max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-2 max-lg:p-2 max-lg:[&>td]:min-w-0 max-lg:[&>td]:whitespace-normal max-lg:[&>td]:before:mb-1 max-lg:[&>td]:before:block max-lg:[&>td]:before:text-[10px] max-lg:[&>td]:before:font-medium max-lg:[&>td]:before:text-muted-foreground max-lg:[&>td]:before:content-[attr(data-label)]">
                     <TableCell data-label="Cliente" className="max-lg:col-span-2">
                       <Link
                         href={`/admin/clientes/${row.customerId}`}
@@ -732,7 +532,7 @@ export function ShipmentsView({
                       ))}
                     </TableCell>
                     <TableCell data-label="Total pago" className="whitespace-nowrap font-medium">
-                      {formatBRL(row.paidTotal)}
+                      {row.labelOnly ? "—" : formatBRL(row.paidTotal)}
                     </TableCell>
                     <TableCell data-label="Não pago" className="whitespace-nowrap text-sm text-muted-foreground">
                       {row.unpaidTotal > 0 ? formatBRL(row.unpaidTotal) : "—"}
@@ -741,7 +541,7 @@ export function ShipmentsView({
                       {row.shippingDate ? formatDateBR(row.shippingDate) : "—"}
                     </TableCell>
                     <TableCell data-label="Frete" className="whitespace-nowrap text-sm">
-                      {freightLabel(row)}
+                      {shipment ? <><ShipmentStatusBadge status={shipment.status} /><span className="block">{freightLabel(row)}</span></> : <>Não emitido · {freightLabel(row)}</>}
                       {shipment?.tracking_code && (
                         <span className="block font-mono text-xs text-muted-foreground">
                           {shipment.tracking_code}
@@ -749,9 +549,9 @@ export function ShipmentsView({
                       )}
                     </TableCell>
                     <TableCell data-label="Emissão" className="whitespace-nowrap text-sm font-medium">
-                      {shipment ? formatBRL(shipment.original_price ?? shipment.price) : "—"}
+                      {shipment ? formatBRL(shipment.price ?? shipment.original_price ?? null) : "—"}
                       {shipment?.price_baseline_legacy && <span className="block text-[10px] font-normal text-muted-foreground">Primeiro valor registrado</span>}
-                      {!!shipment?.price_change_count && <span className="block text-[11px] text-amber-700 dark:text-amber-400">Atual: {formatBRL(shipment.price)}</span>}
+                      {!!shipment?.price_change_count && <span className="block text-[11px] text-amber-700 dark:text-amber-400">Original: {formatBRL(shipment.original_price ?? null)} · {formatBRL(shipment.price_difference ?? 0)}</span>}
                     </TableCell>
                     <TableCell data-label="Ações" className="max-lg:col-span-2">
                       {shipment ? (
@@ -767,14 +567,13 @@ export function ShipmentsView({
                             ) : null}
                             Enviar ao cliente
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Detalhes do envio ${shipment.code}`}
-                            onClick={() => setDetail(shipment)}
-                          >
-                            <MoreHorizontal />
-                          </Button>
+                          <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Ações do envio ${shipment.code}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={()=>setDetail(shipment)}>Ver detalhes</DropdownMenuItem>
+                            {shipment.status !== "cancelled" && <DropdownMenuItem onClick={()=>sync(shipment)}>Sincronizar</DropdownMenuItem>}
+                            <DropdownMenuItem onClick={()=>print(shipment)}>Etiqueta PDF</DropdownMenuItem>
+                            {canPayShipment(shipment.status) && <DropdownMenuItem onClick={()=>pay(shipment)}>Pagar etiqueta</DropdownMenuItem>}
+                            {canCancelShipment(shipment.status) && <DropdownMenuItem onClick={()=>cancel(shipment)}>Cancelar envio</DropdownMenuItem>}
+                          </DropdownMenuContent></DropdownMenu>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1"><Button
@@ -810,7 +609,7 @@ export function ShipmentsView({
                 <TableRow>
                     <TableCell colSpan={8} className="h-32 text-center">
                     <span className="text-muted-foreground">
-                      {q ? "Nenhum cliente corresponde à busca." : "Nenhum cliente no período."}
+                      {q ? "Nenhum cliente corresponde à busca." : "Nenhum envio corresponde aos filtros."}
                     </span>
                   </TableCell>
                 </TableRow>
@@ -820,6 +619,7 @@ export function ShipmentsView({
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{displayedQueue.length} resultado(s) · Página {visiblePage} de {pages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={visiblePage===1} onClick={()=>setListPage(visiblePage-1)}>Anterior</Button><Button variant="outline" size="sm" disabled={visiblePage===pages} onClick={()=>setListPage(visiblePage+1)}>Próxima</Button></div></div>
       <ShipmentFormSheet
         open={formOpen}
         title="Novo envio"

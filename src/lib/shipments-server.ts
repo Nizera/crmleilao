@@ -219,6 +219,7 @@ export type ShipmentQueueLot = {
 export type ShipmentFreightStatus = "paid" | "awaiting" | "due" | "none";
 
 export type ShipmentQueueRow = {
+  labelOnly?: boolean;
   customerId: string;
   name: string | null;
   phone_e164: string;
