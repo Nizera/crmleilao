@@ -1,4 +1,5 @@
 "use client";
+import { FinancialValue } from "@/components/admin/financial-privacy";
 
 import { useState } from "react";
 import { CircleCheckIcon, TruckIcon } from "lucide-react";
@@ -25,7 +26,7 @@ export function FreightPeriodCard({ stats, period, ready }: {
         <TruckIcon className="size-4 shrink-0 text-muted-foreground" />
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-2">
-        <p className="text-2xl font-bold tabular-nums">{ready ? formatBRL(value) : "—"}</p>
+        <p className="text-2xl font-bold tabular-nums"><FinancialValue>{ready ? formatBRL(value) : "—"}</FinancialValue></p>
         <p className="text-xs leading-relaxed text-muted-foreground">{period.label}</p>
         <div className="grid grid-cols-7 gap-1 border-y py-2" aria-label="Filtrar fretes pelo dia do recebimento">
           {FREIGHT_DAYS.map(entry => (

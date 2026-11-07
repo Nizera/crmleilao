@@ -1,3 +1,4 @@
+import { FinancialValue } from "@/components/admin/financial-privacy";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Gift, type LucideIcon } from "lucide-react";
 import { raffleStatus } from "@/lib/raffles";
@@ -7,7 +8,7 @@ export function RaffleBadge({ status, children }: { status?: string; children?: 
   return <span className={`rf-badge rf-badge-${tone}`}><span className="rf-status-dot" />{children ?? raffleStatus[status ?? ""] ?? status}</span>;
 }
 export function RaffleMetric({ label, value, hint, icon: Icon }: { label: string; value: React.ReactNode; hint: string; icon: LucideIcon }) {
-  return <article className="rf-metric"><span className="rf-icon-tile"><Icon size={20} /></span><div className="min-w-0"><p className="rf-eyebrow">{label}</p><p className="rf-metric-value">{value}</p><p className="rf-caption">{hint}</p></div></article>;
+  return <article className="rf-metric"><span className="rf-icon-tile"><Icon size={20} /></span><div className="min-w-0"><p className="rf-eyebrow">{label}</p><p className="rf-metric-value">{typeof value === "string" && value.includes("R$") ? <FinancialValue>{value}</FinancialValue> : value}</p><p className="rf-caption">{hint.includes("R$") ? <FinancialValue>{hint}</FinancialValue> : hint}</p></div></article>;
 }
 export function RaffleProgress({ paid, reserved = 0, total }: { paid: number; reserved?: number; total: number }) {
   const percent = Math.min(100, Math.max(0, paid / Math.max(1, total) * 100));

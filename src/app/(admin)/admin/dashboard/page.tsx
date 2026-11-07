@@ -1,3 +1,4 @@
+import { FinancialPrivacy, FinancialValue } from "@/components/admin/financial-privacy";
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -73,9 +74,9 @@ function KpiCard({
         <div
           className={`text-2xl font-bold tabular-nums ${danger ? "text-rose-500" : ""}`}
         >
-          {value}
+          {value.startsWith("R$") ? <FinancialValue>{value}</FinancialValue> : value}
         </div>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p className="text-xs text-muted-foreground">{value.startsWith("R$") ? <FinancialValue>{hint}</FinancialValue> : hint}</p>
       </CardContent>
     </Card>
   );
@@ -165,12 +166,12 @@ export default async function DashboardPage({
   const deltaHint =
     s.revenue.deltaPct === null
       ? s.revenue.prevMonth > 0
-        ? `mês anterior: ${formatBRL(s.revenue.prevMonth)}`
+        ? `mês anterior: $<FinancialValue>{formatBRL(s.revenue.prevMonth)}</FinancialValue>`
         : "sem base de comparação"
       : null;
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
+    <FinancialPrivacy><div className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div>
@@ -362,7 +363,7 @@ export default async function DashboardPage({
                     {row.count}
                   </span>
                   <span className="w-24 text-right font-medium tabular-nums">
-                    {formatBRL(row.value)}
+                    <FinancialValue>{formatBRL(row.value)}</FinancialValue>
                   </span>
                 </div>
               ))}
@@ -405,7 +406,7 @@ export default async function DashboardPage({
                   </span>
                 </span>
                 <span className="text-sm font-semibold tabular-nums">
-                  {formatBRL(row.total)}
+                  <FinancialValue>{formatBRL(row.total)}</FinancialValue>
                 </span>
               </Link>
             ))}
@@ -439,7 +440,7 @@ export default async function DashboardPage({
                 </span>
                 <span className="text-right">
                   <span className="block text-sm font-semibold tabular-nums">
-                    {formatBRL(row.value)}
+                    <FinancialValue>{formatBRL(row.value)}</FinancialValue>
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {formatDateBR(spDayOf(row.paidAt))}
@@ -484,6 +485,6 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
       </div>
-    </div>
+    </div></FinancialPrivacy>
   );
 }

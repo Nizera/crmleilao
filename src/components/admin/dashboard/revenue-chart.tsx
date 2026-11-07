@@ -1,4 +1,5 @@
 "use client";
+import { FinancialValue } from "@/components/admin/financial-privacy";
 
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
@@ -18,7 +19,7 @@ const chartConfig = {
 
 export function RevenueChart({ data }: { data: RevenuePoint[] }) {
   return (
-    <ChartContainer config={chartConfig} className="h-[240px] w-full">
+    <FinancialValue><ChartContainer config={chartConfig} className="h-[240px] w-full">
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
@@ -51,6 +52,6 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
         />
         <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
       </BarChart>
-    </ChartContainer>
+    </ChartContainer></FinancialValue>
   );
 }
