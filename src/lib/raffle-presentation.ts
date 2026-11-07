@@ -19,3 +19,9 @@ export function raffleAwardStage(award: { cancelled_at?: string | null; order_st
   if (award.moved_at) return { index: 1, label: "Separado na sua caixa" };
   return { index: 0, label: "Aguardando separação" };
 }
+/** Dedução de 1% sobre o bruto exibido, arredondada para centavos. Não altera pagamentos. */
+export function raffleNetRevenue(received: number) {
+  const grossCents = Number.isFinite(received) ? Math.max(0, Math.round(received * 100)) : 0;
+  const feeCents = Math.round(grossCents / 100);
+  return { gross: grossCents / 100, fee: feeCents / 100, net: (grossCents - feeCents) / 100 };
+}
