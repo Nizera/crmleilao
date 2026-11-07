@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { PUBLIC_CART_KEY } from "@/lib/commerce-access";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Coins, Gift, Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
@@ -21,7 +22,7 @@ import type { CatalogFilters, StoreBanner } from "@/lib/store-presentation";
 
 type Cart = { items: CartLine[]; requestKey: string };
 const emptyCart: Cart = { items: [], requestKey: "" };
-function ProductCard({ product, onAdd, purchasesEnabled }: { purchasesEnabled:boolean;product: StoreProduct; onAdd: (product: StoreProduct, mode: PriceMode) => void }) {
+export function ProductCard({ product, onAdd, purchasesEnabled }: { purchasesEnabled:boolean;product: StoreProduct; onAdd: (product: StoreProduct, mode: PriceMode) => void }) {
   const options = productPrices(product);
   const mode = options[0]?.mode ?? "coins";
   const [details,setDetails]=useState(false);
@@ -93,6 +94,19 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       const parsed = cartCheckoutSchema.safeParse(saved);
+      const resume = new URLSearchParams(window.location.search).get("resume");
+      if (resume === "cart") {
+        const guest = cartCheckoutSchema.safeParse(JSON.parse(sessionStorage.getItem(PUBLIC_CART_KEY) ?? "null"));
+        if (guest.success) {
+          const merged = new Map<string, CartLine>();
+          for (const line of [...(parsed.success ? parsed.data.items : []), ...guest.data.items]) {
+            const key = line.reward_id + ":" + line.mode; const old = merged.get(key);
+            merged.set(key, { ...line, quantity: Math.min(99, (old?.quantity ?? 0) + line.quantity) });
+          }
+          const next = cartCheckoutSchema.safeParse({ items: [...merged.values()].slice(0, 50), requestKey: crypto.randomUUID() });
+          if (next.success) { localStorage.setItem(storageKey, JSON.stringify(next.data)); sessionStorage.removeItem(PUBLIC_CART_KEY); dispatch(next.data); return; }
+        }
+      }
       if (parsed.success) dispatch(parsed.data);
     } catch { /* Carrinho local inválido: começa vazio. */ }
   }, [storageKey]);

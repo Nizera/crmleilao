@@ -31,12 +31,14 @@ test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo
     .replace('import { raffleStatus } from "@/lib/raffles";','const raffleStatus={paid:"Pago",review:"Em análise",pending:"Aguardando pagamento"};');
   source=source.replace(/from "lucide-react"/g,'from '+real('lucide-react'))
     .replace('import { RaffleBadge, RaffleProgress } from "@/components/raffles/raffle-ui";','import {RaffleBadge,RaffleProgress} from '+JSON.stringify(url(badgeSource))+';')
+    .replace('import { RafflePhotos } from "@/components/raffles/raffle-photos";', 'const RafflePhotos=()=>null;')
     .replace('import { ImageLightbox } from "@/components/client/image-lightbox";','const ImageLightbox=()=>null;')
     .replace('import { ReservationCountdown } from "@/components/raffles/reservation-countdown";','const ReservationCountdown=()=>null;')
     .replace('import { rafflePhotos } from "@/lib/raffle-photos";','const rafflePhotos=()=>[];');
 
   source = 'import React from '+real('react')+';\n'+source
-    .replace('import { useEffect, useRef, useState, useTransition } from "react";', 'import {useEffect,useRef,useState,useTransition} from '+real('react')+';')
+    .replace('import { useEffect, useReducer, useRef, useState, useTransition } from "react";', 'import {useEffect,useReducer,useRef,useState,useTransition} from '+real('react')+';')
+    .replace('import { commerceLoginHref, raffleIntentKey, raffleIntentSchema } from "@/lib/commerce-access";', 'const commerceLoginHref=()=>"/painel/login";const raffleIntentKey=()=>"fixture";const raffleIntentSchema={safeParse:()=>({success:false})};')
     .replace('import { useRouter } from "next/navigation";', 'const useRouter=()=>({refresh(){},push(){}});')
     .replace('import Link from "next/link";', 'const Link=({href,children,...props})=>React.createElement("a",{href,...props},children);')
     .replace('import Image from "next/image";', 'const Image=({unoptimized,...props})=>React.createElement("img",props);')
@@ -76,6 +78,7 @@ test('Sincronização em lote respeita dono e orçamento, rejeita lista excessiv
   let source=await read('../src/app/actions/raffles.ts');
   source=source.replace('"use server";','')
     .replace('import { revalidatePath } from "next/cache";','const revalidatePath=()=>{};')
+    .replace('import { instantPrizeBatchSchema } from "@/lib/raffle-prize-input";', 'const instantPrizeBatchSchema=()=>{};')
     .replace('import { z } from "zod";','import {z} from '+real('zod')+';')
     .replace('import { requireAdmin, requireCustomer } from "@/lib/dal";','const requireAdmin=async()=>({profile:{role:globalThis.__raffleBatchAudit.role,id:globalThis.__raffleBatchAudit.customer}});const requireCustomer=async()=>({customer:{id:globalThis.__raffleBatchAudit.customer}});')
     .replace('import { createClient } from "@/lib/supabase/server";','const createClient=async()=>globalThis.__raffleBatchAudit.db;')

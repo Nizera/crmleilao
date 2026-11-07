@@ -1,3 +1,4 @@
+import { readPrizeImages } from "@/lib/raffle-prize-images-server";
 import Link from "next/link";
 import { z } from "zod";
 import { notFound } from "next/navigation";
@@ -13,5 +14,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   if (!z.uuid().safeParse(id).success) notFound();
   const from = Math.max(0, Math.min(9999, Math.trunc(Number(query.from) || 0)));
   const { data, error } = await (await createClient()).rpc("get_raffle_detail", { p_campaign: id, p_from: from });
-  return <div className="grid gap-4"><Link href="/painel/rifas" className="text-sm underline">Voltar às rifas</Link>{error || !data ? <RaffleUnavailable /> : <RaffleParticipation detail={data as RaffleDetail} from={Math.min(from, data.campaign.total_numbers - 1)} enabled={await rafflesEnabled()} />}</div>;
+  if (data && !error) {
+    const photos = await readPrizeImages((data as RaffleDetail).prizes.map(p => p.id));
+    data.prizes = (data as RaffleDetail).prizes.map(p => ({ ...p, image_urls: photos.get(p.id) ?? [] }));
+  }
+  return <div className="grid gap-4"><Link href="/painel/rifas" className="text-sm underline">Voltar às rifas</Link>{error || !data ? <RaffleUnavailable /> : <RaffleParticipation detail={data as RaffleDetail} from={Math.min(from, data.campaign.total_numbers - 1)} resume={query.resume === "raffle"} enabled={await rafflesEnabled()} />}</div>;
 }

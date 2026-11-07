@@ -13,7 +13,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:dashboard": "node --test scripts/analytics.test.mjs scripts/period-receipts.test.mjs",
-    "test:caracoins": "node --test scripts/caracoins-policy.test.mjs"
+    "test:caracoins": "node --test scripts/caracoins-policy.test.mjs",
+    "test:public-commerce": "node --test --test-concurrency=1 scripts/public-commerce.test.mjs scripts/auth-proxy.test.mjs scripts/customer-email-access.test.mjs scripts/payment-ui.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

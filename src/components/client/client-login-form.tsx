@@ -18,9 +18,10 @@ import {
 import { Input } from "@/components/ui/input";
 
 export function ClientLoginForm({
+  next = "/painel",
   className,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & { next?: string }) {
   const [phone, setPhone] = useState("");
 
   const [pwState, pwAction, pwPending] = useActionState(
@@ -32,7 +33,7 @@ export function ClientLoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="p-6 md:p-8">
-          <form action={pwAction} className="grid gap-6">
+          <form action={pwAction} className="grid gap-6"><input type="hidden" name="next" value={next} />
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -92,9 +93,9 @@ export function ClientLoginForm({
               </Field>
 
               <FieldDescription className="text-center">
-                <Link href="/painel/acesso-email" className="font-medium text-foreground underline underline-offset-4">Criar conta</Link>
+                <Link href={`/painel/acesso-email?next=${encodeURIComponent(next)}`} className="font-medium text-foreground underline underline-offset-4">Criar conta</Link>
                 <br />
-                <Link href="/painel/acesso-email" className="underline underline-offset-4">Esqueci minha senha</Link>
+                <Link href={`/painel/acesso-email?next=${encodeURIComponent(next)}`} className="underline underline-offset-4">Esqueci minha senha</Link>
               </FieldDescription>
             </FieldGroup>
           </form>

@@ -5,6 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import ts from 'typescript';
 import vm from 'node:vm';
 import {z} from 'zod';
+const commerce={};vm.runInNewContext(ts.transpileModule(await readFile(new URL('../src/lib/commerce-access.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:commerce,URL,URLSearchParams,require:()=>({z})});
 const migration=await readFile(new URL('../supabase/migrations/0036_customer_email_access.sql',import.meta.url),'utf8');
 async function fixture(){
  const db=new PGlite();
@@ -95,6 +96,7 @@ async function emailActions({target=null,account=null,staff=null,lookupError=nul
  const out={exports:{}};
  const source=ts.transpileModule(await readFile(new URL('../src/app/actions/customer-email.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  vm.runInNewContext(source,{exports:out.exports,require:name=>{
+  if(name==='@/lib/commerce-access')return commerce;
   if(name==='next/navigation')return {redirect:path=>{throw new Error('redirect:'+path)}};
   if(name==='next/cache')return {revalidatePath(){}};
   if(name==='@/lib/supabase/server')return {createClient:async()=>supabase};
@@ -128,28 +130,29 @@ test('Email action: falha fechada sem migration/flag ou rate limit; resposta de 
 });
 
 
-async function loginAction({identifier,account}){
- const credentials=[];
+async function loginAction({identifier,account,next,shippingComplete=true}){
+ const credentials=[];let destination;
  const adminQuery={select(){return this},eq(){return this},async maybeSingle(){return {data:{auth_user_id:account.id},error:null}}};
  const admin={rpc:async()=>({data:[{auth_user_id:account.id}],error:null}),from:()=>adminQuery,auth:{admin:{getUserById:async()=>({data:{user:account},error:null})}}};
- const serverQuery={select(){return this},eq(){return this},async maybeSingle(){return {data:null,error:null}}};
+ const serverQuery={select(){return this},eq(){return this},async maybeSingle(){return {data:shippingComplete?null:{name:"Cliente"},error:null}}};
  const supabase={from:()=>serverQuery,auth:{signInWithPassword:async value=>{credentials.push(value);return {data:{user:{id:account.id}},error:null}}}};
  const exported={};
  const source=ts.transpileModule(await readFile(new URL('../src/app/actions/auth.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  vm.runInNewContext(source,{exports:exported,require:name=>{
-  if(name==='next/navigation')return {redirect:path=>{throw new Error('redirect:'+path)}};
+  if(name==='@/lib/commerce-access')return commerce;
+  if(name==='next/navigation')return {redirect:path=>{destination=path;throw new Error('redirect:'+path)}};
   if(name==='next/cache')return {revalidatePath(){}};
   if(name==='@/lib/supabase/server')return {createClient:async()=>supabase};
   if(name==='@/lib/supabase/admin')return {createAdminClient:()=>admin};
   if(name==='@/lib/ratelimit')return {allowPublic:async()=>true};
   if(name==='@/lib/auth-schemas')return {customerLoginSchema:{safeParse:()=>({success:true,data:{phone:identifier,password:'test-only-password'}})}};
-  if(name==='@/lib/customers')return {isShippingComplete:()=>true};
+  if(name==='@/lib/customers')return {isShippingComplete:()=>shippingComplete};
   if(name==='@/lib/invites')return {};
   throw new Error(name);
  },console});
- const form=new FormData();form.set('phone',identifier);form.set('password','test-only-password');
+ const form=new FormData();form.set('phone',identifier);form.set('password','test-only-password');if(next)form.set('next',next);
  await assert.rejects(exported.customerSignIn(undefined,form),/redirect:\/painel/);
- return credentials[0];
+ return {...credentials[0],destination};
 }
 
 test('Login: e-mail do cliente convidado autentica na conta original por telefone, sem criar usuário',async()=>{
@@ -160,4 +163,8 @@ test('Login: e-mail do cliente convidado autentica na conta original por telefon
 test('Login: cliente novo de e-mail entra pelo WhatsApp como alias, usando a senha da mesma conta',async()=>{
  const credentials=await loginAction({identifier:'+5511999999999',account:{id:'email-auth',email:'owner@example.invalid'}});
  assert.equal(credentials.email,'owner@example.invalid');assert.equal(Object.hasOwn(credentials,'phone'),false);assert.equal(credentials.password,'test-only-password');
+});
+
+test('Login retoma compra; endereço incompleto preserva retorno e URL externa é rejeitada',async()=>{
+ const options={identifier:'owner@example.invalid',account:{id:'existing-auth',phone:'5511999999999'}};assert.equal((await loginAction({...options,next:'/painel/loja?resume=cart'})).destination,'/painel/loja?resume=cart');assert.equal((await loginAction({...options,next:'https://evil.test'})).destination,'/painel');assert.equal((await loginAction({...options,next:'/painel/loja?resume=cart',shippingComplete:false})).destination,'/painel/cadastro?next='+encodeURIComponent('/painel/loja?resume=cart'));
 });

@@ -1,4 +1,5 @@
 "use server";
+import { safeCommerceNext } from "@/lib/commerce-access";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -65,7 +66,7 @@ export async function verifyCustomerEmail(_previous:EmailAccessState,form:FormDa
     auth_user_id:data.user.id,email:email.data,verified_at:new Date().toISOString(),
   });
   if (proofError) return {error:unavailable};
-  redirect("/painel/ativar");
+  redirect(`/painel/ativar?next=${encodeURIComponent(safeCommerceNext(form.get("next")))}`);
 }
 
 export async function finishCustomerEmail(_previous:AuthFormState,form:FormData):Promise<AuthFormState> {
@@ -89,5 +90,5 @@ export async function finishCustomerEmail(_previous:AuthFormState,form:FormData)
   const {error:passwordError} = await supabase.auth.updateUser({password:parsed.data.password});
   if (passwordError) return {error:"Cadastro vinculado, mas não foi possível definir a senha. Confira os requisitos e tente novamente."};
   revalidatePath("/", "layout");
-  redirect("/painel");
+  redirect(safeCommerceNext(form.get("next")));
 }

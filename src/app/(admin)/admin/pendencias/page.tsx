@@ -17,7 +17,7 @@ export default async function LogisticsPendingPage({ searchParams }: PageProps<"
   const status = ["active", "all", ...Object.keys(LOGISTICS_STATES)].includes(raw) ? raw : "active";
   const page = Math.min(100000, Math.max(1, Math.floor(Number(first(params.p)) || 1)));
   const db = await createClient();
-  let query = db.from("logistics_pending_list").select("id,code,customer_id,customer_name,phone_e164,title,quantity,reason,shipping_date,moved_at,shipment_id,shipment_code,tracking_code,state,created_at", { count: "exact" });
+  let query = db.from("logistics_replacement_list").select("id,code,customer_id,customer_name,phone_e164,title,quantity,reason,shipping_date,moved_at,shipment_id,shipment_code,tracking_code,state,created_at", { count: "exact" });
   if (status === "active") query = query.in("state", ["open", "boxed", "shipping", "shipped"]);
   else if (status !== "all") query = query.eq("state", status);
   const safe = q.replace(/[^\p{L}\p{N}\s+_-]/gu, " ").trim();

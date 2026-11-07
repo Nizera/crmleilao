@@ -1,4 +1,5 @@
 "use server";
+import { safeCommerceNext } from "@/lib/commerce-access";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -94,8 +95,9 @@ export async function adminSignOut(): Promise<void> {
 async function redirectAfterCustomerLogin(
   supabase: Awaited<ReturnType<typeof createClient>>,
   authUserId: string | undefined,
+  returnTo: string = "/painel",
 ): Promise<never> {
-  let nextPath = "/painel";
+  let nextPath = safeCommerceNext(returnTo);
   if (authUserId) {
     const { data: row } = await supabase
       .from("customers")
@@ -105,7 +107,7 @@ async function redirectAfterCustomerLogin(
       .eq("auth_user_id", authUserId)
       .maybeSingle();
 
-    if (row && !isShippingComplete(row)) nextPath = "/painel/cadastro";
+    if (row && !isShippingComplete(row)) nextPath = `/painel/cadastro?next=${encodeURIComponent(nextPath)}`;
   }
 
   revalidatePath("/", "layout");
@@ -165,7 +167,7 @@ export async function customerSignIn(
     return { error: "E-mail, WhatsApp ou senha incorretos." };
   }
 
-  await redirectAfterCustomerLogin(supabase, data.user?.id);
+  await redirectAfterCustomerLogin(supabase, data.user?.id, safeCommerceNext(formData.get("next")));
 }
 
 /**

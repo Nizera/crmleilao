@@ -1,3 +1,4 @@
+import { readPrizeImages } from "@/lib/raffle-prize-images-server";
 import Link from "next/link";
 import { Gift, Search, Ticket } from "lucide-react";
 import { requireCustomer } from "@/lib/dal";
@@ -24,6 +25,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       const images = await db.from("raffle_campaigns").select("id,image_url,image_urls").in("id", [...new Set(awards.map(a => a.campaign_id))]);
       for (const campaign of images.data ?? []) photos.set(campaign.id, rafflePhotos(campaign));
     }
+    const prizePhotos = await readPrizeImages([], awards.map(a => a.id));
+    for (const award of awards) photos.set(award.id, prizePhotos.get(award.id)?.length ? prizePhotos.get(award.id)! : photos.get(award.campaign_id) ?? []);
     return photos;
   };
   if (tab === "participate") {
@@ -39,13 +42,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   } else if (tab === "awards") {
     const result = await db.rpc("get_raffle_awards", { p_page: page }); const won = (result.data ?? []) as RaffleAward[]; more = won.length === 20;
     const photos = await media(won);
-    content = result.error ? <RaffleUnavailable /> : won.length ? <><div className="flex items-center gap-2 text-sm text-muted-foreground"><Gift size={16} className="text-ouro-ink" />Suas conquistas, da confirmação até a entrega.</div><div className="rf-award-grid grid gap-4">{won.map(a => <RaffleAwardCard key={a.id} award={a} images={photos.get(a.campaign_id) ?? []} />)}</div></> : <RaffleEmpty title="Suas próximas conquistas ficam aqui" description="Prêmios principais e cotas premiadas aparecem com fotos e acompanhamento da entrega." href="/painel/rifas" action="Conhecer as campanhas" />;
+    content = result.error ? <RaffleUnavailable /> : won.length ? <><div className="flex items-center gap-2 text-sm text-muted-foreground"><Gift size={16} className="text-ouro-ink" />Suas conquistas, da confirmação até a entrega.</div><div className="rf-award-grid grid gap-4">{won.map(a => <RaffleAwardCard key={a.id} award={a} images={photos.get(a.id) ?? []} />)}</div></> : <RaffleEmpty title="Suas próximas conquistas ficam aqui" description="Prêmios principais e cotas premiadas aparecem com fotos e acompanhamento da entrega." href="/painel/rifas" action="Conhecer as campanhas" />;
   } else {
     const result = await db.from("raffle_orders").select("*,campaign:raffle_campaigns(title,total_numbers)", { count: "exact" }).eq("customer_id", customer.id).order("created_at", { ascending: false }).order("id").range((page - 1) * 10, page * 10 - 1);
     total = result.count ?? 0; more = page * 10 < total;
     const won = result.error ? { data: [], error: result.error } : await db.rpc("get_raffle_awards", { p_orders: (result.data ?? []).map(o => o.id) });
     const photos = await media((won.data ?? []) as RaffleAward[]);
-    content = result.error || won.error ? <RaffleUnavailable /> : result.data?.length ? <RaffleOrdersList orders={result.data.map(o => ({ ...o, campaign_title: o.campaign?.title, total_numbers: o.campaign?.total_numbers } as RaffleOrder))} awards={(won.data ?? []).map((a: RaffleAward) => ({ ...a, photos: photos.get(a.campaign_id) ?? [] }))} /> : <RaffleEmpty title="Você ainda não tem cotas" description="Escolha uma campanha e acompanhe o Pix, seus números e os resultados por aqui." href="/painel/rifas" action="Escolher uma campanha" />;
+    content = result.error || won.error ? <RaffleUnavailable /> : result.data?.length ? <RaffleOrdersList orders={result.data.map(o => ({ ...o, campaign_title: o.campaign?.title, total_numbers: o.campaign?.total_numbers } as RaffleOrder))} awards={(won.data ?? []).map((a: RaffleAward) => ({ ...a, photos: photos.get(a.id) ?? [] }))} /> : <RaffleEmpty title="Você ainda não tem cotas" description="Escolha uma campanha e acompanhe o Pix, seus números e os resultados por aqui." href="/painel/rifas" action="Escolher uma campanha" />;
   }
   return <div className="grid min-w-0 gap-5"><header className="rf-heading"><div><h1>{tab === "awards" ? "Meus prêmios" : tab === "orders" ? "Minhas cotas" : "Rifas dos Caras"}</h1><p>{tab === "participate" ? "Sua próxima peça de coleção está aqui." : tab === "orders" ? "Seus números, pagamentos e resultados em um só lugar." : "Cada conquista merece um lugar na sua coleção."}</p></div><span className="rf-icon-tile"><Ticket size={22} /></span></header><nav aria-label="Seções de rifas" className="rf-tabs rf-client-tabs">{[["participate", "Participar"], ["orders", "Minhas cotas"], ["awards", "Meus prêmios"]].map(([key, label]) => <Link key={key} href={`?tab=${key}`} aria-current={tab === key ? "page" : undefined}>{label}</Link>)}</nav>{content}<RafflePagination page={page} more={more} count={total} href={p => `?${new URLSearchParams({ tab, q, state: ended ? "closed" : "active", page: String(p) })}`} /></div>;
 }

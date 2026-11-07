@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { instantPrizeBatchSchema } from "@/lib/raffle-prize-input";
 import { requireAdmin, requireCustomer } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { allow } from "@/lib/ratelimit";
@@ -200,5 +201,34 @@ export async function refreshRaffleOrders(ids: string[], offset: number): Promis
     const latest = await db.from("raffle_orders").select("*").eq("customer_id", customer.id).in("id", [...new Set(ids)]);
     if (latest.error) throw latest.error;
     return { ok: true, data: latest.data as RaffleOrder[] };
+  } catch (error) { return failure(error); }
+}
+
+export async function addRaffleInstantPrizes(input: unknown): Promise<ActionResult> {
+  try {
+    await staff();
+    const prefix = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/raffles/`;
+    const parsed = instantPrizeBatchSchema(prefix).safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+    const { error } = await (await createClient()).rpc("add_raffle_instant_prizes", {
+      p_campaign: parsed.data.campaign, p_key: parsed.data.key, p_items: parsed.data.items,
+    });
+    if (error) {
+      if (error.code === "PGRST202") return { ok: false, error: "Aplique a migration 0064 para habilitar o cadastro de cotas com fotos." };
+      throw error;
+    }
+    invalidate(); return { ok: true, data: null };
+  } catch (error) { return failure(error); }
+}
+
+export async function saveRafflePrizePhotos(id: string, urls: string[]): Promise<ActionResult> {
+  try {
+    await staff();
+    const prefix = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/raffles/`;
+    const parsed = z.object({ id: z.uuid(), urls: z.array(z.url().max(2000).refine(url => url.startsWith(prefix))).max(4) }).safeParse({ id, urls });
+    if (!parsed.success) return { ok: false, error: "Use até quatro fotos enviadas pelo app." };
+    const { error } = await (await createClient()).rpc("set_raffle_prize_photos", { p_prize: id, p_urls: [...new Set(urls)] });
+    if (error) throw error;
+    invalidate(); return { ok: true, data: null };
   } catch (error) { return failure(error); }
 }

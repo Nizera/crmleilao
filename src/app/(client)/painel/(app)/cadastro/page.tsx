@@ -1,3 +1,4 @@
+import { safeCommerceNext } from "@/lib/commerce-access";
 import { redirect } from "next/navigation";
 
 import { PasswordForm } from "@/components/client/password-form";
@@ -11,7 +12,8 @@ export const metadata = { title: "Meus dados" };
  * O primeiro acesso pelo link de convite manda para cá quando o endereço
  * ainda está incompleto.
  */
-export default async function CadastroPage() {
+export default async function CadastroPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}) {
+  const next=safeCommerceNext((await searchParams).next);
   const { customer } = await requireCustomer();
   const shipping = await getCustomerShipping(customer.id);
 
@@ -27,7 +29,7 @@ export default async function CadastroPage() {
           de acesso ao painel.
         </p>
       </div>
-      <ShippingForm initial={shipping} />
+      <ShippingForm initial={shipping} next={next} />
       <PasswordForm />
     </div>
   );

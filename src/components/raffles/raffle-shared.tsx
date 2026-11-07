@@ -5,8 +5,8 @@ import type { RaffleSummary } from "@/lib/raffle-presentation";
 import type { Raffle } from "@/lib/raffles";
 import { raffleMoney, raffleStatus } from "@/lib/raffles";
 
-export function RaffleCard({ campaign: c, admin = false, summary }: { campaign: Raffle; admin?: boolean; summary?: RaffleSummary }) {
-  return <Link href={`${admin ? "/admin/rifa" : "/painel/rifas"}/${c.id}`} className="rf-campaign-card">
+export function RaffleCard({ campaign: c, admin = false, summary, publicView = false }: { campaign: Raffle; admin?: boolean; summary?: RaffleSummary; publicView?: boolean }) {
+  return <Link href={`${admin ? "/admin/rifa" : publicView ? "/rifas" : "/painel/rifas"}/${c.id}`} className="rf-campaign-card">
     <div className="rf-campaign-cover">
       {c.image_url ? <picture><img src={c.image_url} alt={c.title} loading="lazy" referrerPolicy="no-referrer" /></picture> : <Gift className="size-16 text-ouro-ink" />}
       <div className="absolute left-3 top-3"><RaffleBadge status={c.status}>{c.archived_at ? "Arquivada" : c.status === "paused" && summary && summary.paid >= c.total_numbers ? "Aguardando apuração" : raffleStatus[c.status]}</RaffleBadge></div>

@@ -63,7 +63,7 @@ export function LogisticsPendingView({ rows, total, page, q, status, canWrite, m
       Sem cobrança: não gera Pix, Caracoins, novo frete ou faturamento. Separe os itens no relatório e coloque na caixa do cliente para seguir no próximo envio com seus lotes.
       <p className="mt-1 text-muted-foreground">Os itens são conferidos manualmente e não descontam estoque automaticamente. “Na caixa” ainda não significa enviado.</p>
     </div>
-    {migrationMissing && <p role="alert" className="rounded-md border p-4 text-sm">Aplique a migration 0035_logistics_pending.sql para liberar esta área.</p>}
+    {migrationMissing && <p role="alert" className="rounded-md border p-4 text-sm">Confira as migrations 0035 e 0065 para liberar a lista de reposições.</p>}
     <div className="flex min-w-0 flex-wrap gap-2">
       <form className="flex min-w-0 flex-1 basis-64 gap-2" onSubmit={event => { event.preventDefault(); router.replace(href(1)); }}>
         <Input aria-label="Buscar pendências" placeholder="Cliente, telefone, código ou item" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0" />

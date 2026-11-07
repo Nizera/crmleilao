@@ -1,3 +1,4 @@
+import { safeCommerceNext } from "@/lib/commerce-access";
 import { type NextRequest, NextResponse } from "next/server";
 import { refreshSession } from "@/lib/supabase/proxy";
 
@@ -31,9 +32,14 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isClientArea && !publicClientPaths.has(pathname) && !authenticated) {
+    const tab=request.nextUrl.searchParams.get("tab");
+    if ((pathname==="/painel/loja" && (!tab||tab==="products")) || (pathname==="/painel/rifas" && !tab) || /^\/painel\/rifas\/[^/]+$/.test(pathname)) {
+      const publicUrl=request.nextUrl.clone();publicUrl.pathname=pathname.replace("/painel","");return redirectWithCookies(publicUrl);
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/painel/login";
     url.search = "";
+    url.searchParams.set("next",safeCommerceNext(pathname+request.nextUrl.search));
     return redirectWithCookies(url);
   }
 
@@ -43,8 +49,8 @@ export async function proxy(request: NextRequest) {
     authenticated
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = pathname === "/login" ? "/admin" : "/painel";
-    url.search = "";
+    const target=pathname==="/login"?"/admin":safeCommerceNext(request.nextUrl.searchParams.get("next"));
+    const destination=new URL(target,request.url);url.pathname=destination.pathname;url.search=destination.search;
     return redirectWithCookies(url);
   }
 

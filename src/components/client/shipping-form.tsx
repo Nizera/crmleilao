@@ -80,7 +80,7 @@ function formatDocument(raw: string): string {
     .join("");
 }
 
-export function ShippingForm({ initial }: { initial: ShippingProfile }) {
+export function ShippingForm({ initial, next="/painel" }: { initial: ShippingProfile; next?: string }) {
   const [pending, startTransition] = useTransition();
   const [cepStatus, setCepStatus] = useState<CepStatus>("idle");
   const router = useRouter();
@@ -161,7 +161,7 @@ export function ShippingForm({ initial }: { initial: ShippingProfile }) {
         return;
       }
       toast.success("Dados de envio salvos.");
-      router.push("/painel");
+      router.push(next);
       router.refresh();
     });
   });
