@@ -12,7 +12,7 @@ import { cancelPixOrder, getOrder } from "@/lib/mercadopago";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isProductImageContent } from "@/lib/store-admin";
 
-function invalidate() { revalidatePath("/admin/rifa", "layout"); revalidatePath("/painel/rifas", "layout"); revalidatePath("/admin/relatorios"); }
+function invalidate() { revalidatePath("/rifas", "layout"); revalidatePath("/admin/rifa", "layout"); revalidatePath("/painel/rifas", "layout"); revalidatePath("/admin/relatorios"); }
 export async function raffleCampaignLifecycle(id:string, action:"archive"|"restore"|"delete"):Promise<ActionResult>{
   try{
     await staff();
@@ -231,4 +231,17 @@ export async function saveRafflePrizePhotos(id: string, urls: string[]): Promise
     if (error) throw error;
     invalidate(); return { ok: true, data: null };
   } catch (error) { return failure(error); }
+}
+
+export async function editRaffleInstantPrize(input: unknown): Promise<ActionResult> {
+  try {
+    await staff();
+    const parsed = z.object({ id:z.uuid(), action:z.enum(["edit","delete"]), title:z.string().trim().max(160), expectedTitle:z.string().max(160) }).safeParse(input);
+    if (!parsed.success || parsed.data.action === "edit" && !parsed.data.title) return {ok:false,error:"Informe o nome do prêmio."};
+    const p=parsed.data;
+    const {error}=await(await createClient()).rpc("edit_raffle_instant_prize",{p_prize:p.id,p_action:p.action,p_title:p.title,p_expected_title:p.expectedTitle});
+    if(error?.code==="PGRST202")return {ok:false,error:"Aplique a migration 0067 para editar e excluir cotas premiadas."};
+    if(error)throw error;
+    invalidate();return {ok:true,data:null};
+  }catch(error){return failure(error);}
 }

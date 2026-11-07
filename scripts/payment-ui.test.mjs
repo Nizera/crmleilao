@@ -51,7 +51,11 @@ test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo
     .replace('import { raffleReservationDeadline } from "@/lib/raffle-reservation";', 'const raffleReservationDeadline=o=>o.reservation_expires_at||o.expires_at;')
     .replace('import { usePaymentExpired } from "@/components/client/use-payment-expired";', 'const usePaymentExpired=()=>globalThis.__raffleUiAudit.expired;');
   try {
-    const { RaffleOrderCard } = await import(url(source));
+    const { RaffleOrderCard, RaffleParticipation } = await import(url(source));
+    const participation=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:2,min_quantity:1,max_quantity:2,unit_price:10,selection_mode:'manual',status:'open',draw_method:'external',draw_rules:'Regras',description:'Campanha teste'},paid:1,reserved:0,results:[],prizes:[{id:'instant',title:'Prêmio encontrado',kind:'instant',found:true,number:null}],numbers:[{number:0,state:'paid'},{number:1,state:'available'}]}}));
+    assert.ok(participation.includes('Encontrada · indisponível'));assert.ok(participation.includes('line-through'));assert.ok(participation.includes('rf-checkout-empty'));assert.ok(participation.includes('Selecione suas cotas para continuar'));assert.ok(!participation.includes('aria-label="Reservar e pagar com Pix"'));
+    const compact=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:2,min_quantity:1,max_quantity:2,unit_price:10,selection_mode:'automatic',status:'open',draw_method:'external'},paid:0,reserved:0,results:[],prizes:[],numbers:[]}}));
+    assert.ok(compact.includes('class="rf-checkout"'));assert.ok(compact.includes('1 cota selecionada'));assert.ok(compact.includes('aria-label="Reservar e pagar com Pix"'));assert.ok(compact.includes('10 minutos para pagar após reservar'));
     const order={id:crypto.randomUUID(),code:'RF-TEST',campaign_title:'Campanha de teste',status:'paid',numbers:[0],amount:20,expires_at:null};
     const awards=[{id:crypto.randomUUID(),order_id:order.id,title:'Prêmio teste',number:0,cancelled_at:null}];
     const paid=renderToStaticMarkup(React.createElement(RaffleOrderCard,{order,awards}));
