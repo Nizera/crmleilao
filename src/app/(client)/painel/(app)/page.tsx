@@ -1,9 +1,8 @@
-import { Bolt, CircleDollarSign, Medal, Truck } from "lucide-react";
+import { Bolt, Package, Medal, Truck } from "lucide-react";
 import Link from "next/link";
 
 import {
   countCustomerShipments,
-  getCustomerSpendingSummary,
   getCustomerFreightState,
   listCustomerCharges,
   listCustomerShipments,
@@ -83,13 +82,12 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
-  const [lots, charges, freight, spending, shipments, shipmentsTotal, rankPoints] =
+  const [lots, charges, freight, shipments, shipmentsTotal, rankPoints] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listLots({ hideExpired: true, images: true, description: true }),
       listCustomerCharges(customer.id),
       getCustomerFreightState(customer.id),
-      getCustomerSpendingSummary(customer.id),
       listCustomerShipments(customer.id),
       countCustomerShipments(customer.id),
       getCustomerRankPoints(customer.id),
@@ -115,6 +113,7 @@ export default async function ClientHomePage() {
   }
 
   // KPIs da home usam valores confirmados e estados atuais do cliente.
+  const awaitingShipmentCount = lots.filter((lot) => lot.status === "paid").length;
   const paidLotsCount = lots.filter((lot) =>
     PAID_LOT_STATUSES.includes(lot.status),
   ).length;
@@ -188,12 +187,14 @@ export default async function ClientHomePage() {
               icon={<Truck className="size-3.5 text-ouro-ink" />}
             />
           </Link>
-          <KpiCard
-            label="Total pago"
-            value={formatBRL(spending.paidTotal)}
-            sub="somente lotes; frete separado"
-            icon={<CircleDollarSign className="size-3.5 text-ouro-ink" />}
-          />
+          <Link href="/painel/lotes?status=awaiting_shipment" className="rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ouro [&>div]:h-full" aria-label="Ver lotes pagos aguardando envio">
+            <KpiCard
+              label="Aguardando envio"
+              value={`${awaitingShipmentCount} ${awaitingShipmentCount === 1 ? "lote" : "lotes"}`}
+              sub="Pagos e ainda não enviados"
+              icon={<Package className="size-3.5 text-ouro-ink" />}
+            />
+          </Link>
         </div>
       </section>
 
