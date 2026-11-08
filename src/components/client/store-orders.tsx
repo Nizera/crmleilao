@@ -1,4 +1,5 @@
 "use client";
+import { readSelfPaymentStates } from "@/app/actions/payment-status";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -22,11 +23,20 @@ export function StoreOrderCard({ order }: { order: StoreOrder }) {
   const ticket = safePixTicketUrl(order.ticket_url);
   useEffect(() => {
     if (!active) return;
-    let disposed = false;
+    let disposed = false, lastProviderCheck=Date.now();
     const sync = async () => {
       if (checking.current || document.visibilityState !== "visible") return;
       checking.current = true;
       try {
+        // Webhook primeiro; consulta completa ao MP apenas como recuperação.
+        const snapshot=await readSelfPaymentStates("store",[order.id]);
+        const state=snapshot.ok?snapshot.data[0]:null;
+        if(state && (state.status!==order.payment_status || state.hasQr!==Boolean(order.qr_code) || state.expiresAt!==order.expires_at)){
+          if(!disposed){if(state.status==="paid")toast.success("Pagamento confirmado! A equipe já pode separar seu pedido.");router.refresh();}
+          return;
+        }
+        if(order.qr_code && Date.now()-lastProviderCheck<90000)return;
+        lastProviderCheck=Date.now();
         const result = await syncSelfStoreOrderAction(order.id);
         if (!disposed && result.ok && (result.data.payment_status !== order.payment_status || result.data.qr_code !== order.qr_code)) {
           if (result.data.payment_status === "paid") toast.success("Pagamento confirmado! A equipe já pode separar seu pedido.");
@@ -37,10 +47,10 @@ export function StoreOrderCard({ order }: { order: StoreOrder }) {
       finally { checking.current = false; }
     };
     void sync();
-    const timer = setInterval(() => void sync(), 15000);
+    const timer = setInterval(() => void sync(), 30000);
     document.addEventListener("visibilitychange", sync);
     return () => { disposed = true; clearInterval(timer); document.removeEventListener("visibilitychange", sync); };
-  }, [active, order.id, order.payment_status, order.qr_code, router]);
+  }, [active, order.id, order.payment_status, order.qr_code, order.expires_at, router]);
   const update = (cancel = false) => startTransition(async () => {
     try {
       const result = await (cancel ? cancelSelfStoreOrderAction(order.id) : syncSelfStoreOrderAction(order.id));

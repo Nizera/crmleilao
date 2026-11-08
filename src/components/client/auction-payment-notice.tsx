@@ -8,7 +8,17 @@ import {auctionDeadlineLabel} from '@/lib/auction-deadlines';
 export function AuctionPaymentNotice({lots,onPay,payDisabled=false}:{lots:Lot[];onPay?:()=>void;payDisabled?:boolean}){
  const router=useRouter();const [now,setNow]=useState<number|null>(null);
  const due=lots.filter(l=>l.status==='pending_payment'&&Number(l.arremate_value)>0&&l.payment_due_at).map(l=>l.payment_due_at!).sort()[0];
- useEffect(()=>{if(!due)return;const tick=()=>setNow(Date.now());tick();const t=setInterval(()=>{tick();router.refresh();},60000);return()=>clearInterval(t);},[due,router]);
+ useEffect(()=>{
+  if(!due)return;
+  let refreshed=false;
+  const tick=()=>{
+   const current=Date.now();setNow(current);
+   // O contador é local; só recarrega uma vez ao cruzar o vencimento.
+   if(document.visibilityState==='visible' && current>=Date.parse(due)+5000 && !refreshed){refreshed=true;router.refresh();}
+  };
+  tick();const timer=setInterval(tick,60000);document.addEventListener('visibilitychange',tick);
+  return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick);};
+ },[due,router]);
  if(!due)return null;
  const minutes=now==null?null:Math.max(0,Math.ceil((Date.parse(due)-now)/60000));
  const urgent=minutes!==null&&minutes<=120;

@@ -26,10 +26,16 @@ test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo
   globalThis.__raffleUiAudit = { expired: false };
   let source = await read('../src/components/raffles/raffle-client.tsx');
   const badgeSource='import React from '+real('react')+';\n'+(await read('../src/components/raffles/raffle-ui.tsx'))
+    .replace('import { FinancialValue } from "@/components/admin/financial-privacy";', 'const FinancialValue=({children})=>children;')
     .replace('import Link from "next/link";','const Link=({children})=>children;')
     .replace(/from "lucide-react"/g,'from '+real('lucide-react'))
     .replace('import { raffleStatus } from "@/lib/raffles";','const raffleStatus={paid:"Pago",review:"Em análise",pending:"Aguardando pagamento"};');
-  source=source.replace(/from "lucide-react"/g,'from '+real('lucide-react'))
+  source=source.replace(/from "react"/g,'from '+real('react'))
+    .replace('import { RaffleNumberGrid } from "@/components/raffles/raffle-number-grid";', 'const RaffleNumberGrid=()=>null;')
+    .replace('import { expandRaffleNumberStates, type RaffleNumberStates } from "@/lib/raffle-number-states";', 'const expandRaffleNumberStates=()=>[];')
+    .replace('import { readSelfPaymentStates } from "@/app/actions/payment-status";', 'const readSelfPaymentStates=async()=>({ok:true,data:[]});')
+    .replace('import { compareRafflePrizes, raffleDrawPrizeLabel } from "@/lib/raffle-prize-order";', 'const compareRafflePrizes=()=>0;const raffleDrawPrizeLabel=()=>"Prêmio do sorteio";')
+    .replace(/from "lucide-react"/g,'from '+real('lucide-react'))
     .replace('import { RaffleBadge, RaffleProgress } from "@/components/raffles/raffle-ui";','import {RaffleBadge,RaffleProgress} from '+JSON.stringify(url(badgeSource))+';')
     .replace('import { RafflePhotos } from "@/components/raffles/raffle-photos";', 'const RafflePhotos=()=>null;')
     .replace('import { ImageLightbox } from "@/components/client/image-lightbox";','const ImageLightbox=()=>null;')

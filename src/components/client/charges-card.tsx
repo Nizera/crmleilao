@@ -1,4 +1,5 @@
 "use client";
+import { readSelfPaymentStates } from "@/app/actions/payment-status";
 
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
 import {auctionDeadlineExpired} from "@/lib/auction-deadlines";
@@ -84,13 +85,26 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
   const active = charges.find((charge) => isChargeActive(charge)) ?? null;
   const activeId = active?.id ?? null;
 
-  // A confirmação vem pelo webhook. Enquanto houver um Pix aberto, recarrega
-  // a página de tempos em tempos para refletir o pagamento sem F5.
+  // Webhook confirma; esta leitura só atualiza a tela quando o estado muda.
   useEffect(() => {
     if (!activeId) return;
-    const timer = setInterval(() => router.refresh(), 20_000);
-    return () => clearInterval(timer);
-  }, [activeId, router]);
+    let disposed=false, checking=false;
+    const check=async()=>{
+      if(checking || document.visibilityState !== "visible")return;
+      checking=true;
+      try{
+        const result=await readSelfPaymentStates("auction",[activeId]);
+        if(!disposed && result.ok){
+          const current=result.data[0];
+          if(!current || current.status!==active?.status || current.hasQr!==Boolean(active?.qr_code) || current.expiresAt!==active?.expires_at)router.refresh();
+        }
+      }catch{ /* Mantém o Pix e repete a leitura; o webhook segue ativo. */ }
+      finally{checking=false;}
+    };
+    const timer=setInterval(()=>void check(),30000);
+    document.addEventListener("visibilitychange",check);
+    return()=>{disposed=true;clearInterval(timer);document.removeEventListener("visibilitychange",check);};
+  },[activeId,active?.status,active?.qr_code,active?.expires_at,router]);
 
   const activeChargeIds = useMemo(
     () => new Set(charges.filter((charge) => isChargeActive(charge)).map((c) => c.id)),

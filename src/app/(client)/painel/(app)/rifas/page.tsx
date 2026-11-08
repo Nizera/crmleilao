@@ -1,3 +1,5 @@
+import { RaffleAwardsSync } from "@/components/raffles/raffle-awards-sync";
+import { raffleAwardsSignature } from "@/lib/raffle-awards-state";
 import { readPrizeImages } from "@/lib/raffle-prize-images-server";
 import Link from "next/link";
 import { Gift, Search, Ticket } from "lucide-react";
@@ -42,7 +44,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   } else if (tab === "awards") {
     const result = await db.rpc("get_raffle_awards", { p_page: page }); const won = (result.data ?? []) as RaffleAward[]; more = won.length === 20;
     const photos = await media(won);
-    content = result.error ? <RaffleUnavailable /> : won.length ? <><div className="flex items-center gap-2 text-sm text-muted-foreground"><Gift size={16} className="text-ouro-ink" />Suas conquistas, da confirmação até a entrega.</div><div className="rf-award-grid grid gap-4">{won.map(a => <RaffleAwardCard key={a.id} award={a} images={photos.get(a.id) ?? []} />)}</div></> : <RaffleEmpty title="Suas próximas conquistas ficam aqui" description="Prêmios principais e cotas premiadas aparecem com fotos e acompanhamento da entrega." href="/painel/rifas" action="Conhecer as campanhas" />;
+    content = <><RaffleAwardsSync page={page} signature={raffleAwardsSignature(won.filter(award=>award.customer_id===customer.id))}/>{result.error ? <RaffleUnavailable /> : won.length ? <><div className="flex items-center gap-2 text-sm text-muted-foreground"><Gift size={16} className="text-ouro-ink" />Suas conquistas, da confirmação até a entrega.</div><div className="rf-award-grid grid gap-4">{won.map(a => <RaffleAwardCard key={a.id} award={a} images={photos.get(a.id) ?? []} />)}</div></> : <RaffleEmpty title="Suas próximas conquistas ficam aqui" description="Prêmios principais e cotas premiadas aparecem com fotos e acompanhamento da entrega." href="/painel/rifas" action="Conhecer as campanhas" />}</>;
   } else {
     const result = await db.from("raffle_orders").select("*,campaign:raffle_campaigns(title,total_numbers)", { count: "exact" }).eq("customer_id", customer.id).order("created_at", { ascending: false }).order("id").range((page - 1) * 10, page * 10 - 1);
     total = result.count ?? 0; more = page * 10 < total;

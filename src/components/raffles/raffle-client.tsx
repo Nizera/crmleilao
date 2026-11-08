@@ -1,8 +1,11 @@
 "use client";
+import { RaffleNumberGrid } from "@/components/raffles/raffle-number-grid";
+import { expandRaffleNumberStates, type RaffleNumberStates } from "@/lib/raffle-number-states";
+import { readSelfPaymentStates } from "@/app/actions/payment-status";
 import { compareRafflePrizes, raffleDrawPrizeLabel } from "@/lib/raffle-prize-order";
 import type { RaffleBuyer } from "@/lib/raffle-ranking-server";
 import { RafflePhotos } from "@/components/raffles/raffle-photos";
-import { useEffect, useReducer, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { commerceLoginHref, raffleIntentKey, raffleIntentSchema } from "@/lib/commerce-access";
 import Link from "next/link";
@@ -23,8 +26,11 @@ import { usePaymentExpired } from "@/components/client/use-payment-expired";
 
 export type RaffleDetail = { campaign: Raffle; paid: number; reserved: number; results: { title: string; number: number; note: string; evidence: string; status: string }[]; prizes: { id: string; title: string; kind: string; number: number | null; found: boolean; image_urls?: string[] }[]; numbers: { number: number; state: string }[] };
 type ParticipationSelection = { automatic:boolean; selected:number[]; quantity:number };
-export function RaffleParticipation({ detail: d, from, enabled, guest=false, resume=false, buyers=null }: { buyers?: RaffleBuyer[] | null; detail: RaffleDetail; from: number; enabled: boolean; guest?:boolean; resume?:boolean }) {
+export function RaffleParticipation({ detail: d, from, enabled, guest=false, resume=false, buyers=null, numberStates=null }: { numberStates?: RaffleNumberStates | null; buyers?: RaffleBuyer[] | null; detail: RaffleDetail; from: number; enabled: boolean; guest?:boolean; resume?:boolean }) {
   const c = d.campaign; const router = useRouter();
+  const numbers=useMemo(()=>{try{return numberStates?expandRaffleNumberStates(numberStates,c.total_numbers):null;}catch{return null;}},[numberStates,c.total_numbers]);
+  const [searchNumber,setSearchNumber]=useState(from>0?String(from):"");
+  const [targetNumber,setTargetNumber]=useState<number|null>(from>0?from:null);
   const [selection,dispatchSelection]=useReducer((state:ParticipationSelection,patch:Partial<ParticipationSelection>|((current:ParticipationSelection)=>ParticipationSelection))=>typeof patch==="function"?patch(state):({...state,...patch}),{automatic:c.selection_mode==="automatic",selected:[],quantity:c.min_quantity});
   const {automatic,selected,quantity}=selection;
   const setAutomatic=(value:boolean)=>dispatchSelection({automatic:value});
@@ -40,21 +46,21 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
       const automaticMode = c.selection_mode === "automatic" || (c.selection_mode === "both" && saved.data.automatic);
 
       // Números de outras páginas serão revalidados pelo servidor ao confirmar.
-      dispatchSelection({automatic:automaticMode,quantity:Math.max(c.min_quantity, Math.min(c.max_quantity, saved.data.quantity)),selected:[...new Set(saved.data.numbers)].filter(n => n < c.total_numbers && !d.numbers.some(row => row.number === n && row.state !== "available")).slice(0, c.max_quantity)});
+      dispatchSelection({automatic:automaticMode,quantity:Math.max(c.min_quantity, Math.min(c.max_quantity, saved.data.quantity)),selected:[...new Set(saved.data.numbers)].filter(n => n < c.total_numbers && !numbers?.some(row => row.number === n && row.state !== "available")).slice(0, c.max_quantity)});
       sessionStorage.removeItem(raffleIntentKey(c.id));
     } catch { /* Seleção local inválida: o cliente escolhe novamente. */ }
-  }, [guest,resume,c.id,c.selection_mode,c.min_quantity,c.max_quantity,c.total_numbers,d.numbers]);
+  }, [guest,resume,c.id,c.selection_mode,c.min_quantity,c.max_quantity,c.total_numbers,numbers]);
   const qty = automatic ? quantity : selected.length;
-  const valid = Number.isInteger(qty) && qty >= c.min_quantity && qty <= c.max_quantity;
+  const valid = (automatic || numbers!==null) && Number.isInteger(qty) && qty >= c.min_quantity && qty <= c.max_quantity;
   const available = Math.max(0, c.total_numbers - d.paid - d.reserved);
   const images = rafflePhotos(c);
   const instant = d.prizes.filter(p => p.kind === "instant");
   useEffect(() => {
-    if (!["open", "paused"].includes(c.status)) return;
-    const timer=setInterval(()=>{if(document.visibilityState==="visible"&&!pending)router.refresh();},30000);
+    if (c.status !== "open" || d.paid >= c.total_numbers) return;
+    const timer=setInterval(()=>{if(document.visibilityState==="visible"&&!pending)router.refresh();},60000);
     return()=>clearInterval(timer);
-  },[c.status,pending,router]);
-  const visible = d.numbers.filter(n => filter === "all" || n.state === "available");
+  },[c.status,c.total_numbers,d.paid,pending,router]);
+
   const toggle = (n: number) => { requestKey.current = null; setSelected(current => current.includes(n) ? current.filter(v => v !== n) : current.length < c.max_quantity ? [...current, n] : current); };
   return <div className="rf-participation">
     <div className="rf-participation-side grid min-w-0 gap-4">
@@ -74,12 +80,11 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
     <section className="rf-panel grid min-w-0 gap-5"><div><h2 className="text-lg font-bold tracking-tight">{automatic ? "Quantas cotas você quer?" : "Escolha seus números"}</h2><p className="mt-1 text-xs text-muted-foreground">{available} disponíveis · De {quotaLabel(0, c.total_numbers)} a {quotaLabel(c.total_numbers - 1, c.total_numbers)}</p></div>
       {c.selection_mode === "both" && <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted p-1">{[[false, "Escolher números"], [true, "Automático"]].map(([value, label]) => <button key={String(label)} type="button" aria-pressed={automatic === value} className={`min-h-11 min-w-0 rounded-lg px-2 py-2 text-xs font-semibold ${automatic === value ? "bg-black text-amarelo dark:bg-amarelo dark:text-black" : "text-muted-foreground"}`} onClick={() => { setAutomatic(Boolean(value)); requestKey.current = null; }}>{String(label)}</button>)}</div>}
       {automatic ? <div className="grid gap-4"><label className="grid gap-2 text-sm font-medium">Quantidade de cotas<Input type="number" min={c.min_quantity} max={c.max_quantity} value={quantity} disabled={pending} onChange={e => { setQuantity(Number(e.target.value)); requestKey.current = null; }} /></label><div className="flex flex-wrap gap-2">{[...new Set([c.min_quantity, 5, 10, 20, c.max_quantity])].filter(n => n >= c.min_quantity && n <= c.max_quantity).slice(0, 5).map(n => <button className="rf-chip" aria-current={quantity === n ? "page" : undefined} key={n} type="button" disabled={pending} onClick={() => { setQuantity(n); requestKey.current = null; }}>{n} {n === 1 ? "cota" : "cotas"}</button>)}</div><p className="rf-caption">O sistema escolhe os números disponíveis para você no momento da reserva.</p></div> : <>
-        <form className="rf-search" action={`${guest ? "/rifas" : "/painel/rifas"}/${c.id}`}><Search size={16} className="shrink-0 text-muted-foreground" /><input aria-label="Buscar cota" type="number" name="from" min={0} max={c.total_numbers - 1} placeholder="Buscar cota. Ex.: 007" /><button className="text-xs font-semibold text-ouro-ink">Buscar</button></form>
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><button type="button" className="rf-chip" aria-current={filter === "all" ? "page" : undefined} onClick={() => setFilter("all")}>Todas</button><button type="button" className="rf-chip" aria-current={filter === "available" ? "page" : undefined} onClick={() => setFilter("available")}>Disponíveis</button></div><span className="text-[11px] text-muted-foreground">{quotaLabel(from, c.total_numbers)}–{quotaLabel(Math.min(from + 99, c.total_numbers - 1), c.total_numbers)}</span></div>
-        <div className="flex flex-wrap gap-x-3 gap-y-2 text-[10px] text-muted-foreground"><span><i className="rf-legend-dot bg-card" />Disponível</span><span><i className="rf-legend-dot bg-amarelo" />Selecionada</span><span><i className="rf-legend-dot bg-muted" />Reservada</span><span><i className="rf-legend-dot bg-emerald-500/20" />Paga</span></div>
-        <div className="grid grid-cols-5 gap-2 sm:grid-cols-10 lg:grid-cols-5 xl:grid-cols-8">{visible.map(n => <button type="button" key={n.number} aria-label={`Cota ${quotaLabel(n.number, c.total_numbers)}: ${n.state === "paid" ? "paga" : n.state === "reserved" ? "reservada" : selected.includes(n.number) ? "selecionada" : "disponível"}`} aria-pressed={selected.includes(n.number)} data-state={n.state} disabled={pending || n.state !== "available" || c.status !== "open"} onClick={() => toggle(n.number)} className="rf-quota">{quotaLabel(n.number, c.total_numbers)}</button>)}</div>
-        {!visible.length && <p className="rounded-xl bg-muted p-4 text-center text-sm text-muted-foreground">Nenhuma cota disponível neste intervalo. Tente a próxima página.</p>}
-        <div className="flex items-center justify-between gap-2 text-xs">{from > 0 ? <Link className="rf-chip" href={`?from=${Math.max(0, from - 100)}`}>Anterior</Link> : <span className="rf-chip opacity-35">Anterior</span>}{from + 100 < c.total_numbers ? <Link className="rf-chip" href={`?from=${Math.min(c.total_numbers - 1, from + 100)}`}>Próximas</Link> : <span className="rf-chip opacity-35">Próximas</span>}</div>
+        <form className="rf-search" onSubmit={event=>{event.preventDefault();const number=Number(searchNumber);if(searchNumber.trim()===""||!Number.isInteger(number)||number<0||number>=c.total_numbers){toast.error("Informe um número válido da campanha.");return;}setFilter("all");setTargetNumber(number);}}><Search size={16} className="shrink-0 text-muted-foreground"/><input aria-label="Buscar cota" type="number" min={0} max={c.total_numbers-1} value={searchNumber} onChange={event=>setSearchNumber(event.target.value)} placeholder="Buscar cota. Ex.: 007"/><button className="text-xs font-semibold text-ouro-ink">Buscar</button></form>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><button type="button" className="rf-chip" aria-current={filter === "all" ? "page" : undefined} onClick={() => setFilter("all")}>Todas</button><button type="button" className="rf-chip" aria-current={filter === "available" ? "page" : undefined} onClick={() => setFilter("available")}>Disponíveis</button></div><span className="text-[11px] text-muted-foreground">{quotaLabel(0,c.total_numbers)}–{quotaLabel(c.total_numbers-1,c.total_numbers)} · Todas na mesma página</span></div>
+        <div className="flex flex-wrap gap-x-3 gap-y-2 text-[10px] text-muted-foreground"><span><i className="rf-legend-dot bg-card"/>Disponível</span><span><i className="rf-legend-dot bg-amarelo"/>Selecionada</span><span><i className="rf-legend-dot bg-muted"/>Reservada</span><span><i className="rf-legend-dot bg-emerald-500/20"/>Paga</span></div>
+        {numbers ? <RaffleNumberGrid numbers={numbers} campaign={c.id} total={c.total_numbers} selected={selected} disabled={pending||c.status!=="open"} filter={filter} target={targetNumber} onSelect={toggle}/> : <p role="alert" className="rounded-xl border p-4 text-sm">Não foi possível carregar todas as cotas. Atualize a página ou tente novamente mais tarde.</p>}
+        {numbers && filter==="available" && !numbers.some(row=>row.state==="available") && <p className="rf-caption">Não há cotas disponíveis nesta campanha.</p>}
         {selected.length > 0 && <div className="rounded-xl bg-muted p-3"><div className="mb-2 flex items-center justify-between gap-2 text-xs"><strong>Suas cotas</strong><button type="button" className="text-ouro-ink underline" disabled={pending} onClick={() => { setSelected([]); requestKey.current = null; }}>Limpar</button></div><p className="max-h-20 overflow-auto break-words text-xs tabular-nums text-muted-foreground">{selected.map(n => quotaLabel(n, c.total_numbers)).join(" · ")}</p></div>}
       </>}
       <p className="rf-caption">De {c.min_quantity} a {c.max_quantity} cotas por compra. Participações em rifas não geram Caracoins nem alteram seu elo.</p>
@@ -108,11 +113,17 @@ export function RaffleOrdersList({ orders, awards }: { orders: RaffleOrder[]; aw
   const activeCount = orders.filter(o => ["creating", "pending"].includes(o.status)).length;
   useEffect(() => {
     if (!activeCount) return;
-    let disposed = false;
+    let disposed = false, lastProviderCheck=Date.now();
     const sync = async () => {
       if (busy.current || document.visibilityState !== "visible") return;
       busy.current = true;
       try {
+        const snapshot=await readSelfPaymentStates("raffle",orders.map(order=>order.id).slice(0,20));
+        if(snapshot.ok && snapshot.data.some(state=>{const previous=orders.find(order=>order.id===state.id);return previous&&(state.status!==previous.status||state.hasQr!==Boolean(previous.qr_code)||state.expiresAt!==previous.expires_at);})){
+          if(!disposed)router.refresh();return;
+        }
+        if(!orders.some(order=>["creating","pending"].includes(order.status)&&!order.qr_code) && Date.now()-lastProviderCheck<90000)return;
+        lastProviderCheck=Date.now();
         const result = await refreshRaffleOrders(orders.map(o => o.id), cursor.current % Math.max(1, activeCount));
         cursor.current = (cursor.current + 3) % Math.max(1, activeCount);
         if (!disposed && result.ok && result.data.some(updated => {
@@ -123,7 +134,7 @@ export function RaffleOrdersList({ orders, awards }: { orders: RaffleOrder[]; aw
       finally { busy.current = false; }
     };
     void sync();
-    const timer = setInterval(() => void sync(), 20000);
+    const timer = setInterval(() => void sync(), 30000);
     document.addEventListener("visibilitychange", sync);
     return () => { disposed = true; clearInterval(timer); document.removeEventListener("visibilitychange", sync); };
   }, [activeCount, orders, router]);
