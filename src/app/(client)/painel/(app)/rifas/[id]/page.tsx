@@ -1,3 +1,4 @@
+import { getRaffleBuyerRanking } from "@/lib/raffle-ranking-server";
 import { readPrizeImages } from "@/lib/raffle-prize-images-server";
 import Link from "next/link";
 import { z } from "zod";
@@ -18,5 +19,6 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const photos = await readPrizeImages((data as RaffleDetail).prizes.map(p => p.id));
     data.prizes = (data as RaffleDetail).prizes.map(p => ({ ...p, image_urls: photos.get(p.id) ?? [] }));
   }
-  return <div className="grid gap-4"><Link href="/painel/rifas" className="text-sm underline">Voltar às rifas</Link>{error || !data ? <RaffleUnavailable /> : <RaffleParticipation detail={data as RaffleDetail} from={Math.min(from, data.campaign.total_numbers - 1)} resume={query.resume === "raffle"} enabled={await rafflesEnabled()} />}</div>;
+  const buyers = !error && data ? await getRaffleBuyerRanking(id) : null;
+  return <div className="grid gap-4"><Link href="/painel/rifas" className="text-sm underline">Voltar às rifas</Link>{error || !data ? <RaffleUnavailable /> : <RaffleParticipation buyers={buyers} detail={data as RaffleDetail} from={Math.min(from, data.campaign.total_numbers - 1)} resume={query.resume === "raffle"} enabled={await rafflesEnabled()} />}</div>;
 }

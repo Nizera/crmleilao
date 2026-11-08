@@ -1,3 +1,4 @@
+import { getRaffleBuyerRanking } from "@/lib/raffle-ranking-server";
 import type { Metadata } from "next";
 import { rafflePhotos } from "@/lib/raffle-photos";
 import { raffleMoney } from "@/lib/raffles";
@@ -27,5 +28,6 @@ export default async function Page({params,searchParams}:{params:Promise<{id:str
  await redirectCommerceMember(`/painel/rifas/${id}?from=${from}`);
  const {data,error}=await(await createClient()).rpc('get_public_raffle_detail',{p_campaign:id,p_from:from});
  if(error?.code==='P0001'||!data&&!error)notFound();
- return <div className="raffle-client grid gap-4"><Link className="text-sm underline" href="/rifas">Voltar às rifas</Link>{error?<p role="alert">Não foi possível carregar esta campanha. Tente novamente.</p>:<RaffleParticipation detail={data as RaffleDetail} from={from} enabled guest/>}</div>;
+ const buyers = !error && data ? await getRaffleBuyerRanking(id) : null;
+ return <div className="raffle-client grid gap-4"><Link className="text-sm underline" href="/rifas">Voltar às rifas</Link>{error?<p role="alert">Não foi possível carregar esta campanha. Tente novamente.</p>:<RaffleParticipation buyers={buyers} detail={data as RaffleDetail} from={from} enabled guest/>}</div>;
 }

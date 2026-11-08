@@ -1,4 +1,5 @@
 "use client";
+import type { RaffleBuyer } from "@/lib/raffle-ranking-server";
 import { RafflePhotos } from "@/components/raffles/raffle-photos";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -21,7 +22,7 @@ import { usePaymentExpired } from "@/components/client/use-payment-expired";
 
 export type RaffleDetail = { campaign: Raffle; paid: number; reserved: number; results: { title: string; number: number; note: string; evidence: string; status: string }[]; prizes: { id: string; title: string; kind: string; number: number | null; found: boolean; image_urls?: string[] }[]; numbers: { number: number; state: string }[] };
 type ParticipationSelection = { automatic:boolean; selected:number[]; quantity:number };
-export function RaffleParticipation({ detail: d, from, enabled, guest=false, resume=false }: { detail: RaffleDetail; from: number; enabled: boolean; guest?:boolean; resume?:boolean }) {
+export function RaffleParticipation({ detail: d, from, enabled, guest=false, resume=false, buyers=null }: { buyers?: RaffleBuyer[] | null; detail: RaffleDetail; from: number; enabled: boolean; guest?:boolean; resume?:boolean }) {
   const c = d.campaign; const router = useRouter();
   const [selection,dispatchSelection]=useReducer((state:ParticipationSelection,patch:Partial<ParticipationSelection>|((current:ParticipationSelection)=>ParticipationSelection))=>typeof patch==="function"?patch(state):({...state,...patch}),{automatic:c.selection_mode==="automatic",selected:[],quantity:c.min_quantity});
   const {automatic,selected,quantity}=selection;
@@ -47,12 +48,11 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
   const available = Math.max(0, c.total_numbers - d.paid - d.reserved);
   const images = rafflePhotos(c);
   const instant = d.prizes.filter(p => p.kind === "instant");
-  const remainingInstant = instant.filter(p => !p.found).length;
   useEffect(() => {
-    if (!["open", "paused"].includes(c.status) || !remainingInstant) return;
+    if (!["open", "paused"].includes(c.status)) return;
     const timer=setInterval(()=>{if(document.visibilityState==="visible"&&!pending)router.refresh();},30000);
     return()=>clearInterval(timer);
-  },[c.status,remainingInstant,pending,router]);
+  },[c.status,pending,router]);
   const visible = d.numbers.filter(n => filter === "all" || n.state === "available");
   const toggle = (n: number) => { requestKey.current = null; setSelected(current => current.includes(n) ? current.filter(v => v !== n) : current.length < c.max_quantity ? [...current, n] : current); };
   return <div className="rf-participation">
@@ -61,6 +61,11 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
         {images[0] ? <button type="button" onClick={() => setPhoto(0)} aria-label={`Ampliar foto de ${c.title}`} className="aspect-[4/5] w-28 shrink-0 overflow-hidden rounded-xl border bg-muted sm:w-40"><picture><img src={images[0]} alt={c.title} className="size-full object-contain" referrerPolicy="no-referrer" /></picture></button> : <span className="rf-icon-tile"><Gift size={28} /></span>}
         <div className="grid min-w-0 content-start gap-3"><RaffleBadge status={c.status}>{d.paid >= c.total_numbers && c.status === "paused" ? "Aguardando apuração" : raffleStatus[c.status]}</RaffleBadge><h1 className="text-xl font-bold leading-tight tracking-tight sm:text-2xl">{c.title}</h1><p className="rf-campaign-price">{raffleMoney(c.unit_price)}<span className="mt-1 block text-xs font-normal text-muted-foreground">por cota</span></p>{images.length > 1 && <button type="button" onClick={() => setPhoto(0)} className="w-fit text-xs font-semibold text-ouro-ink underline">Ver {images.length} fotos</button>}</div>
       </div><RaffleProgress paid={d.paid} reserved={d.reserved} total={c.total_numbers} />{instant.length > 0 && <span className="rf-badge rf-badge-gold w-fit"><Gift size={13} />{instant.length} cotas premiadas · {instant.filter(p => p.found).length} encontradas</span>}</section>
+      <section className="rf-panel grid gap-3" aria-label="Ranking de compradores">
+        <h2 className="flex items-center gap-2 text-sm font-semibold"><Trophy size={17} className="text-ouro-ink"/>Maiores compradores</h2>
+        <p className="rf-caption">Top 3 desta rifa · somente cotas pagas</p>
+        {buyers === null ? <p className="rf-caption">Ranking indisponível no momento.</p> : buyers.length === 0 ? <p className="rf-caption">O ranking aparece após os primeiros pagamentos confirmados.</p> : <ol className="grid gap-2">{buyers.map(buyer => <li key={buyer.position} className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/50 p-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ouro/15 text-xs font-bold text-ouro-ink">{buyer.position}º</span><span className="min-w-0 flex-1 break-words text-sm font-medium">{buyer.name}</span><strong className="shrink-0 text-xs tabular-nums">{buyer.quantity} {buyer.quantity === 1 ? "cota" : "cotas"}</strong></li>)}</ol>}
+      </section>
       <details className="rf-panel"><summary className="cursor-pointer text-sm font-semibold">Prêmios e regulamento</summary><div className="mt-4 grid gap-4">{d.prizes.filter(p => p.kind === "main").map(p => <div key={p.id} className="flex gap-3 rounded-xl bg-muted p-3"><Trophy size={18} className="shrink-0 text-ouro-ink" /><div><p className="text-xs text-muted-foreground">Prêmio principal</p><p className="text-sm font-semibold">{p.title}</p></div></div>)}<p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{c.description}</p><div className="border-t pt-3"><h2 className="text-sm font-semibold">{c.draw_method === "federal" ? "Loteria Federal" : "Sorteador externo"}</h2><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{c.draw_rules}</p></div></div></details>
       {instant.length > 0 && <details className="rf-panel" open><summary className="cursor-pointer text-sm font-semibold">Cotas premiadas <span className="ml-1 text-ouro-ink">{instant.filter(p => p.found).length}/{instant.length}</span></summary><div className="mt-4 grid gap-2">{instant.map(p => <div key={p.id} data-found={p.found} className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${p.found ? "border-dashed bg-muted/50" : "bg-background"}`}><div className="flex min-w-0 items-center gap-2"><Gift size={15} className="shrink-0 text-ouro-ink" /><div className="min-w-0"><span className={`text-sm font-medium ${p.found ? "text-muted-foreground line-through" : ""}`}>{p.title}</span>{Boolean(p.image_urls?.length) && <div className="mt-2 w-28"><RafflePhotos images={p.image_urls!} title={p.title} /></div>}</div></div><RaffleBadge status={p.found ? "paid" : "paused"}>{p.found ? "Encontrada · indisponível" : p.number !== null ? `Cota ${quotaLabel(p.number, c.total_numbers)}` : "Cota surpresa"}</RaffleBadge></div>)}<p className="rf-caption mt-2">A descoberta é confirmada depois do pagamento. O prêmio fica no seu cadastro.</p></div></details>}
       {d.results?.length > 0 && <section className="rf-panel grid gap-3 border-ouro/40"><h2 className="rf-panel-title"><Trophy size={18} className="text-ouro-ink" />Resultado do sorteio</h2>{d.results.map((r, i) => <div key={i} className="grid gap-2 rounded-xl bg-muted p-3 text-sm"><strong>{r.title} · Cota {quotaLabel(r.number, c.total_numbers)}</strong><p className="whitespace-pre-wrap text-muted-foreground">{r.note}</p>{r.status === "review" && <p>Resultado em análise pela equipe.</p>}{r.evidence?.startsWith("https://") && <a className="text-ouro-ink underline" href={r.evidence} target="_blank" rel="noopener noreferrer">Conferir resultado</a>}</div>)}</section>}
