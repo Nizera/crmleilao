@@ -1,3 +1,4 @@
+import { raffleDrawPrizeLabel } from "@/lib/raffle-prize-order";
 import Link from "next/link";
 import { Check, Gift, Package, Truck, Trophy } from "lucide-react";
 import type { RaffleAward } from "@/lib/raffles";
@@ -10,7 +11,7 @@ export function RaffleAwardCard({ award: a, images = [], admin = false }: { awar
   const stage = raffleAwardStage(a);
   const Icon = a.kind === "main" ? Trophy : Gift;
   return <article className="rf-award-card">
-    <div className="flex flex-wrap items-center justify-between gap-2"><span className="rf-badge rf-badge-gold"><Icon size={14} />{a.kind === "main" ? "Prêmio principal" : "Cota premiada"}</span><RaffleBadge status={stage.index < 0 ? "review" : stage.index === 3 ? "paid" : "paused"}>{stage.label}</RaffleBadge></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><span className="rf-badge rf-badge-gold"><Icon size={14} />{a.kind === "main" ? raffleDrawPrizeLabel(a.title) : "Cota premiada"}</span><RaffleBadge status={stage.index < 0 ? "review" : stage.index === 3 ? "paid" : "paused"}>{stage.label}</RaffleBadge></div>
     <RafflePhotos images={images} title={a.title} />
     <div><h2 className="text-lg font-bold tracking-tight">{a.title}</h2><p className="mt-1 text-xs text-muted-foreground">{a.campaign_title} · Cota {quotaLabel(a.number, a.total_numbers)}</p>{admin && <p className="mt-2 text-sm font-semibold">{a.customer_name}</p>}</div>
     {stage.index >= 0 && <div className="rf-stepper" aria-label={`Situação do prêmio: ${stage.label}`}>{[{ label: "Conquistado", icon: Check }, { label: "Na sua caixa", icon: Package }, { label: stage.index === 3 ? "Entregue" : "Envio", icon: Truck }].map((step, index) => <div key={step.label} className={`rf-step ${index < stage.index || stage.index === 3 ? "is-done" : index === stage.index ? "is-current" : ""}`}><span><step.icon size={13} /></span>{index === 1 && stage.index === 0 ? "Aguardando separação" : step.label}</div>)}</div>}
