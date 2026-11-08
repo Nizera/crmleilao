@@ -110,7 +110,7 @@ export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
 /** Colunas sempre presentes de um lote (listagens e detalhe). */
 const LOT_BASE_COLUMNS = [
   "id, code, customer_id, title, arremate_value, status,",
-  "charge_id, payment_due_at, payment_expired_at,",
+  "charge_id, payment_due_at, payment_expired_at, pix_paused_at,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id)",
 ].join(" ");
@@ -939,7 +939,7 @@ export const getInvitePreview = cache(
 const CHARGE_LIST_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
   "description, ticket_url, expires_at, paid_at,",
-  "created_by, created_at, updated_at,",
+  "created_by, created_at, updated_at, pix_issue_since, pix_issue_code, pix_last_attempt_at,",
   "customer:customers!inner(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status)",
 ].join(" ");
@@ -963,7 +963,7 @@ export type ChargePage = {
 
 export async function listCharges(params: {
   q?: string;
-  status?: ChargeStatus | "all";
+  status?: ChargeStatus | "all" | "pix_issue";
   page?: number;
   pageSize?: number;
   lotStartUtc?: string;
@@ -981,7 +981,9 @@ export async function listCharges(params: {
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1);
 
-  if (params.status && params.status !== "all") {
+  if(params.status==="pix_issue"){
+    query=query.in("status",["pending","in_process"]).not("pix_issue_since","is",null);
+  } else if (params.status && params.status !== "all") {
     query = query.eq("status", params.status);
   }
   if (params.lotStartUtc && params.lotEndUtc) query = query.gte("scope_lots.created_at", params.lotStartUtc)

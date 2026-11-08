@@ -14,6 +14,7 @@ const first = (value: string | string[] | undefined) =>
   Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 
 const VALID_STATUSES = [
+  "pix_issue",
   "all",
   "pending",
   "in_process",
@@ -43,7 +44,7 @@ export default async function CobrancasPage({
   try {
     if (!range.error) data = await listCharges({
       q,
-      status: status as ChargeStatus | "all",
+      status: status as ChargeStatus | "all" | "pix_issue",
       page,
       lotStartUtc: range.startUtc,
       lotEndUtc: range.endUtc,

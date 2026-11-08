@@ -22,6 +22,7 @@ export const LOT_STATUS_LABELS: Record<LotStatus, string> = {
 };
 
 export type LotRow = {
+  pix_paused_at?: string | null;
   payment_due_at?: string | null;
   payment_expired_at?: string | null;
   id: string;

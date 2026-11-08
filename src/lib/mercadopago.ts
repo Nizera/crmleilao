@@ -17,6 +17,53 @@ import { siteUrl } from "@/lib/lots";
 const MP_API = "https://api.mercadopago.com";
 const PIX_EXPIRES_DAYS = 3;
 
+/** Only machine codes: provider messages may contain payer data or credentials. */
+export function mpFailureCodes(value: unknown): string[] {
+  const codes = new Set<string>();
+  const visit = (input: unknown, depth: number) => {
+    if (!input || typeof input !== "object" || depth > 5 || codes.size >= 12) return;
+    if (Array.isArray(input)) { input.slice(0, 10).forEach(row => visit(row, depth + 1)); return; }
+    const row = input as Record<string, unknown>;
+    for (const key of ["code", "error", "status", "status_detail"]) {
+      const code = row[key];
+      if (typeof code === "string" && /^[a-z][a-z0-9_]{1,79}$/.test(code)) codes.add(code);
+    }
+    for (const key of ["errors", "cause", "details", "transactions", "payments"]) visit(row[key], depth + 1);
+  };
+  visit(value, 0);
+  return [...codes].slice(0, 12);
+}
+
+export class MpApiError extends Error {
+  constructor(public readonly httpStatus: number, public readonly codes: string[], public readonly orderId: string | null) {
+    super(`Mercado Pago: HTTP ${httpStatus}${codes.length ? `; códigos: ${codes.join(", ")}` : "; motivo não informado pelo provedor"}`);
+    this.name = "MpApiError";
+  }
+}
+
+function failedOrderId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  for (const key of ["id", "order_id"]) {
+    if (typeof row[key] === "string" && /^ORD[A-Za-z0-9_-]{4,124}$/.test(row[key])) return row[key];
+  }
+  for (const key of ["errors", "details", "data"]) {
+    const nested = row[key];
+    const rows = Array.isArray(nested) ? nested.slice(0, 10) : [nested];
+    for (const child of rows) {
+      if (!child || typeof child !== "object") continue;
+      const item = child as Record<string, unknown>;
+      const id = item.order_id ?? item.id;
+      if (typeof id === "string" && /^ORD[A-Za-z0-9_-]{4,124}$/.test(id)) return id;
+      const details = item.details;
+      if (Array.isArray(details)) for (const detail of details.slice(0, 10)) {
+        if (detail && typeof detail.order_id === "string" && /^ORD[A-Za-z0-9_-]{4,124}$/.test(detail.order_id)) return detail.order_id;
+      }
+    }
+  }
+  return null;
+}
+
 export function mpAccessToken(): string {
   const token = process.env.MP_ACCESS_TOKEN?.trim();
   if (!token) {
@@ -87,11 +134,10 @@ async function mpFetch(
   const json: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const detail =
-      json && typeof json === "object" && "message" in json
-        ? String((json as { message: unknown }).message)
-        : `HTTP ${response.status}`;
-    throw new Error(`Mercado Pago: ${detail}`);
+    if (response.status === 402) {
+      throw new MpApiError(402, mpFailureCodes(json), failedOrderId(json));
+    }
+    throw new MpApiError(response.status,mpFailureCodes(json),failedOrderId(json));
   }
 
   return json;
@@ -100,6 +146,7 @@ async function mpFetch(
 export type MpPixOrder = {
   orderId: string;
   status: string;
+  statusDetail?: string;
   /** Pix copia e cola (BR Code). */
   qrCode: string | null;
   /** PNG do QR em base64 puro (sem prefixo data:). */
@@ -205,6 +252,13 @@ export async function createPixOrder(input: {
           : {}),
       },
     },
+  }).catch(async error => {
+    // HTTP 402 may still have created an order. Only its authenticated GET
+    // can establish the identity and terminal state before releasing anything.
+    if (!(error instanceof MpApiError) || !error.orderId) throw error;
+    const existing = await getOrder(error.orderId, signal);
+    if (!existing || existing.externalReference !== input.externalReference || Math.round(existing.amount * 100) !== Math.round(input.amount * 100)) throw error;
+    return existing.raw;
   })) as MpOrderResponse;
 
   let order = json;
@@ -216,7 +270,7 @@ export async function createPixOrder(input: {
   const orderId: string = order.id;
 
   // Criação assíncrona: a order volta "processing" e o QR chega em seguida.
-  for (let attempt = 0; options.waitForQr !== false && !(qr.qrCode || qr.ticketUrl) && attempt < 4; attempt += 1) {
+  for (let attempt = 0; options.waitForQr !== false && !targetChargeStatus(order.status ?? "", order.status_detail ?? "") && !(qr.qrCode || qr.ticketUrl) && attempt < 4; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 400));
     const refreshed = await getOrder(orderId, signal);
     if (refreshed) {
@@ -225,7 +279,7 @@ export async function createPixOrder(input: {
     }
   }
 
-  if (options.waitForQr !== false && !qr.qrCode && !qr.ticketUrl) {
+  if (options.waitForQr !== false && !targetChargeStatus(order.status ?? "", order.status_detail ?? "") && !qr.qrCode && !qr.ticketUrl) {
     throw new Error(
       "Mercado Pago: a order foi criada, mas o QR do Pix não ficou disponível. Tente gerar a cobrança novamente.",
     );
@@ -236,6 +290,7 @@ export async function createPixOrder(input: {
   return {
     orderId,
     status: order.status ?? payment?.status ?? "action_required",
+    statusDetail: order.status_detail ?? payment?.status_detail ?? "",
     ...qr,
     amount: Number(order.total_amount ?? payment?.amount ?? input.amount),
     dateOfExpiration:
@@ -302,7 +357,6 @@ export async function getOrder(orderId: string, signal?: AbortSignal): Promise<M
  * correspondente aqui e um pagamento nela não teria onde cair.
  *
  * Devolve `true` quando é seguro desfazer tudo localmente:
- * - 404 = a order não foi localizada;
  * - 200 com status `canceled` = cancelada de fato.
  *
  * Qualquer outra resposta (rede, 4xx/5xx) devolve `false` e o chamador
@@ -323,7 +377,7 @@ export async function cancelPixOrder(orderId: string, signal?: AbortSignal): Pro
       cache: "no-store",
     });
 
-    if (response.status === 404) return true;
+    if (response.status === 404) return false;
     if (!response.ok) return false;
 
     const json = (await response.json()) as MpOrderResponse;

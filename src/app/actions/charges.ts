@@ -194,7 +194,9 @@ export async function createSelfChargeAction(
     }
     const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
-      return failure("Você já tem uma cobrança aguardando pagamento.");
+      const existing=await getChargeById(activeCharge.id);
+      if(existing)return {ok:true,data:{charge:existing}};
+      return failure("Estamos carregando sua cobrança existente. Atualize o painel.");
     }
 
     const charge = await createCharge({
@@ -277,6 +279,9 @@ export async function getSelfChargeQrAction(id: string): Promise<
     qr_code: string | null;
     qr_code_base64: string | null;
     freight_amount: number;
+    preparing: boolean;
+    needs_attention: boolean;
+    deadline_protected: boolean;
     lots: { code: string; title: string }[];
   }>
 > {
@@ -286,8 +291,15 @@ export async function getSelfChargeQrAction(id: string): Promise<
     if (!own.ok) return own;
 
     let charge = own.data;
-    if(!charge.qr_code && ["pending","in_process"].includes(charge.status)){if(!await allow("auction-sync",customer.id))return failure("Aguarde alguns segundos para conferir o Pix novamente.");await syncChargeWithMp(charge.id);charge=await getChargeById(charge.id)??charge;}
-    if(!["pending","in_process"].includes(charge.status))return failure("Este Pix já foi encerrado. Atualize o painel para conferir o pagamento.");
+    if(charge.lots?.some(lot=>lot.status!=="pending_payment"))return failure("O pagamento dos seus lotes foi alterado pela equipe. Atualize o painel e fale conosco antes de pagar esta cobrança.");
+    if(!charge.qr_code&&!charge.ticket_url&&["pending","in_process"].includes(charge.status)){
+      if(await allow("auction-sync",customer.id)){
+        try{await syncChargeWithMp(charge.id);}catch(error){console.error('[charges] recuperação do QR:',error instanceof Error?error.message:'unknown');}
+        charge=await getChargeById(charge.id)??charge;
+      }
+    }
+    if(!["pending","in_process"].includes(charge.status))return failure(charge.status==="rejected"?"O Mercado Pago confirmou que esta tentativa falhou. Atualize o painel e gere um novo Pix; seus lotes continuam disponíveis.":"Este Pix já foi encerrado. Atualize o painel para conferir o pagamento.");
+    if(charge.lots?.some(lot=>lot.status!=="pending_payment"))return failure("Os lotes desta cobrança foram atualizados. Confira o painel antes de fazer qualquer pagamento.");
     return {
       ok: true,
       data: {
@@ -298,6 +310,9 @@ export async function getSelfChargeQrAction(id: string): Promise<
         qr_code: charge.qr_code,
         qr_code_base64: charge.qr_code_base64,
         freight_amount: Number(charge.freight_amount ?? 0),
+        preparing: !charge.qr_code&&!charge.ticket_url,
+        needs_attention: Boolean(charge.pix_issue_code&&charge.pix_issue_code!=="preparing"),
+        deadline_protected: Boolean(charge.pix_issue_since),
         lots: (charge.lots ?? []).map((lot) => ({ code: lot.code, title: lot.title })),
       },
     };

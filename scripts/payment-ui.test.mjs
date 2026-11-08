@@ -25,6 +25,7 @@ test('Prazo de pagamento e valor declarado não alteram recursos nem aceitam pr�
 test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo vencido remove instrução de pagar', async () => {
   globalThis.__raffleUiAudit = { expired: false };
   let source = await read('../src/components/raffles/raffle-client.tsx');
+  source=source.replace('import { rafflePriceQuote } from "@/lib/raffle-pricing";', 'import {rafflePriceQuote} from '+JSON.stringify(url(await read('../src/lib/raffle-pricing.ts')))+';');
   const badgeSource='import React from '+real('react')+';\n'+(await read('../src/components/raffles/raffle-ui.tsx'))
     .replace('import { FinancialValue } from "@/components/admin/financial-privacy";', 'const FinancialValue=({children})=>children;')
     .replace('import Link from "next/link";','const Link=({children})=>children;')
@@ -58,10 +59,12 @@ test('Cartão usa status recebido: revisão remove confirmação/prêmio e prazo
     .replace('import { usePaymentExpired } from "@/components/client/use-payment-expired";', 'const usePaymentExpired=()=>globalThis.__raffleUiAudit.expired;');
   try {
     const { RaffleOrderCard, RaffleParticipation } = await import(url(source));
-    const participation=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:2,min_quantity:1,max_quantity:2,unit_price:10,selection_mode:'manual',status:'open',draw_method:'external',draw_rules:'Regras',description:'Campanha teste'},paid:1,reserved:0,results:[],prizes:[{id:'instant',title:'Prêmio encontrado',kind:'instant',found:true,number:null}],numbers:[{number:0,state:'paid'},{number:1,state:'available'}]}}));
-    assert.ok(participation.includes('Encontrada · indisponível'));assert.ok(participation.includes('line-through'));assert.ok(participation.includes('rf-checkout-empty'));assert.ok(participation.includes('Selecione suas cotas para continuar'));assert.ok(!participation.includes('aria-label="Reservar e pagar com Pix"'));
+    const participation=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,numberStates:{total:2,occupied:[{number:0,state:'paid'}],instant_awards:[{prize_id:'instant',confirmed:true,number:0,winner_name:'Daniel M.'}]},detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:2,min_quantity:1,max_quantity:2,unit_price:10,selection_mode:'manual',status:'open',draw_method:'external',draw_rules:'Regras',description:'Campanha teste'},paid:1,reserved:0,results:[],prizes:[{id:'instant',title:'Prêmio encontrado',kind:'instant',found:true,number:null}],numbers:[{number:0,state:'paid'},{number:1,state:'available'}]}}));
+    assert.ok(participation.includes('Encontrada · indisponível'));assert.ok(participation.includes('Cota 000'));assert.ok(participation.includes('Ganhador: Daniel M.'));assert.ok(participation.includes('bg-amber-500/10'));assert.ok(!participation.includes('line-through'));assert.ok(participation.includes('rf-checkout-empty'));assert.ok(participation.includes('Selecione suas cotas para continuar'));assert.ok(!participation.includes('aria-label="Reservar e pagar com Pix"'));
     const compact=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:2,min_quantity:1,max_quantity:2,unit_price:10,selection_mode:'automatic',status:'open',draw_method:'external'},paid:0,reserved:0,results:[],prizes:[],numbers:[]}}));
     assert.ok(compact.includes('class="rf-checkout"'));assert.ok(compact.includes('1 cota selecionada'));assert.ok(compact.includes('aria-label="Reservar e pagar com Pix"'));assert.ok(compact.includes('10 minutos para pagar após reservar'));
+    const promo=renderToStaticMarkup(React.createElement(RaffleParticipation,{from:0,enabled:true,detail:{campaign:{id:'fixture',title:'Rifa teste',total_numbers:100,min_quantity:6,max_quantity:100,unit_price:10,price_tiers:[{min_quantity:5,unit_price:8}],selection_mode:'automatic',status:'open',draw_method:'external'},paid:0,reserved:0,results:[],prizes:[],numbers:[]}}));
+    assert.match(promo,/A partir de 5 cotas/);assert.match(promo,/Desconto de 12/);assert.match(promo,/>48<\/strong>/);
     const order={id:crypto.randomUUID(),code:'RF-TEST',campaign_title:'Campanha de teste',status:'paid',numbers:[0],amount:20,expires_at:null};
     const awards=[{id:crypto.randomUUID(),order_id:order.id,title:'Prêmio teste',number:0,cancelled_at:null}];
     const paid=renderToStaticMarkup(React.createElement(RaffleOrderCard,{order,awards}));
@@ -86,6 +89,7 @@ test('Sincronização em lote respeita dono e orçamento, rejeita lista excessiv
   };}};
   globalThis.__raffleBatchAudit={db,customer,called,buckets,rows,resolutions:[],role:'viewer'};
   let source=await read('../src/app/actions/raffles.ts');
+  source=source.replace('import { validateRafflePriceTiers } from "@/lib/raffle-pricing";', 'import {validateRafflePriceTiers} from '+JSON.stringify(url(await read('../src/lib/raffle-pricing.ts')))+';');
   source=source.replace('"use server";','')
     .replace('import { revalidatePath } from "next/cache";','const revalidatePath=()=>{};')
     .replace('import { instantPrizeBatchSchema } from "@/lib/raffle-prize-input";', 'const instantPrizeBatchSchema=()=>{};')

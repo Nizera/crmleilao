@@ -1,5 +1,6 @@
 export type RaffleNumberState = {number:number;state:"available"|"paid"|"reserved"};
-export type RaffleNumberStates = {total:number;occupied:RaffleNumberState[]};
+import type { RafflePriceTier } from "@/lib/raffle-pricing";
+export type RaffleNumberStates = {instant_awards?:{prize_id:string;confirmed:boolean;number:number|null;winner_name:string|null}[];unit_price?:number;price_tiers?:RafflePriceTier[];total:number;occupied:RaffleNumberState[]};
 
 export function expandRaffleNumberStates(snapshot: RaffleNumberStates, expectedTotal: number): RaffleNumberState[] {
   if(!Number.isInteger(expectedTotal)||expectedTotal<2||expectedTotal>10000||snapshot.total!==expectedTotal)throw new Error("Quantidade de cotas inválida.");

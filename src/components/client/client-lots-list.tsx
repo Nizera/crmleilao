@@ -160,7 +160,7 @@ export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Prop
                     Envio {formatDateBR(lot.shipping_date)}
                   </span>
                 </div>
-                {pending && lot.payment_due_at && <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">Pagar até {auctionDeadlineLabel(lot.payment_due_at)}</p>}
+                {pending && lot.payment_due_at && <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">{lot.pix_paused_at?"Prazo protegido · Pix em recuperação":`Pagar até ${auctionDeadlineLabel(lot.payment_due_at)}`}</p>}
                 <div className="mt-auto flex items-center justify-between gap-2 pt-2">
                   <span className="truncate text-[10px] font-medium uppercase text-muted-foreground">
                     Lance vencedor: você

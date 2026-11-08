@@ -315,6 +315,7 @@ export function ChargesView({
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="pix_issue">Pix em preparação / com falha</SelectItem>
             <SelectItem value="all">Todos os status</SelectItem>
             {CHARGE_STATUSES.map((item) => (
               <SelectItem key={item} value={item}>
@@ -383,6 +384,7 @@ export function ChargesView({
                   </TableCell>
                   <TableCell>
                     <ChargeStatusBadge status={charge.status} />
+                    {open&&charge.pix_issue_since&&<div className="mt-2 max-w-48 text-xs text-amber-700 dark:text-amber-400"><strong>Pix precisa de acompanhamento</strong><p>Prazo dos lotes protegido.</p><p className="break-words font-mono">{charge.pix_issue_code??"preparing"}</p></div>}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
                     <DateBR time value={charge.created_at} />

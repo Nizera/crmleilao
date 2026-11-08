@@ -26,6 +26,9 @@ type QrData = {
   qr_code_base64: string | null;
   freight_amount: number;
   lots: { code: string; title: string }[];
+  preparing: boolean;
+  needs_attention: boolean;
+  deadline_protected: boolean;
 };
 
 type QrState = {
@@ -44,11 +47,11 @@ type QrState = {
  */
 export function useChargeQr() {
   const [state, setState] = useState<QrState | null>(null);
-  const waitingId=state?.data&&!state.loading&&!state.data.qr_code&&!state.data.ticket_url?state.id:null;
+  const waitingId=state?.data&&!state.loading&&!state.data.needs_attention&&!state.data.qr_code&&!state.data.ticket_url?state.id:null;
   useEffect(()=>{
     if(!waitingId)return;let disposed=false,checking=false,attempts=0;
     const timer=setInterval(async()=>{
-      if(checking||attempts>=8)return;checking=true;attempts++;
+      if(document.visibilityState!=="visible"||checking||attempts>=8)return;checking=true;attempts++;
       try{const result=await getSelfChargeQrAction(waitingId);if(!disposed)setState(previous=>previous?.id!==waitingId?previous:{...previous,loading:false,data:result.ok?result.data:previous.data,error:result.ok?null:result.error});}
       catch{ /* Mantém o mesmo Pix, disponível para tentar novamente. */ }
       finally{checking=false;if(attempts>=8)clearInterval(timer);}
@@ -69,7 +72,7 @@ export function useChargeQr() {
           error: result.ok ? null : result.error,
         };
       });
-    });
+    }).catch(()=>setState(previous=>previous?.id===chargeId?{...previous,loading:false,error:"A conexão falhou. Tente carregar este mesmo Pix novamente."}:previous));
   };
 
   const close = () => setState(null);
@@ -88,7 +91,7 @@ export function useChargeQr() {
             Aponte a câmera para o QR ou use o copia e cola.
           </SheetDescription>
         </SheetHeader>
-        <ChargeQrBody state={state} onClose={close} />
+        <ChargeQrBody state={state} onClose={close} onRetry={()=>open(state.id)} />
       </SheetContent>
     </Sheet>
   ) : null;
@@ -96,7 +99,7 @@ export function useChargeQr() {
   return { open, sheet };
 }
 
-function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void }) {
+function ChargeQrBody({ state, onClose, onRetry }: { state: QrState; onClose: () => void; onRetry:()=>void }) {
   const [copied, setCopied] = useState(false);
   const data = state.data;
 
@@ -130,6 +133,7 @@ function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void 
         >
           {state.error ?? "Não foi possível carregar o QR."}
         </p>
+        <Button type="button" onClick={onRetry}>Tentar carregar novamente</Button>
         <Button type="button" variant="outline" className="mt-auto" onClick={onClose}>
           Fechar
         </Button>
@@ -167,7 +171,7 @@ function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void 
 
       {expired ? (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-          O prazo deste Pix venceu. Gere um novo no card de pagamentos.
+          O prazo indicado para este Pix venceu. Atualize para conferir o encerramento antes de gerar outro.
         </p>
       ) : qrDataUrl ? (
         <div className="flex justify-center">
@@ -186,9 +190,12 @@ function ChargeQrBody({ state, onClose }: { state: QrState; onClose: () => void 
           </a>
         </Button>
       ) : (
-        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-          QR indisponível. Gere a cobrança novamente.
-        </p>
+        <div role="status" className="grid gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <strong>{data.needs_attention?"Houve uma dificuldade para preparar seu Pix":"Estamos preparando seu Pix"}</strong>
+          <p>{data.needs_attention?"Sua cobrança foi preservada. Tente recuperar este mesmo Pix ou informe o código acima à equipe.":"Aguarde alguns instantes. Estamos consultando a mesma cobrança, sem gerar outro pagamento."}</p>
+          {data.deadline_protected&&<p>O prazo dos lotes vinculados está protegido durante a recuperação. Você não precisa criar outra cobrança.</p>}
+          <Button type="button" variant="outline" onClick={onRetry}>Recuperar este Pix</Button>
+        </div>
       )}
 
       {!expired && data.qr_code && (

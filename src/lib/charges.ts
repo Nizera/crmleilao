@@ -41,6 +41,9 @@ export type ChargeLotRef = {
 };
 
 export type Charge = {
+  pix_issue_since?: string | null;
+  pix_issue_code?: string | null;
+  pix_last_attempt_at?: string | null;
   id: string;
   code: string;
   customer_id: string;
@@ -71,18 +74,15 @@ export const isChargeOpen = (status: ChargeStatus) =>
 
 /**
  * Cobrança ainda "aberta": os lotes vinculados continuam bloqueados para
- * nova cobrança. Uma cobrança pending cujo `expires_at` já passou conta como
- * expirada localmente (o webhook do MP pode demorar a chegar).
+ * nova cobrança até a confirmação do encerramento pelo provedor.
  */
 export function isChargeActive(
   charge: Pick<Charge, "status" | "expires_at">,
-  now: Date = new Date(),
+  _now: Date = new Date(),
 ): boolean {
-  if (!isChargeOpen(charge.status)) return false;
-  if (charge.expires_at && new Date(charge.expires_at).getTime() < now.getTime()) {
-    return false;
-  }
-  return true;
+  void _now;
+  // Local clocks cannot establish that a provider Pix is no longer payable.
+  return isChargeOpen(charge.status);
 }
 
 /**
@@ -99,7 +99,7 @@ export function effectiveChargeStatus(
   charge: Pick<Charge, "status" | "expires_at">,
   now: Date = new Date(),
 ): ChargeStatus {
-  if (!isChargeActive(charge, now) && isChargeOpen(charge.status)) return "expired";
+  if (charge.status === "pending" && charge.expires_at && new Date(charge.expires_at).getTime()<now.getTime()) return "expired";
   return charge.status;
 }
 

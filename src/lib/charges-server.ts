@@ -29,7 +29,7 @@ import { notifyCustomer } from "@/lib/notifications-server";
 const CHARGE_BASE_COLUMNS = [
   "id, code, customer_id, amount, status, mp_payment_id, external_reference,",
   "description, ticket_url, expires_at, paid_at, freight_amount, freight_period,",
-  "created_by, created_at, updated_at,",
+  "created_by, created_at, updated_at, pix_issue_since, pix_issue_code, pix_last_attempt_at,",
   "customer:customers(id, name, phone_e164),",
   "lots:lots(id, code, title, arremate_value, status, auction_date)",
 ].join(" ");
@@ -41,6 +41,19 @@ export const CHARGE_COLUMNS = CHARGE_BASE_COLUMNS;
 export const CHARGE_DETAIL_COLUMNS = `${CHARGE_BASE_COLUMNS}, qr_code, qr_code_base64`;
 
 export type TransitionResult = { ok: boolean; reason?: string };
+
+async function recordPixIssue(id:string,error?:unknown) {
+  const failure=error as {httpStatus?:number;codes?:string[]}|undefined;
+  const codes=failure?.codes?.filter(code=>/^[a-z][a-z0-9_]{1,79}$/.test(code)).slice(0,3)??[];
+  const code=error?`${failure?.httpStatus?`http_${failure.httpStatus}`:"network_or_unknown"}${codes.length?":"+codes.join(","):""}`.slice(0,160):"preparing";
+  const {error:saveError}=await createAdminClient().rpc("record_charge_pix_issue",{p_charge:id,p_code:code});
+  if(saveError)throw new Error("Não foi possível proteger o prazo durante a preparação do Pix.");
+}
+
+async function resolvePixIssue(id:string) {
+  const {error}=await createAdminClient().rpc("resolve_charge_pix_issue",{p_charge:id});
+  if(error)throw new Error("Não foi possível restaurar o prazo do pagamento.");
+}
 
 /** Lotes `pending_payment` do cliente que ainda não estão numa cobrança aberta. */
 export async function listEligibleLots(customerId: string): Promise<ChargeLotRef[]> {
@@ -296,6 +309,9 @@ export async function createCharge(input: {
 
   // 4) Só agora emite o Pix — o lote já está reservado para esta cobrança.
   let order;
+  await recordPixIssue(chargeId);
+  const attempt=await admin.rpc("claim_charge_pix_attempt",{p_charge:chargeId});
+  if(attempt.error||!attempt.data)throw new Error("O Pix está sendo preparado. Retome a cobrança no painel.");
   try {
     order = await createPixOrder({
       amount,
@@ -318,7 +334,10 @@ export async function createCharge(input: {
       `[charges] falha ao criar Pix (${externalReference}):`,
       error instanceof Error ? error.message : error,
     );
+    await recordPixIssue(chargeId,error);
     // Mantém a cobrança e os vínculos: uma resposta perdida pode esconder um Pix válido.
+    const saved=await getChargeById(chargeId);
+    if(saved)return saved;
     throw error;
   }
 
@@ -360,10 +379,12 @@ export async function createCharge(input: {
   const charge = await getChargeById(chargeId);
   if (!charge) throw new Error("Cobrança criada, mas não foi possível recarregá-la.");
 
-  // Caso raro: a order já saiu processada na criação (não acontece no Pix).
-  if (order.status === "processed") {
-    await applyTransition(charge, "approved", { paidAt: new Date().toISOString() });
-    return (await getChargeById(charge.id)) ?? charge;
+  if(order.qrCode||order.ticketUrl)await resolvePixIssue(charge.id);
+  const target=targetChargeStatus(order.status,order.statusDetail??"");
+  if(target){
+    await resolvePixIssue(charge.id);
+    await applyTransition(charge,target,{mpPaymentId:order.orderId,amount:order.amount,paidAt:target==="approved"?new Date().toISOString():null});
+    return (await getChargeById(charge.id))??charge;
   }
 
   return charge;
@@ -402,6 +423,7 @@ async function applyTransition(
   }
 
   const paidAt = opts.paidAt ?? (target === "approved" ? new Date().toISOString() : null);
+  if(charge.pix_issue_since)await resolvePixIssue(charge.id);
   const patch: Record<string, unknown> = { status: target };
   if (target === "approved") {
     patch.paid_at = paidAt;
@@ -517,15 +539,28 @@ export async function markChargePaid(chargeId: string): Promise<TransitionResult
 }
 
 /** Recupera a mesma ordem após resposta perdida; nunca troca a referência idempotente. */
-export async function recoverChargeOrder(chargeId:string,signal?:AbortSignal):Promise<void>{
+export async function recoverChargeOrder(chargeId:string,signal?:AbortSignal,background=false):Promise<void>{
  const charge=await getChargeById(chargeId);if(!charge||charge.mp_payment_id||!isChargeOpen(charge.status))return;
- const admin=createAdminClient();const {data:customer,error}=await admin.from('customers').select('name,email,cpf_cnpj').eq('id',charge.customer_id).single();
+ const admin=createAdminClient();
+ const attempt=await admin.rpc('claim_charge_pix_attempt',{p_charge:charge.id,p_background:background});
+ if(attempt.error)throw new Error('Recuperação do Pix indisponível.');
+ if(!attempt.data)return;
+ await recordPixIssue(charge.id);
+ if(charge.lots?.some(lot=>lot.status!=="pending_payment")){
+   await recordPixIssue(charge.id,{httpStatus:409,codes:['lot_status_changed']});return;
+ }
+ const {data:customer,error}=await admin.from('customers').select('name,email,cpf_cnpj').eq('id',charge.customer_id).single();
  if(error||!customer?.email)throw new Error('Não foi possível recuperar o Pix.');
  const [first,...rest]=(customer.name||'Cliente').trim().split(/\s+/);const digits=(customer.cpf_cnpj||'').replace(/\D/g,'');
- const order=await createPixOrder({amount:Number(charge.amount),description:charge.description||'Arremates acumulados',externalReference:charge.external_reference,payerEmail:customer.email.trim(),payerFirstName:first,payerLastName:rest.join(' ')||undefined,identification:digits.length===11||digits.length===14?{type:digits.length===11?'CPF':'CNPJ',number:digits}:undefined},{waitForQr:false,signal});
+ let order;
+ try{order=await createPixOrder({amount:Number(charge.amount),description:charge.description||'Arremates acumulados',externalReference:charge.external_reference,payerEmail:customer.email.trim(),payerFirstName:first,payerLastName:rest.join(' ')||undefined,identification:digits.length===11||digits.length===14?{type:digits.length===11?'CPF':'CNPJ',number:digits}:undefined},{waitForQr:false,signal});}
+ catch(error){await recordPixIssue(charge.id,error);console.error('[charges] recuperação Pix:',charge.code,error instanceof Error?error.message:'unknown');return;}
  if(Math.round(order.amount*100)!==Math.round(Number(charge.amount)*100))throw new Error('Pagamento divergente.');
  const saved=await admin.from('charges').update({mp_payment_id:order.orderId,qr_code:order.qrCode,qr_code_base64:order.qrCodeBase64,ticket_url:order.ticketUrl,expires_at:order.dateOfExpiration}).eq('id',charge.id).in('status',['pending','in_process']).or(`mp_payment_id.is.null,mp_payment_id.eq.${order.orderId}`);
  if(saved.error)throw new Error('Não foi possível recuperar a identificação do Pix.');
+ const target=targetChargeStatus(order.status,order.statusDetail??'');
+ if(order.qrCode||order.ticketUrl||target)await resolvePixIssue(charge.id);
+ if(target){await applyTransition({...charge,mp_payment_id:order.orderId},target,{mpPaymentId:order.orderId,amount:order.amount});}
 }
 
 /** Cancelamento manual: devolve os lotes para elegíveis (status fica cancelled). */
@@ -568,16 +603,18 @@ export async function cancelCharge(chargeId: string, signal?: AbortSignal): Prom
  * aplicaria. Caminho de recuperação para cobranças pagas enquanto o webhook
  * esteve recusando notificação, e teste manual sem gerar um novo Pix.
  */
-export async function syncChargeWithMp(chargeId: string): Promise<TransitionResult> {
+export async function syncChargeWithMp(chargeId: string, background=false): Promise<TransitionResult> {
   const charge = await getChargeById(chargeId);
   if (!charge) return { ok: false, reason: "not_found" };
   if (!isChargeOpen(charge.status)) return { ok: false, reason: `already_${charge.status}` };
 
   let orderId = charge.mp_payment_id?.trim();
-  if (!orderId){await recoverChargeOrder(charge.id);orderId=(await getChargeById(charge.id))?.mp_payment_id?.trim();}
+  if(background&&orderId){const claim=await createAdminClient().rpc('claim_charge_pix_attempt',{p_charge:charge.id,p_background:true});if(claim.error)throw new Error('Recuperação indisponível.');if(!claim.data)return {ok:false,reason:'retry_later'};}
+  if (!orderId){await recoverChargeOrder(charge.id,undefined,background);orderId=(await getChargeById(charge.id))?.mp_payment_id?.trim();}
   if(!orderId)return {ok:false,reason:"no_order"};
 
-  const order = await getOrder(orderId);
+  let order;
+  try{order=await getOrder(orderId);}catch(error){if(!charge.qr_code&&!charge.ticket_url)await recordPixIssue(charge.id,error);throw error;}
   if (!order) return { ok: false, reason: "order_not_found" };
 
   // A order consultada precisa ser a mesma que originou esta cobrança.
@@ -592,6 +629,7 @@ export async function syncChargeWithMp(chargeId: string): Promise<TransitionResu
     if(saved.error)throw new Error('Não foi possível atualizar o QR do Pix.');
   }
   const target = targetChargeStatus(order.status, order.statusDetail);
+  if(charge.pix_issue_since&&(qr.qrCode||qr.ticketUrl||target))await resolvePixIssue(charge.id);
   if (!target) return { ok: false, reason: `mp_${order.status || "desconhecido"}` };
 
   return settleChargeByReference({
@@ -622,7 +660,6 @@ export async function syncOpenChargesWithMp(limit = 25): Promise<MpSyncSummary> 
     .from("charges")
     .select("id")
     .in("status", ["pending", "in_process"])
-    .not("mp_payment_id", "is", null)
     .order("created_at", { ascending: false })
     .limit(limit);
 

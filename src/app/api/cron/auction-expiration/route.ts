@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   }
   try {
     const result = await reconcileAuctionDeadlines(45000);
-    if(result.cancelled>0 || result.notifications>0){
+    if(result.cancelled>0 || result.notifications>0 || result.recoveryChecked>0){
     revalidateTag("dashboard",{expire:0});
     revalidatePath("/painel", "layout");
     revalidatePath("/admin/dashboard");

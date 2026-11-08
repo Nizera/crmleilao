@@ -17,6 +17,7 @@ import { ImageLightbox } from "@/components/client/image-lightbox";
 import { ReservationCountdown } from "@/components/raffles/reservation-countdown";
 import { rafflePhotos } from "@/lib/raffle-photos";
 import { toast } from "sonner";
+import { rafflePriceQuote } from "@/lib/raffle-pricing";
 import { reserveRaffle, refreshRaffleOrder, refreshRaffleOrders } from "@/app/actions/raffles";
 import { quotaLabel, raffleMoney, raffleStatus, type Raffle, type RaffleOrder, type RaffleAward } from "@/lib/raffles";
 import { Button } from "@/components/ui/button";
@@ -51,10 +52,13 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
     } catch { /* Seleção local inválida: o cliente escolhe novamente. */ }
   }, [guest,resume,c.id,c.selection_mode,c.min_quantity,c.max_quantity,c.total_numbers,numbers]);
   const qty = automatic ? quantity : selected.length;
+  const tiers=numberStates?.price_tiers??c.price_tiers??[];
+  const quote=rafflePriceQuote(numberStates?.unit_price??c.unit_price,tiers,qty);
   const valid = (automatic || numbers!==null) && Number.isInteger(qty) && qty >= c.min_quantity && qty <= c.max_quantity;
   const available = Math.max(0, c.total_numbers - d.paid - d.reserved);
   const images = rafflePhotos(c);
-  const instant = d.prizes.filter(p => p.kind === "instant");
+  const winners = new Map((numberStates?.instant_awards??[]).map(winner=>[winner.prize_id,winner]));
+  const instant = d.prizes.filter(p => p.kind === "instant").map(prize=>({...prize,found:prize.found||winners.has(prize.id),winner:winners.get(prize.id)}));
   useEffect(() => {
     if (c.status !== "open" || d.paid >= c.total_numbers) return;
     const timer=setInterval(()=>{if(document.visibilityState==="visible"&&!pending)router.refresh();},60000);
@@ -74,7 +78,19 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
         {buyers === null ? <p className="rf-caption">Ranking indisponível no momento.</p> : buyers.length === 0 ? <p className="rf-caption">O ranking aparece após os primeiros pagamentos confirmados.</p> : <ol className="grid gap-2">{buyers.map(buyer => <li key={buyer.position} className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/50 p-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ouro/15 text-xs font-bold text-ouro-ink">{buyer.position}º</span><span className="min-w-0 flex-1 break-words text-sm font-medium">{buyer.name}</span><strong className="shrink-0 text-xs tabular-nums">{buyer.quantity} {buyer.quantity === 1 ? "cota" : "cotas"}</strong></li>)}</ol>}
       </section>
       <details className="rf-panel"><summary className="cursor-pointer text-sm font-semibold">Prêmios e regulamento</summary><div className="mt-4 grid gap-4">{d.prizes.filter(p => p.kind === "main").sort(compareRafflePrizes).map(p => <div key={p.id} className="flex gap-3 rounded-xl bg-muted p-3"><Trophy size={18} className="shrink-0 text-ouro-ink" /><div><p className="text-xs text-muted-foreground">{raffleDrawPrizeLabel(p.title)}</p><p className="text-sm font-semibold">{p.title}</p></div></div>)}<p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{c.description}</p><div className="border-t pt-3"><h2 className="text-sm font-semibold">{c.draw_method === "federal" ? "Loteria Federal" : "Sorteador externo"}</h2><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{c.draw_rules}</p></div></div></details>
-      {instant.length > 0 && <details className="rf-panel" open><summary className="cursor-pointer text-sm font-semibold">Cotas premiadas <span className="ml-1 text-ouro-ink">{instant.filter(p => p.found).length}/{instant.length}</span></summary><div className="mt-4 grid gap-2">{instant.map(p => <div key={p.id} data-found={p.found} className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${p.found ? "border-dashed bg-muted/50" : "bg-background"}`}><div className="flex min-w-0 items-center gap-2"><Gift size={15} className="shrink-0 text-ouro-ink" /><div className="min-w-0"><span className={`text-sm font-medium ${p.found ? "text-muted-foreground line-through" : ""}`}>{p.title}</span>{Boolean(p.image_urls?.length) && <div className="mt-2 w-28"><RafflePhotos images={p.image_urls!} title={p.title} /></div>}</div></div><RaffleBadge status={p.found ? "paid" : "paused"}>{p.found ? "Encontrada · indisponível" : p.number !== null ? `Cota ${quotaLabel(p.number, c.total_numbers)}` : "Cota surpresa"}</RaffleBadge></div>)}<p className="rf-caption mt-2">A descoberta é confirmada depois do pagamento. O prêmio fica no seu cadastro.</p></div></details>}
+      {instant.length > 0 && <details className="rf-panel" open>
+        <summary className="cursor-pointer text-sm font-semibold">Cotas premiadas <span className="ml-1 text-ouro-ink">{instant.filter(p=>p.found).length}/{instant.length}</span></summary>
+        <div className="mt-4 grid gap-2">{instant.map(p=><div key={p.id} data-found={p.found} className={`flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${p.found?"border-amber-400/50 bg-amber-500/10":"border-emerald-500/40 bg-emerald-500/5"}`}>
+          <div className="flex min-w-0 flex-1 items-start gap-2"><Gift size={16} className={`mt-0.5 shrink-0 ${p.found?"text-amber-700 dark:text-amber-300":"text-emerald-700 dark:text-emerald-300"}`}/><div className="min-w-0">
+            <span className="break-words text-sm font-semibold">{p.title}</span>
+            {p.found&&p.winner?.confirmed&&p.winner.number!==null&&<p className="mt-1 break-words text-xs font-medium text-amber-800 dark:text-amber-200">Cota {quotaLabel(p.winner.number,c.total_numbers)} · Ganhador: {p.winner.winner_name??"Participante"}</p>}
+            {p.found&&p.winner&&!p.winner.confirmed&&<p className="mt-1 text-xs text-muted-foreground">Premiação em conferência pela equipe.</p>}
+            {!p.found&&p.number!==null&&<p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Cota {quotaLabel(p.number,c.total_numbers)}</p>}
+            {Boolean(p.image_urls?.length)&&<div className="mt-2 w-28"><RafflePhotos images={p.image_urls!} title={p.title}/></div>}
+          </div></div>
+          <RaffleBadge status={p.found?"paused":"paid"}>{p.found?(p.winner&&!p.winner.confirmed?"Em conferência":"Encontrada · indisponível"):"Disponível"}</RaffleBadge>
+        </div>)}<p className="rf-caption mt-2">O número e o ganhador são revelados após a confirmação do pagamento. Cotas surpresa disponíveis continuam ocultas.</p></div>
+      </details>}
       {d.results?.length > 0 && <section className="rf-panel grid gap-3 border-ouro/40"><h2 className="rf-panel-title"><Trophy size={18} className="text-ouro-ink" />Resultado do sorteio</h2>{d.results.map((r, i) => <div key={i} className="grid gap-2 rounded-xl bg-muted p-3 text-sm"><strong>{r.title} · Cota {quotaLabel(r.number, c.total_numbers)}</strong><p className="whitespace-pre-wrap text-muted-foreground">{r.note}</p>{r.status === "review" && <p>Resultado em análise pela equipe.</p>}{r.evidence?.startsWith("https://") && <a className="text-ouro-ink underline" href={r.evidence} target="_blank" rel="noopener noreferrer">Conferir resultado</a>}</div>)}</section>}
     </div>
     <section className="rf-panel grid min-w-0 gap-5"><div><h2 className="text-lg font-bold tracking-tight">{automatic ? "Quantas cotas você quer?" : "Escolha seus números"}</h2><p className="mt-1 text-xs text-muted-foreground">{available} disponíveis · De {quotaLabel(0, c.total_numbers)} a {quotaLabel(c.total_numbers - 1, c.total_numbers)}</p></div>
@@ -88,7 +104,8 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
         {selected.length > 0 && <div className="rounded-xl bg-muted p-3"><div className="mb-2 flex items-center justify-between gap-2 text-xs"><strong>Suas cotas</strong><button type="button" className="text-ouro-ink underline" disabled={pending} onClick={() => { setSelected([]); requestKey.current = null; }}>Limpar</button></div><p className="max-h-20 overflow-auto break-words text-xs tabular-nums text-muted-foreground">{selected.map(n => quotaLabel(n, c.total_numbers)).join(" · ")}</p></div>}
       </>}
       <p className="rf-caption">De {c.min_quantity} a {c.max_quantity} cotas por compra. Participações em rifas não geram Caracoins nem alteram seu elo.</p>
-      <div className={qty > 0 ? "rf-checkout" : "rf-checkout-empty"} data-guest={guest}><div className="min-w-0"><span className="text-[11px] text-muted-foreground">{qty > 0 ? `${qty} ${qty === 1 ? "cota selecionada" : "cotas selecionadas"}` : "Selecione suas cotas para continuar"}</span>{qty > 0 && <strong className="block text-lg font-bold tracking-tight text-ouro-ink">{raffleMoney(qty * c.unit_price)}</strong>}</div>{qty > 0 && <Button aria-label={guest ? "Entrar ou criar conta para reservar" : "Reservar e pagar com Pix"} className="h-auto min-h-10 max-w-44 whitespace-normal px-3 py-2 text-xs" disabled={pending || !valid || c.status !== "open" || !enabled} onClick={() => start(async () => {
+      {tiers.length>0&&<div className="grid gap-2 rounded-xl border border-ouro/30 bg-ouro/5 p-3 text-sm"><strong>Leve mais, pague menos por cota</strong>{tiers.map(t=><p key={t.min_quantity}>A partir de {t.min_quantity} cotas: <strong>{raffleMoney(t.unit_price)} cada</strong></p>)}<p className="text-xs text-muted-foreground">O preço da faixa vale para todas as cotas desta compra.</p>{quote.discount>0&&<p className="text-sm font-semibold text-ouro-ink">Desconto de {raffleMoney(quote.discount)} · {raffleMoney(quote.unit_price)} por cota</p>}</div>}
+      <div className={qty > 0 ? "rf-checkout" : "rf-checkout-empty"} data-guest={guest}><div className="min-w-0"><span className="text-[11px] text-muted-foreground">{qty > 0 ? `${qty} ${qty === 1 ? "cota selecionada" : "cotas selecionadas"}` : "Selecione suas cotas para continuar"}</span>{qty > 0 && <strong className="block text-lg font-bold tracking-tight text-ouro-ink">{raffleMoney(quote.total)}</strong>}</div>{qty > 0 && <Button aria-label={guest ? "Entrar ou criar conta para reservar" : "Reservar e pagar com Pix"} className="h-auto min-h-10 max-w-44 whitespace-normal px-3 py-2 text-xs" disabled={pending || !valid || c.status !== "open" || !enabled} onClick={() => start(async () => {
         if (guest) {
           try {
             sessionStorage.setItem(raffleIntentKey(c.id),JSON.stringify({automatic,quantity,numbers:selected}));
@@ -97,8 +114,8 @@ export function RaffleParticipation({ detail: d, from, enabled, guest=false, res
           return;
         }
         requestKey.current ??= crypto.randomUUID();
-        const r = await reserveRaffle({ campaign: c.id, key: requestKey.current, ...(automatic ? { quantity } : { numbers: selected }) });
-        if (!r.ok) { toast.error(r.error); return; }
+        const r = await reserveRaffle({ campaign: c.id, key: requestKey.current, expected_amount:quote.total, expected_unit_price:quote.unit_price, ...(automatic ? { quantity } : { numbers: selected }) });
+        if (!r.ok) { toast.error(r.error); router.refresh(); return; }
         router.push(`/painel/rifas?tab=orders&order=${r.data.id}`); router.refresh();
       })}><Ticket size={16} />{pending ? "Reservando…" : !enabled ? "Compras ainda não liberadas" : c.status !== "open" ? c.status === "closed" ? "Campanha encerrada" : "Vendas pausadas" : guest ? "Continuar" : "Reservar e pagar"}{enabled && c.status === "open" && !pending && <ArrowRight size={14} />}</Button>}{qty > 0 && <p className="rf-checkout-hint"><Clock3 size={11} />{guest ? "Entre para confirmar a reserva de 10 minutos." : "10 minutos para pagar após reservar"}</p>}{c.status !== "open" && <p className="rf-caption">{d.paid >= c.total_numbers ? "Todas as cotas já foram pagas. Aguarde a apuração." : "Esta campanha não está recebendo novas reservas."}</p>}</div>
     </section>
@@ -162,6 +179,7 @@ export function RaffleOrderCard({ order, awards }: { order: RaffleOrder; awards:
       <strong className="text-ouro-ink">{raffleMoney(order.amount)}</strong>
     </div>
     <p className="text-sm">{order.numbers.length} cota(s)</p>
+    {Number(order.discount_amount)>0&&<p className="text-xs text-muted-foreground">Promoção aplicada: {raffleMoney(Number(order.applied_unit_price))} por cota · desconto de {raffleMoney(Number(order.discount_amount))}.</p>}
     <div className="flex max-h-36 flex-wrap gap-2 overflow-y-auto">{order.numbers.map(n => <span key={n} className="rf-ticket">{quotaLabel(n, order.total_numbers)}</span>)}</div>
     {order.status === "paid" && <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="size-4" />Pagamento confirmado. Boa sorte!</p>}
     {order.status === "paid" && awards.filter(a => a.order_id === order.id && !a.cancelled_at).map(a => <div role="status" key={a.id} className="rf-winner"><p className="flex items-center gap-2 text-lg font-bold text-ouro-ink"><Gift className="size-6" />Você ganhou!</p>{a.photos?.[0] && <picture><img src={a.photos[0]} alt={a.title} className="mt-2 h-40 w-full rounded-lg bg-background object-contain" loading="lazy" referrerPolicy="no-referrer" /></picture>}<p className="mt-2 font-semibold">{a.title}</p><p className="mt-1 text-sm">Cota {quotaLabel(a.number, a.total_numbers)} · Já está vinculado ao seu cadastro.</p><Link className="rf-button rf-button-primary mt-2 w-fit" href="/painel/rifas?tab=awards">Ver meu prêmio<ChevronRight size={15} /></Link></div>)}

@@ -96,7 +96,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
         const result=await readSelfPaymentStates("auction",[activeId]);
         if(!disposed && result.ok){
           const current=result.data[0];
-          if(!current || current.status!==active?.status || current.hasQr!==Boolean(active?.qr_code) || current.expiresAt!==active?.expires_at)router.refresh();
+          if(!current || current.status!==active?.status || (current.hasQr&&Boolean(active?.pix_issue_since)) || current.expiresAt!==active?.expires_at)router.refresh();
         }
       }catch{ /* Mantém o Pix e repete a leitura; o webhook segue ativo. */ }
       finally{checking=false;}
@@ -104,7 +104,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
     const timer=setInterval(()=>void check(),30000);
     document.addEventListener("visibilitychange",check);
     return()=>{disposed=true;clearInterval(timer);document.removeEventListener("visibilitychange",check);};
-  },[activeId,active?.status,active?.qr_code,active?.expires_at,router]);
+  },[activeId,active?.status,active?.pix_issue_since,active?.expires_at,router]);
 
   const activeChargeIds = useMemo(
     () => new Set(charges.filter((charge) => isChargeActive(charge)).map((c) => c.id)),
@@ -143,7 +143,11 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       const result = await createSelfChargeAction(withFreight);
       if (!result.ok) {
         setServerError(result.error);
+        router.refresh();
         return;
+      }
+      if(!["pending","in_process"].includes(result.data.charge.status)){
+        toast.info("Esta tentativa foi encerrada. Confira o painel e gere um novo Pix se ainda houver valores pendentes.");router.refresh();return;
       }
       toast.success(`Cobrança ${result.data.charge.code} criada.`);
       // O QR abre aqui no painel — sem aba nova (que o navegador bloquearia).
@@ -295,11 +299,13 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
                   {isActive && (
                     <Button size="sm" onClick={() => qr.open(charge.id)} disabled={pending}>
                       <QrCode />
-                      Pagar
+                      {charge.pix_issue_since?"Conferir Pix":"Pagar"}
                     </Button>
                   )}
                 </span>
               </div>
+
+              {isActive&&charge.pix_issue_since&&<p role="status" className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">Estamos recuperando seu Pix. O prazo dos lotes vinculados está protegido durante essa recuperação. Toque em Conferir Pix para acompanhar.</p>}
 
               {charge.lots && charge.lots.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">

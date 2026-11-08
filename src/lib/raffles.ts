@@ -1,3 +1,4 @@
+import type { RafflePriceTier } from "@/lib/raffle-pricing";
 import { z } from "zod";
 import { isIsoDay } from "@/lib/dates";
 
@@ -16,8 +17,8 @@ export const raffleSchema = z.object({
   max_quantity: z.coerce.number().int().min(1).max(1000),
 }).refine(v => v.min_quantity <= v.max_quantity && v.max_quantity <= v.total_numbers, "Revise os limites de cotas.");
 
-export type Raffle = z.infer<typeof raffleSchema> & { id: string; status: string; created_at: string; archived_at?: string | null; image_urls?: string[] };
-export type RaffleOrder = { id: string; campaign_id: string; customer_id: string; code: string; amount: number; status: string; numbers: number[]; created_at: string; expires_at: string | null; reservation_expires_at?: string | null; external_reference: string; mp_order_id: string | null; qr_code: string | null; qr_code_base64: string | null; campaign_title?: string; total_numbers?: number; customer_name?: string };
+export type Raffle = z.infer<typeof raffleSchema> & { id: string; status: string; created_at: string; price_tiers?: RafflePriceTier[]; archived_at?: string | null; image_urls?: string[] };
+export type RaffleOrder = { base_unit_price?: number; applied_unit_price?: number; discount_amount?: number; price_tier_min?: number | null; id: string; campaign_id: string; customer_id: string; code: string; amount: number; status: string; numbers: number[]; created_at: string; expires_at: string | null; reservation_expires_at?: string | null; external_reference: string; mp_order_id: string | null; qr_code: string | null; qr_code_base64: string | null; campaign_title?: string; total_numbers?: number; customer_name?: string };
 export type RaffleAward = { photos?: string[]; order_status?: string; id: string; campaign_id: string; order_id: string | null; customer_id: string; title: string; number: number; total_numbers?: number; campaign_title: string; kind: string; logistics_id: string; moved_at: string | null; shipment_id: string | null; tracking_code: string | null; shipment_status: string | null; cancelled_at: string | null };
 export const quotaLabel = (number: number, total = 1000) => String(number).padStart(Math.max(3, String(total - 1).length), "0");
 export const raffleMoney = (value: number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { validateRafflePriceTiers } from "@/lib/raffle-pricing";
 import { instantPrizeBatchSchema } from "@/lib/raffle-prize-input";
 import { requireAdmin, requireCustomer } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -62,10 +63,27 @@ export async function createRaffle(input: unknown): Promise<ActionResult<string>
     await staff();
     const data = raffleSchema.safeParse(input);
     if (!data.success) return { ok: false, error: data.error.issues[0].message };
-    const { data: id, error } = await (await createClient()).rpc("save_raffle_campaign", { p_data: data.data });
+    let tiers;
+    try { tiers=validateRafflePriceTiers((input as {price_tiers?:unknown}).price_tiers??[],data.data.unit_price,data.data.max_quantity); } catch(error) { return {ok:false,error:(error as Error).message}; }
+    const { data: id, error } = await (await createClient()).rpc("save_raffle_campaign_with_promotions", { p_data: data.data,p_tiers:tiers });
     if (error) throw error;
     invalidate(); return { ok: true, data: String(id) };
   } catch (error) { return failure(error); }
+}
+
+export async function saveRafflePromotions(id:string,tiers:unknown,expected:unknown):Promise<ActionResult> {
+  try {
+    await staff();
+    if(!z.uuid().safeParse(id).success)return {ok:false,error:"Campanha inválida."};
+    const db=await createClient();
+    const {data:c,error:readError}=await db.from("raffle_campaigns").select("unit_price,max_quantity").eq("id",id).single();
+    if(readError||!c)throw readError??new Error("Campanha indisponível.");
+    let canonical;
+    try {canonical=validateRafflePriceTiers(tiers,Number(c.unit_price),c.max_quantity);} catch(error){return {ok:false,error:(error as Error).message};}
+    const {error}=await db.rpc("set_raffle_price_tiers",{p_campaign:id,p_tiers:canonical,p_expected:expected});
+    if(error)throw error;
+    invalidate();return {ok:true,data:null};
+  }catch(error){return failure(error);}
 }
 
 export async function uploadRaffleImage(form: FormData): Promise<ActionResult<string>> {
@@ -130,9 +148,11 @@ export async function reserveRaffle(input: unknown): Promise<ActionResult<Raffle
     const { customer } = await requireCustomer();
     if (!await rafflesEnabled()) return { ok: false, error: "As compras de cotas ainda não foram liberadas." };
     if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de reservar novamente." };
-    const p = z.object({ campaign: z.uuid(), key: z.uuid(), numbers: z.array(z.number().int().min(0).max(9999)).min(1).max(1000).optional(), quantity: z.number().int().min(1).max(1000).optional() }).safeParse(input);
+    const p = z.object({ campaign: z.uuid(), key: z.uuid(), numbers: z.array(z.number().int().min(0).max(9999)).min(1).max(1000).optional(), quantity: z.number().int().min(1).max(1000).optional(), expected_amount:z.number().positive().max(10000000).optional(), expected_unit_price:z.number().positive().max(10000).optional() }).safeParse(input);
     if (!p.success) return { ok: false, error: "Revise os números selecionados." };
-    const { data: id, error } = await (await createClient()).rpc("reserve_raffle", { p_campaign: p.data.campaign, p_key: p.data.key, p_numbers: p.data.numbers ?? null, p_quantity: p.data.quantity ?? null });
+    if((p.data.expected_amount===undefined)!==(p.data.expected_unit_price===undefined))return {ok:false,error:"Confira o preço e tente novamente."};
+    const quoted=p.data.expected_amount!==undefined;
+    const { data: id, error } = await (await createClient()).rpc(quoted?"reserve_raffle_at_price":"reserve_raffle", { p_campaign: p.data.campaign, p_key: p.data.key, p_numbers: p.data.numbers ?? null, p_quantity: p.data.quantity ?? null,...(quoted?{p_expected_amount:p.data.expected_amount,p_expected_unit_price:p.data.expected_unit_price}:{}) });
     if (error) throw error;
     const order = await ownRaffleOrder(String(id), customer.id);
     if (!order) throw new Error("Pedido não encontrado.");

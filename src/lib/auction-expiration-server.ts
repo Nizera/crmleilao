@@ -1,11 +1,14 @@
 import "server-only";
 import {getOrder,targetChargeStatus} from "@/lib/mercadopago";
 import {createAdminClient} from "@/lib/supabase/admin";
-import {cancelCharge,getChargeById,recoverChargeOrder} from "@/lib/charges-server";
+import {cancelCharge,getChargeById,recoverChargeOrder,syncChargeWithMp} from "@/lib/charges-server";
 
 /** Nunca cancela lotes antes de encerrar o Pix real; lotes mais novos continuam elegíveis. */
 export async function reconcileAuctionDeadlines(budgetMs=40000){
- const db=createAdminClient();const started=Date.now();let cancelled=0,failed=0,checked=0;
+ const db=createAdminClient();const started=Date.now();let cancelled=0,failed=0,checked=0,recoveryChecked=0;
+ const recovery=await db.from('charges').select('id').in('status',['pending','in_process']).not('pix_issue_since','is',null).lt('pix_attempts',4).or(`pix_last_attempt_at.is.null,pix_last_attempt_at.lte.${new Date(Date.now()-300000).toISOString()}`).order('pix_last_attempt_at',{ascending:true,nullsFirst:true}).limit(2);
+ if(recovery.error)throw new Error('Fila de recuperação do Pix indisponível.');
+ for(const charge of recovery.data??[]){if(Date.now()-started>budgetMs-12000)break;recoveryChecked++;try{await syncChargeWithMp(charge.id,true);}catch{failed++;}}
  const notice=await db.rpc("notify_auction_payment_deadlines");if(notice.error)throw new Error("Avisos de pagamento indisponíveis.");
  const handled=new Set<string>();
  while(Date.now()-started<budgetMs-1500){
@@ -40,5 +43,5 @@ export async function reconcileAuctionDeadlines(budgetMs=40000){
    }catch{failed++;}
   }
  }
- return {checked,cancelled,failed,notifications:Number(notice.data??0)};
+ return {checked,cancelled,failed,recoveryChecked,notifications:Number(notice.data??0)};
 }
