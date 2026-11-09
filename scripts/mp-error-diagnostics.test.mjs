@@ -30,9 +30,9 @@ test('402 com order: só recupera após GET autenticado com referência e valor 
   process.env.MP_ACCESS_TOKEN='test-only';
   for(const reference of ['expected','other']){
    const calls=[];
-   globalThis.fetch=async(url,options)=>{calls.push({url,options});return options.method==='POST'?Response.json({id:'ORD_failed_test',status:'failed',errors:[{code:'failed'}]},{status:402}):Response.json({id:'ORD_failed_test',status:'failed',status_detail:'rejected',total_amount:'10.00',external_reference:reference});};
+   globalThis.fetch=async(url,options)=>{calls.push({url,options});return options.method==='POST'?Response.json({id:'ORD_failed_test',status:'failed',errors:[{code:'failed'}]},{status:402}):Response.json({id:'ORD_failed_test',status:'failed',status_detail:'rejected',total_amount:'10.00',external_reference:reference,transactions:{payments:[{status:'failed',status_detail:'specific_rejection'}]}});};
    const attempt=createPixOrder({amount:10,description:'fixture',externalReference:'expected',payerEmail:'fixture@example.invalid'},{waitForQr:false});
-   if(reference==='expected'){const order=await attempt;assert.equal(order.orderId,'ORD_failed_test');assert.equal(order.status,'failed');assert.equal(order.qrCode,null);}else await assert.rejects(attempt,/402/);
+   if(reference==='expected'){const order=await attempt;assert.equal(order.orderId,'ORD_failed_test');assert.equal(order.status,'failed');assert.equal(order.statusDetail,'specific_rejection');assert.equal(order.qrCode,null);}else await assert.rejects(attempt,/402/);
    assert.equal(calls.length,2);assert.equal(calls.filter(c=>c.options.method==='POST').length,1);
    assert.equal(calls[0].options.headers['X-Idempotency-Key'],'expected');
   }

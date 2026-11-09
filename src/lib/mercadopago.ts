@@ -290,7 +290,7 @@ export async function createPixOrder(input: {
   return {
     orderId,
     status: order.status ?? payment?.status ?? "action_required",
-    statusDetail: order.status_detail ?? payment?.status_detail ?? "",
+    statusDetail: order.status==="failed"?(payment?.status_detail??order.status_detail??""):(order.status_detail??payment?.status_detail??""),
     ...qr,
     amount: Number(order.total_amount ?? payment?.amount ?? input.amount),
     dateOfExpiration:
@@ -343,7 +343,7 @@ export async function getOrder(orderId: string, signal?: AbortSignal): Promise<M
   return {
     id: json.id,
     status: json.status ?? payment?.status ?? "",
-    statusDetail: json.status_detail ?? payment?.status_detail ?? "",
+    statusDetail: json.status==="failed"?(payment?.status_detail??json.status_detail??""):(json.status_detail??payment?.status_detail??""),
     amount: Number(json.total_amount ?? payment?.amount ?? 0),
     externalReference: json.external_reference ?? null,
     dateApproved: (json as { date_approved?: string | null }).date_approved ?? null,
