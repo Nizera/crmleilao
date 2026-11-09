@@ -383,7 +383,7 @@ export async function createCharge(input: {
   const target=targetChargeStatus(order.status,order.statusDetail??"");
   if(target){
     await resolvePixIssue(charge.id);
-    await applyTransition(charge,target,{mpPaymentId:order.orderId,amount:order.amount,paidAt:target==="approved"?new Date().toISOString():null});
+    await applyTransition(charge,target,{mpPaymentId:order.orderId,amount:order.amount,paidAt:target==="approved"?new Date().toISOString():null,providerDetail:order.statusDetail});
     return (await getChargeById(charge.id))??charge;
   }
 
@@ -403,6 +403,7 @@ async function applyTransition(
     mpPaymentId?: string | null;
     amount?: number | null;
     paidAt?: string | null;
+    providerDetail?: string;
   } = {},
 ): Promise<TransitionResult> {
   const admin = createAdminClient();
@@ -510,6 +511,11 @@ async function applyTransition(
     });
   }
 
+  if(target!=="approved"){
+    const detail=opts.providerDetail&&/^[a-zA-Z0-9_-]{1,100}$/.test(opts.providerDetail)?opts.providerDetail:"unknown";
+    const diagnostic=await admin.from("charges").update({pix_issue_code:`provider:${target},${detail}`}).eq("id",charge.id).eq("status",target);
+    if(diagnostic.error)console.error('[charges] não foi possível guardar diagnóstico:',charge.code);
+  }
   return { ok: true };
 }
 
@@ -520,6 +526,7 @@ export async function settleChargeByReference(input: {
   mpPaymentId?: string | null;
   amount?: number | null;
   paidAt?: string | null;
+  providerDetail?: string;
 }): Promise<TransitionResult> {
   const charge = await getChargeByExternalReference(input.externalReference);
   if (!charge) return { ok: false, reason: "not_found" };
@@ -528,6 +535,7 @@ export async function settleChargeByReference(input: {
     mpPaymentId: input.mpPaymentId,
     amount: input.amount,
     paidAt: input.paidAt,
+    providerDetail: input.providerDetail,
   });
 }
 
@@ -560,7 +568,7 @@ export async function recoverChargeOrder(chargeId:string,signal?:AbortSignal,bac
  if(saved.error)throw new Error('Não foi possível recuperar a identificação do Pix.');
  const target=targetChargeStatus(order.status,order.statusDetail??'');
  if(order.qrCode||order.ticketUrl||target)await resolvePixIssue(charge.id);
- if(target){await applyTransition({...charge,mp_payment_id:order.orderId},target,{mpPaymentId:order.orderId,amount:order.amount});}
+ if(target){await applyTransition({...charge,mp_payment_id:order.orderId},target,{mpPaymentId:order.orderId,amount:order.amount,providerDetail:order.statusDetail});}
 }
 
 /** Cancelamento manual: devolve os lotes para elegíveis (status fica cancelled). */
@@ -638,6 +646,7 @@ export async function syncChargeWithMp(chargeId: string, background=false): Prom
     mpPaymentId: order.id,
     amount: order.amount,
     paidAt: order.dateApproved,
+    providerDetail: order.statusDetail,
   });
 }
 

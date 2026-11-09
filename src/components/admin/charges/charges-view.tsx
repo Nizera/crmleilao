@@ -384,6 +384,7 @@ export function ChargesView({
                   </TableCell>
                   <TableCell>
                     <ChargeStatusBadge status={charge.status} />
+                    {charge.status==="rejected"&&charge.pix_issue_code&&<p className="mt-1 max-w-48 break-words font-mono text-xs text-muted-foreground">{charge.pix_issue_code}</p>}
                     {open&&charge.pix_issue_since&&<div className="mt-2 max-w-48 text-xs text-amber-700 dark:text-amber-400"><strong>Pix precisa de acompanhamento</strong><p>Prazo dos lotes protegido.</p><p className="break-words font-mono">{charge.pix_issue_code??"preparing"}</p></div>}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">

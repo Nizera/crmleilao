@@ -30,7 +30,7 @@ test('falha ambígua preserva vínculo, pausa prazo e repete a mesma referência
 });
 test('QR recuperado preserva cobrança; falha terminal verificada libera somente o vínculo',async()=>{
  const valid=fixture();await valid.api.recoverChargeOrder('charge');assert.equal(valid.charge.mp_payment_id,'ORD_same');assert.equal(valid.charge.qr_code,'fixture-qr');assert.equal(valid.lot.charge_id,'charge');assert.equal(valid.resolved(),1);
- const failed=fixture({terminal:true});await failed.api.recoverChargeOrder('charge');assert.equal(failed.charge.status,'rejected');assert.equal(failed.lot.charge_id,null);assert.equal(failed.lot.status,'pending_payment');assert.ok(failed.resolved()>0);
+ const failed=fixture({terminal:true});await failed.api.recoverChargeOrder('charge');assert.equal(failed.charge.status,'rejected');assert.equal(failed.lot.charge_id,null);assert.equal(failed.lot.status,'pending_payment');assert.equal(failed.charge.pix_issue_code,'provider:rejected,rejected');assert.ok(failed.resolved()>0);
 });
 test('pagamento confirmado durante a recuperação nunca é sobrescrito por falha tardia',async()=>{
  const f=fixture({terminal:true,concurrentPaid:true});await f.api.recoverChargeOrder('charge');assert.equal(f.charge.status,'approved');assert.equal(f.lot.status,'paid');assert.equal(f.lot.charge_id,'charge');

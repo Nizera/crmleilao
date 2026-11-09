@@ -147,7 +147,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
         return;
       }
       if(!["pending","in_process"].includes(result.data.charge.status)){
-        toast.info("Esta tentativa foi encerrada. Confira o painel e gere um novo Pix se ainda houver valores pendentes.");router.refresh();return;
+        toast.info(result.data.charge.status==="rejected"?`O Mercado Pago não autorizou a geração deste Pix. Informe o código ${result.data.charge.code} à equipe para verificarmos; não é necessário tentar repetidamente.`:"Esta tentativa já foi encerrada. Atualize o painel para conferir o pagamento.");router.refresh();return;
       }
       toast.success(`Cobrança ${result.data.charge.code} criada.`);
       // O QR abre aqui no painel — sem aba nova (que o navegador bloquearia).
