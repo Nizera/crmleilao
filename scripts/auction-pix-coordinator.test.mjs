@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function fixture({failure=false,terminal=false,concurrentPaid=false}={}){
+function fixture({failure=false,terminal=false,concurrentPaid=false,invalidDocument=false}={}){
  const charge={id:'charge',customer_id:'customer',code:'C-TEST',status:'pending',amount:10,external_reference:'stable-reference',mp_payment_id:null,pix_issue_since:null};
  const lot={id:'lot',status:'pending_payment',charge_id:'charge'};const attempts=[];let leased=false,resolved=0;
- const db={from(table){let patch=null;const filters=[];const row=()=>table==='charges'?charge:table==='lots'?lot:{name:'Fixture',email:'fixture@example.invalid',cpf_cnpj:null};
+ const db={from(table){let patch=null;const filters=[];const row=()=>table==='charges'?charge:table==='lots'?lot:{name:'Fixture',email:'fixture@example.invalid',cpf_cnpj:invalidDocument?'11111111111':null};
   const execute=()=>{const r=row();const matches=filters.every(([k,values])=>values.includes(r[k]));if(matches&&patch)Object.assign(r,patch);return {data:matches?[{...r}]:[],error:null};};
   return {select(){return this},update(p){patch=p;return this},eq(k,v){filters.push([k,[v]]);return this},in(k,v){filters.push([k,v]);return this},or(){return this},single:async()=>({data:{...row()},error:null}),maybeSingle:async()=>({data:{...row()},error:null}),then(resolve){return Promise.resolve(execute()).then(resolve)}};
  },async rpc(name,args){
@@ -16,7 +16,8 @@ function fixture({failure=false,terminal=false,concurrentPaid=false}={}){
   if(name==='resolve_charge_pix_issue'){resolved++;charge.pix_issue_since=null;return {error:null};}
   throw Error(name);
  }};
- const deps={'server-only':{},'@/lib/auction-deadlines':{auctionDeadlineExpired:()=>false},'@/lib/charges':{isChargeOpen:s=>['pending','in_process'].includes(s)},'@/lib/supabase/admin':{createAdminClient:()=>db},'@/lib/lots':{formatBRL:String},'@/lib/notifications-server':{notifyCustomer:async()=>{}},'@/lib/mercadopago':{
+ const documentExports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/brazilian-document.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:documentExports});
+ const deps={'@/lib/brazilian-document':documentExports,'server-only':{},'@/lib/auction-deadlines':{auctionDeadlineExpired:()=>false},'@/lib/charges':{isChargeOpen:s=>['pending','in_process'].includes(s)},'@/lib/supabase/admin':{createAdminClient:()=>db},'@/lib/lots':{formatBRL:String},'@/lib/notifications-server':{notifyCustomer:async()=>{}},'@/lib/mercadopago':{
   async createPixOrder(input){attempts.push(input);if(failure)throw Object.assign(new Error('provider failure'),{httpStatus:402,codes:['failed']});if(concurrentPaid){charge.status='approved';lot.status='paid';}return {orderId:'ORD_same',status:terminal?'failed':'action_required',statusDetail:terminal?'rejected':'waiting_transfer',amount:10,qrCode:terminal?null:'fixture-qr',qrCodeBase64:null,ticketUrl:null,dateOfExpiration:null};},targetChargeStatus:s=>s==='failed'?'rejected':null
  }};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/charges-server.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Date,console:{error(){},warn(){}},require:name=>deps[name]});
@@ -34,4 +35,9 @@ test('QR recuperado preserva cobrança; falha terminal verificada libera somente
 });
 test('pagamento confirmado durante a recuperação nunca é sobrescrito por falha tardia',async()=>{
  const f=fixture({terminal:true,concurrentPaid:true});await f.api.recoverChargeOrder('charge');assert.equal(f.charge.status,'approved');assert.equal(f.lot.status,'paid');assert.equal(f.lot.charge_id,'charge');
+});
+
+test('CPF inválido impede envio ao provedor sem soltar ou cancelar lotes',async()=>{
+ const f=fixture({invalidDocument:true});await f.api.recoverChargeOrder('charge');assert.equal(f.attempts.length,0);assert.equal(f.charge.status,'pending');assert.equal(f.lot.charge_id,'charge');assert.match(f.charge.pix_issue_code,/invalid_document/);
+ await assert.rejects(f.api.createCharge({customerId:'customer',lotIds:['lot'],createdBy:null}),/CPF\/CNPJ.*inválido/);assert.equal(f.attempts.length,0);
 });

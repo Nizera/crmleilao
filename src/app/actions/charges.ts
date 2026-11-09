@@ -1,4 +1,5 @@
 "use server";
+import {isValidBrazilianDocument} from "@/lib/brazilian-document";
 
 import { revalidatePath, updateTag } from "next/cache";
 
@@ -185,13 +186,14 @@ export async function createSelfChargeAction(
     // Validação esperada: orientar o cliente sem expor erros internos.
     const { data: paymentProfile, error: paymentProfileError } = await createAdminClient()
       .from("customers")
-      .select("email")
+      .select("email,cpf_cnpj")
       .eq("id", customer.id)
       .single();
     if (paymentProfileError) throw new Error("Falha ao conferir cadastro para pagamento.");
     if (!paymentProfile.email?.trim()) {
       return failure("Para gerar seu Pix, cadastre seu e-mail em Meus dados. Depois, volte aqui e tente novamente. Se precisar, peça ajuda à equipe.");
     }
+    if(paymentProfile.cpf_cnpj?.trim()&&!isValidBrazilianDocument(paymentProfile.cpf_cnpj))return failure("O CPF/CNPJ cadastrado está inválido. Corrija em Meus dados ou peça ajuda à equipe antes de gerar o Pix.");
     const { activeCharge } = await getChargeContext(customer.id);
     if (activeCharge) {
       const existing=await getChargeById(activeCharge.id);

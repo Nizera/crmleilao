@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { toE164 } from "@/lib/phone";
+import {isValidBrazilianDocument} from "@/lib/brazilian-document";
 
 /** Forma canônica do telefone guardada em `customers.phone_e164`. */
 export const e164Pattern = /^\+\d{12,13}$/;
@@ -36,6 +37,7 @@ export const customerFormSchema = z.object({
     .string()
     .trim()
     .max(20, "CPF/CNPJ muito longo")
+    .refine(value=>!value||isValidBrazilianDocument(value),"CPF/CNPJ inválido: confira o número completo.")
     .optional(),
   notes: z
     .string()
@@ -66,10 +68,7 @@ export const shippingFormSchema = z.object({
     .string()
     .trim()
     .max(20, "CPF/CNPJ muito longo")
-    .refine((value) => {
-      const digits = value.replace(/\D/g, "");
-      return digits.length === 11 || digits.length === 14;
-    }, "CPF inválido: informe 11 dígitos"),
+    .refine(isValidBrazilianDocument,"CPF/CNPJ inválido: confira o número completo e os dígitos finais."),
   address_cep: z
     .string()
     .trim()

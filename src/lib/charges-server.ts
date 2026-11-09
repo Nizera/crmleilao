@@ -1,4 +1,5 @@
 import "server-only";
+import {isValidBrazilianDocument} from "@/lib/brazilian-document";
 import {auctionDeadlineExpired} from "@/lib/auction-deadlines";
 
 import {
@@ -195,6 +196,7 @@ export async function createCharge(input: {
     throw new Error(`Falha ao carregar cliente: ${customerError.message}`);
   }
   if (!customer) throw new Error("Cliente não encontrado.");
+  if(customer.cpf_cnpj?.trim()&&!isValidBrazilianDocument(customer.cpf_cnpj))throw new Error("O CPF/CNPJ do cliente está inválido. Corrija o cadastro antes de gerar o Pix.");
 
   const eligible = await listEligibleLotRefs(input.customerId);
   const picked = input.includeAllEligibleLots
@@ -559,6 +561,7 @@ export async function recoverChargeOrder(chargeId:string,signal?:AbortSignal,bac
  }
  const {data:customer,error}=await admin.from('customers').select('name,email,cpf_cnpj').eq('id',charge.customer_id).single();
  if(error||!customer?.email)throw new Error('Não foi possível recuperar o Pix.');
+ if(customer.cpf_cnpj?.trim()&&!isValidBrazilianDocument(customer.cpf_cnpj)){await recordPixIssue(charge.id,{httpStatus:400,codes:['invalid_document']});return;}
  const [first,...rest]=(customer.name||'Cliente').trim().split(/\s+/);const digits=(customer.cpf_cnpj||'').replace(/\D/g,'');
  let order;
  try{order=await createPixOrder({amount:Number(charge.amount),description:charge.description||'Arremates acumulados',externalReference:charge.external_reference,payerEmail:customer.email.trim(),payerFirstName:first,payerLastName:rest.join(' ')||undefined,identification:digits.length===11||digits.length===14?{type:digits.length===11?'CPF':'CNPJ',number:digits}:undefined},{waitForQr:false,signal});}
