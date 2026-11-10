@@ -342,6 +342,7 @@ export async function saveLot(
 export async function setLotStatus(
   id: string,
   status: LotStatus,
+  recoverExpiredOnly = false,
 ): Promise<ActionResult<{ status: LotStatus }>> {
   try {
     const { profile } = await requireAdmin();
@@ -355,11 +356,14 @@ export async function setLotStatus(
     const supabase = await createClient();
     const { data: lot } = await supabase
       .from("lots")
-      .select("id, code, paid_at, shipped_at, status, charge_id")
+      .select("id, code, paid_at, shipped_at, status, charge_id, payment_expired_at")
       .eq("id", id)
       .maybeSingle();
 
     if (!lot) return failure("Lote não encontrado.");
+    if (recoverExpiredOnly && (status !== "pending_payment" || lot.status !== "cancelled" || !lot.payment_expired_at || lot.charge_id || lot.paid_at || lot.shipped_at)) {
+      return failure("Só é possível recuperar lotes cancelados por prazo, sem pagamento ou envio. Atualize a tela.");
+    }
     const financialChange = lot.status !== status && (lot.status === "pending_payment" || ["pending_payment", "cancelled"].includes(status));
     if (financialChange) {
       try {
@@ -411,9 +415,12 @@ export async function setLotStatus(
     if (["pending_payment", "cancelled"].includes(status)) {
       patch.moved_at = null;
     }
+    // O trigger do banco reinicia o prazo e os avisos ao reabrir um lote expirado.
+    if (recoverExpiredOnly) patch.pix_paused_at = null;
 
     let update = supabase.from("lots").update(patch).eq("id", id).eq("status", lot.status);
     if (financialChange) update = update.eq("status", lot.status).is("charge_id", null).is("paid_at", null);
+    if (recoverExpiredOnly) update = update.eq("payment_expired_at", lot.payment_expired_at).is("shipped_at", null);
     const { data: updated, error } = await update.select("id");
     if (error) return failure(`Falha ao atualizar status: ${error.message}`);
     if (!updated?.length) return failure("O lote mudou durante a operação. Atualize a tela e tente novamente.");
@@ -429,6 +436,11 @@ export async function setLotStatus(
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");
   }
+}
+
+/** Recuperação administrativa; nunca reusa uma cobrança encerrada. */
+export async function recoverExpiredLotAction(id: string): Promise<ActionResult<{ status: LotStatus }>> {
+  return setLotStatus(id, "pending_payment", true);
 }
 
 /**

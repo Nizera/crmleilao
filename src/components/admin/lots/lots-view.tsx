@@ -14,11 +14,12 @@ import {
   Search,
   ArrowDownUp,
   Images,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { inviteLinkForCustomer } from "@/app/actions/invites";
-import { getLotDetailAction, logWaMessage, setLotStatus } from "@/app/actions/lots";
+import { getLotDetailAction, logWaMessage, setLotStatus, recoverExpiredLotAction } from "@/app/actions/lots";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
 import { ImageLightbox } from "@/components/client/image-lightbox";
@@ -181,6 +182,16 @@ export function LotsView({
     startTransition(async () => {
       const result = await setLotStatus(lot.id, next);
       if (!result.ok) toast.error(result.error);
+    });
+  };
+
+  const recoverLot = (lot: Lot) => {
+    if (!window.confirm("Recuperar este lote? Ele voltará para o cliente com um novo prazo de 24 horas para pagamento. O Pix anterior não será reutilizado.")) return;
+    startTransition(async () => {
+      const result = await recoverExpiredLotAction(lot.id);
+      if (!result.ok) { toast.error(result.error); return; }
+      toast.success("Lote recuperado. O cliente tem um novo prazo de 24 horas para pagar.");
+      router.refresh();
     });
   };
 
@@ -422,6 +433,12 @@ export function LotsView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
+                      {lot.status === "cancelled" && lot.payment_expired_at && (
+                        <DropdownMenuItem disabled={pending} onSelect={() => recoverLot(lot)}>
+                          <RotateCcw />
+                          Recuperar lote
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onSelect={() => openImages(lot)}>
                         <Images />
                         Ver imagens

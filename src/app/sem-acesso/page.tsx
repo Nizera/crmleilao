@@ -47,11 +47,12 @@ export default async function SemAcessoPage({
   ]);
 
   const fromClientArea = motivo === "cliente";
+  const blocked=motivo==="advertencias";
 
-  const title = fromClientArea
+  const title = blocked?"Acesso bloqueado por advertências":fromClientArea
     ? "Esta área é para clientes"
     : "Você não tem acesso à equipe";
-  const description = fromClientArea
+  const description = blocked?"Sua conta atingiu 3 advertências. Fale com a equipe do leilão para revisar e liberar o acesso. Seus lotes, pagamentos e prêmios foram preservados.":fromClientArea
     ? adminProfile
       ? "Você faz parte da equipe — o painel do cliente é para os participantes do leilão."
       : "Seu número ainda não está vinculado a um cliente. Peça ao admin para cadastrar seu WhatsApp ao lançar um lote."
@@ -59,7 +60,7 @@ export default async function SemAcessoPage({
       ? "Sua conta dá acesso ao painel do cliente, não ao painel interno da equipe."
       : "Peça ao dono para adicionar seu e-mail à equipe e rode o add_admin no SQL Editor.";
 
-  const altLink = fromClientArea
+  const altLink = blocked?null:fromClientArea
     ? adminProfile
       ? { href: "/admin", label: "Ir para o painel da equipe" }
       : null
@@ -88,7 +89,7 @@ export default async function SemAcessoPage({
           )}
           <div className="flex items-center justify-between gap-3">
             <Badge variant="outline">
-              {fromClientArea ? "Área do cliente" : "Área da equipe"}
+              {fromClientArea||blocked ? "Área do cliente" : "Área da equipe"}
             </Badge>
             <EndSessionButton />
           </div>

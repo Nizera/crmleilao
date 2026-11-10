@@ -39,7 +39,14 @@ export type Customer = {
   id: string;
   name: string | null;
   phone_e164: string;
+  warning_count?: number;
 };
+
+function customerAccessState(value:unknown):{warning_count:number;blocked_at:string|null}|null {
+  // PostgREST pode tipar a relação como lista quando não há schema gerado local.
+  const state=Array.isArray(value)?value[0]:value;
+  return (state??null) as {warning_count:number;blocked_at:string|null}|null;
+}
 
 /**
  * Usuário autenticado (qualquer um dos dois fluxos).
@@ -93,15 +100,18 @@ export const requireCustomer = cache(async () => {
 
   if (!user) redirect("/painel/login");
 
-  const { data: customer } = await supabase
+  const { data: customer, error: customerError } = await supabase
     .from("customers")
-    .select("id, name, phone_e164")
+    .select("id, name, phone_e164, access:customer_access_state(warning_count,blocked_at)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
+  if(customerError)throw new Error("Não foi possível conferir o acesso ao painel.");
   if (!customer) redirect("/sem-acesso?motivo=cliente");
+  const access=customerAccessState(customer.access);
+  if(access?.blocked_at)redirect("/sem-acesso?motivo=advertencias");
 
-  return { user, customer: customer as Customer };
+  return { user, customer: {...customer,warning_count:access?.warning_count??0} as Customer };
 });
 
 export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
@@ -343,6 +353,7 @@ export const searchCustomers = cache(
 /* -------------------------------------------------------------------------- */
 
 export type CustomerDetail = Customer & {
+  access?: {warning_count:number;blocked_at:string|null}|null;
   email: string | null;
   cpf_cnpj: string | null;
   notes: string | null;
@@ -352,7 +363,7 @@ export type CustomerDetail = Customer & {
 };
 
 const CUSTOMER_COLUMNS =
-  "id, name, phone_e164, email, cpf_cnpj, auth_user_id, created_at, updated_at";
+  "id, name, phone_e164, email, cpf_cnpj, auth_user_id, created_at, updated_at, access:customer_access_state(warning_count,blocked_at)";
 
 export type CustomerPage = {
   rows: CustomerDetail[];
@@ -406,7 +417,7 @@ export async function listCustomersPage(params: {
   );
 
   return {
-    rows: rows.map((row) => ({ ...row, notes: notes.get(row.id) ?? null })),
+    rows: rows.map((row) => ({ ...row, access:customerAccessState(row.access), notes: notes.get(row.id) ?? null })),
     total: count ?? 0,
     page,
     pageSize,
@@ -426,7 +437,7 @@ export const getCustomer = cache(
     if (!data) return null;
 
     const notes = await loadNotes("customer", [id]);
-    return { ...(data as CustomerDetail), notes: notes.get(id) ?? null };
+    return { ...(data as unknown as CustomerDetail), access:customerAccessState(data.access), notes: notes.get(id) ?? null };
   },
 );
 

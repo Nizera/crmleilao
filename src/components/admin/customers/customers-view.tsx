@@ -140,6 +140,7 @@ export function CustomersView({ rows, total, page, pageSize, q, issue = "all", d
                     {customer.name || "Sem nome"}
                   </Link>
                   {issue !== "all" && <span className="block text-xs text-amber-700 dark:text-amber-300">{CUSTOMER_ISSUES[issue]}</span>}
+                  {(customer.access?.warning_count??0)>0&&<span className={`block text-xs ${customer.access?.blocked_at?"text-red-600":"text-amber-700 dark:text-amber-300"}`}>{customer.access?.blocked_at?"Acesso bloqueado":`${customer.access?.warning_count}/3 advertências`}</span>}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {formatPhoneBR(customer.phone_e164)}

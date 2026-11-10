@@ -17,5 +17,11 @@ test('prazo apenas para lotes novos: antigos não expiram nem recebem avisos ap�
   assert.equal(Number(await scalar('select extract(epoch from(payment_due_at-created_at)) from lots where id=$1',[another])),86400);
   await db.exec(await migration('0063_future_lots_only_deadlines.sql'));assert.equal(await scalar('select payment_due_at from lots where id=$1',[old]),null);assert.equal(String(await scalar('select payment_due_at from lots where id=$1',[fresh])),original);
   assert.equal(await scalar('select status from lots where id=$1',[old]),'pending_payment');assert.equal(Number(await scalar('select arremate_value from lots where id=$1',[old])),30);
+  // Recuperar mantém o cadastro original e reinicia prazo/avisos a partir de agora.
+  await db.query("update lots set payment_due_at=now()-interval '1 hour',payment_reminded_at=now(),payment_last_warning_at=now() where id=$1",[fresh]);
+  assert.equal(await scalar('select expire_unpaid_auction_lot($1)',[fresh]),true);
+  await db.query("update lots set status='pending_payment' where id=$1",[fresh]);
+  const recovered=(await db.query('select payment_expired_at,payment_reminded_at,payment_last_warning_at,charge_id,extract(epoch from (payment_due_at-now())) remaining from lots where id=$1',[fresh])).rows[0];
+  assert.equal(recovered.payment_expired_at,null);assert.equal(recovered.payment_reminded_at,null);assert.equal(recovered.payment_last_warning_at,null);assert.equal(recovered.charge_id,null);assert.ok(Number(recovered.remaining)>86390&&Number(recovered.remaining)<=86400);
  }finally{await db.close();}
 });

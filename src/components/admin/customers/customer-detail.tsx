@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { deleteCustomer } from "@/app/actions/customers";
 import { createCustomerInvite } from "@/app/actions/invites";
 import { CustomerFormSheet } from "@/components/admin/customers/customer-form";
+import {CustomerAccess} from "@/components/admin/customers/customer-access";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ import {
 } from "@/lib/lots";
 
 type Props = {
+  accessEvents: {id:string;kind:string;reason:string;created_at:string}[];
   customer: CustomerDetail;
   lots: Lot[];
   total: number;
@@ -64,6 +66,7 @@ type Props = {
 };
 
 export function CustomerDetailView({
+  accessEvents,
   customer,
   lots,
   total,
@@ -194,6 +197,7 @@ export function CustomerDetailView({
         </div>
       </div>
 
+      <CustomerAccess customer={customer.id} count={customer.access?.warning_count??0} blocked={Boolean(customer.access?.blocked_at)} events={accessEvents}/>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Lotes" value={String(stats.total)} />
         <StatCard
