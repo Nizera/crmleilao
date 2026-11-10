@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
-import { ArrowLeft, Loader2, Plus, Search, Truck } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Search, Truck, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import {
@@ -237,6 +238,7 @@ function ShipmentForm({
     if (context.missing.length > 0) {
       return `Faltam dados do destinatário: ${context.missing.join(", ")}.`;
     }
+    if (context.paymentBlock) return context.paymentBlock;
     if (context.storeBlock) return context.storeBlock;
     if (picked.size === 0 && !context.storeOrders.length && !context.logisticsPending.some(i=>i.source_kind==='raffle')) return "Selecione um lote ou confira os produtos e prêmios disponíveis.";
     if(context.storeOrders.some(o=>!o.boxed_at||!o.shipping_declared_value))return "Confira a separação e o valor declarado dos pedidos da loja.";
@@ -402,13 +404,14 @@ function ShipmentForm({
             <>
               {context.missing.length > 0 && (
                 <div className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
-                  <p className="font-medium">Faltam dados para a etiqueta:</p>
+                  <p className="flex items-center gap-2 font-medium"><TriangleAlert className="size-4 shrink-0" />Revise o cadastro para emitir:</p>
                   <p>{context.missing.join(", ")}.</p>
                   <p className="text-xs">
-                    Preencha na ficha do cliente e abra de novo.
+                    <Link href={`/admin/clientes/${selected.id}`} target="_blank" rel="noopener noreferrer" className="font-medium underline">Abrir ficha do cliente</Link>. Após salvar, feche e reabra este envio para conferir os dados.
                   </p>
                 </div>
               )}
+              {context.paymentBlock && <div role="alert" className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"><TriangleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Pagamento pendente</p><p className="mt-1 break-words">{context.paymentBlock}</p><p className="mt-1 text-xs">Conferência pela data prevista deste envio. Lotes de datas futuras não bloqueiam esta etiqueta.</p></div></div>}
 
               {context.addressLine && (
                 <div className="rounded-md border px-3 py-2.5 text-sm">
@@ -662,6 +665,7 @@ function ShipmentForm({
 
       {selected && context && !loadingContext && (
         <div className="mt-auto flex flex-col gap-2 border-t pt-4">
+          {blockedReason && <p role="status" className="flex items-start gap-2 break-words rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-400"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{blockedReason}</p>}
           {step === "form" && (
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">

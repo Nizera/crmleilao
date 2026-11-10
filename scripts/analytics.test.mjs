@@ -32,6 +32,7 @@ function statsFor(lots, from, to, extra = {}) {
       eq(key,value) { rows=rows.filter(r=>r[key]===value);return this; },
       gt(key,value) { rows=rows.filter(r=>Number(r[key])>value);return this; },
       gte(key,value) { rows=rows.filter(r=>Date.parse(r[key])>=Date.parse(value));return this; },
+      lte(key,value) { rows=rows.filter(r=>Date.parse(r[key])<=Date.parse(value));return this; },
       lt(key,value) { rows=rows.filter(r=>Date.parse(r[key])<Date.parse(value));return this; },
       in(key, values) { rows = rows.filter(row => values.includes(row[key])); return this; },
       order() { return this; },
@@ -91,6 +92,7 @@ test('prêmios zerados não reduzem ticket ou contam como vendas; logística e f
   ];
   const result = await statsFor(rows, undefined, undefined, {
     charges: [{ id: 'prize-freight', customer_id: 'winner', status: 'approved', freight_amount: 20, paid_at: '2026-10-27T18:00:00Z' }],
+    shipments: [{id:'prize-shipment',status:'pending',batch_date:'2026-10-27'}],
     shipment_lots: [{ lot_id: 'prize', shipment_id: 'prize-shipment', shipment: { id: 'prize-shipment', status: 'pending' } }],
   });
   assert.equal(result.revenue.ticket, 150);
@@ -285,6 +287,7 @@ test('todas as KPIs seguem o leilão; mensal/acumulado não sofrem corte e Pix m
       { charge_id: 'mixed', customer_id: 'a', first_lot_id: 'old', freight_period: '2026-10-27', freight_amount: 20 },
       { charge_id: 'b', customer_id: 'b', first_lot_id: 'b', freight_period: '2026-10-27', freight_amount: 20 },
     ],
+    shipments: [{id:'selected',status:'pending',batch_date:'2026-10-27'},{id:'outside',status:'delivered',batch_date:'2026-10-26'}],
     shipment_lots: [
       { lot_id: 'b', shipment_id: 'selected', shipment: { id: 'selected', status: 'pending' } },
       { lot_id: 'outside', shipment_id: 'outside', shipment: { id: 'outside', status: 'delivered' } },
@@ -402,4 +405,24 @@ test('fechamento e frete têm identidades distintas ao trocar o período', () =>
 test('lotes expirados automaticamente não aparecem em nenhuma KPI do dashboard',async()=>{
  const kept=lot(40,{status:'pending_payment',paid_at:null});const expired=lot(80,{status:'cancelled',paid_at:null,payment_expired_at:'2026-10-28T00:00:00Z'});
  const before=await statsFor([kept],'2026-10-27T00:00','2026-10-28T23:59');const after=await statsFor([kept,expired],'2026-10-27T00:00','2026-10-28T23:59');assert.deepEqual(JSON.parse(JSON.stringify(after)),JSON.parse(JSON.stringify(before)));
+});
+
+
+test('envios usam a data prevista, incluindo loja/prêmios sem lote e lotes antigos', async () => {
+ const shipments=[
+  {id:'old-lots',status:'released',batch_date:'2026-10-27'},
+  {id:'raffle-only',status:'posted',batch_date:'2026-10-27'},
+  {id:'store-only',status:'delivered',batch_date:'2026-10-27'},
+  {id:'cancelled',status:'cancelled',batch_date:'2026-10-27'},
+  {id:'next-day',status:'pending',batch_date:'2026-10-28'},
+  {id:'outside',status:'released',batch_date:'2026-10-29'},
+ ];
+ const day=await statsFor([],undefined,undefined,{shipments});
+ assert.equal(day.shipments.toShip,1);assert.equal(day.shipments.posted,1);assert.equal(day.shipments.delivered,1);
+ const overnight=await statsFor([],'2026-10-27T20:00','2026-10-28T01:00',{shipments});
+ assert.equal(overnight.shipments.toShip,2);
+ const midnight=await statsFor([],'2026-10-27T20:00','2026-10-28T00:00',{shipments});
+ assert.equal(midnight.shipments.toShip,1);
+ const paginated=await statsFor([],undefined,undefined,{shipments:Array.from({length:1005},(_,i)=>({id:'s'+i,status:'released',batch_date:'2026-10-27'}))});
+ assert.equal(paginated.shipments.toShip,1005);
 });

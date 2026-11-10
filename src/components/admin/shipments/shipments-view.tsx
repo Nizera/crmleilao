@@ -1,11 +1,13 @@
 "use client";
 
 import { unifiedShipmentRows, shipmentListSummary } from "@/lib/shipment-list";
+import { shipmentQueueIssues } from "@/lib/shipment-readiness";
 import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
+  TriangleAlert,
   MoreHorizontal,
   Plus,
   Search,
@@ -472,7 +474,7 @@ export function ShipmentsView({
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Ordenar por<select aria-label="Ordenar fila de envios" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={queueSort} onChange={e => setQueueSort(e.target.value)}><option value="name">Cliente · A a Z</option><option value="unpaid">Fretes não pagos primeiro</option><option value="paid_total">Maior total pago em lotes</option><option value="unpaid_total">Maior valor de lotes não pagos</option></select></label>
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">Alteração de valor<select aria-label="Alteração de custo" className="h-10 rounded-md border bg-background px-3 text-sm" value={costFilter} onChange={e=>{setCostFilter(e.target.value);setListPage(1);}}><option value="all">Todos os valores</option><option value="changed">Com alteração</option><option value="increase">Aumento</option><option value="decrease">Redução</option></select></label>
         {(freightFilter !== "all" || queueStatus !== "all" || queueSort !== "name" || costFilter !== "all") && <Button variant="ghost" size="sm" className="w-fit" onClick={() => { setFreightFilter("all"); setQueueStatus("all"); setQueueSort("name"); setCostFilter("all"); setListPage(1); }}>Limpar filtros</Button>}
-        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-4">Exibindo {displayedQueue.length} de {allRows.length} registros da data selecionada.</p>
+        <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-4">Exibindo {displayedQueue.length} de {allRows.length} registros da data selecionada. {displayedQueue.filter(row => !row.pendingShipment && shipmentQueueIssues(row).length > 0).length} pacote(s) com pendências para emitir.</p>
       </div>}
 
       {isQueue && (
@@ -493,6 +495,7 @@ export function ShipmentsView({
             <TableBody>
               {visibleRows.map((row) => {
                 const shipment = row.pendingShipment;
+                const issues = shipment ? [] : shipmentQueueIssues(row);
                 const byStatus = row.lots.reduce<Record<string, number>>((acc, lot) => {
                   acc[lot.status] = (acc[lot.status] ?? 0) + 1;
                   return acc;
@@ -507,6 +510,7 @@ export function ShipmentsView({
                       >
                         {row.name ?? "Sem nome"}
                       </Link>
+                      {issues.length > 0 && <details className="mt-2 max-w-72 whitespace-normal text-xs"><summary className="flex cursor-pointer items-center gap-1 font-medium text-amber-700 dark:text-amber-400"><TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />{issues.length} {issues.length === 1 ? "pendência para emitir" : "pendências para emitir"}</summary><div className="mt-2 grid gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">{issues.map(issue => <p className="break-words" key={issue}>{issue}</p>)}{(row.recipientIssues?.length ?? 0) > 0 && <Link className="mt-1 font-medium underline" href={`/admin/clientes/${row.customerId}`}>Completar cadastro</Link>}</div></details>}
                       <span className="block text-xs text-muted-foreground">
                         {formatPhoneBR(row.phone_e164)}{(row.storeOrderCount??0)>0&&<span className="block text-ouro-ink">{row.storeOrderCount} pedido(s) da loja</span>}{(row.raffleAwardCount??0)>0&&<span className="block text-ouro-ink">{row.raffleAwardCount} prêmio(s) de rifa</span>}
                       </span>
@@ -584,12 +588,12 @@ export function ShipmentsView({
                           </DropdownMenuContent></DropdownMenu>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1"><Button
+                        <div className="flex flex-wrap items-center gap-1"><Button
                           size="sm"
-                          disabled={!canCreate || (row.blockingUnpaidTotal ?? row.unpaidTotal) > 0 || row.hasActiveCharge || (!row.companyFreight && row.freightStatus !== "paid")}
+                          disabled={!canCreate || issues.length > 0}
                           onClick={() => setEmitTarget(row)}
                           title={
-                            (row.blockingUnpaidTotal ?? row.unpaidTotal) > 0
+                            issues.length > 0 ? issues.join(" ") : (row.blockingUnpaidTotal ?? row.unpaidTotal) > 0
                               ? "Há lotes pendentes de pagamento para este cliente."
                               : row.hasActiveCharge
                                 ? "O cliente tem uma cobrança aguardando pagamento."
@@ -606,6 +610,7 @@ export function ShipmentsView({
                         >
                           Emitir envio
                         </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEmitTarget(row)} title="Conferir cadastro, pagamentos e conteúdo antes de emitir">Conferir</Button>
                         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72"><DropdownMenuItem disabled={row.freightStatus==='paid'||row.companyFreight} onClick={()=>releaseFreight(row)}>Liberar frete · pago por fora</DropdownMenuItem><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releasePrizeFreight(row)}>Frete da empresa · prêmios de R$ 0</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
                       )}
                     </TableCell>

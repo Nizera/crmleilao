@@ -189,7 +189,7 @@ export default async function DashboardPage({
       </div>
       <DashboardDatePicker key={period.from + period.to} period={period} today={today} />
       {periodError && <p role="alert" className="text-sm text-destructive">{periodError} Mostrando o dia completo de {formatDateBR(day)}.</p>}
-      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Fechamento e frete usam a data e hora do pagamento. Os demais indicadores e listas consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
+      <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Fechamento e frete usam a data e hora do pagamento. Envios usam a data prevista de envio nos dias abrangidos pelo filtro. Os demais indicadores e listas consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
 
       {/* KPIs financeiros */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -284,8 +284,8 @@ export default async function DashboardPage({
           icon={TruckIcon}
           hint={
             s.ready.shipments
-              ? `${s.shipments.posted} em trânsito · ${s.shipments.delivered} entregues`
-              : "aplique a migração 0006_shipments.sql"
+              ? `${s.shipments.posted} em trânsito · ${s.shipments.delivered} entregues · pela data prevista de envio`
+              : "Não foi possível conferir as etiquetas. Atualize a tela."
           }
         />
         <KpiCard

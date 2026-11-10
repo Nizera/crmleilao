@@ -44,6 +44,7 @@ import { siteUrl, todayISO } from "@/lib/lots";
 import { freightPeriodForDate,freightPeriodEnd } from "@/lib/freight";
 import { isoDayAdd } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
@@ -99,6 +100,7 @@ export async function searchShipmentCustomers(
 }
 
 export type ShipmentContext = {
+  paymentBlock: string | null;
   storeOrders:StoreShippingOrder[];
   logisticsPending: LogisticsShippingItem[];
   storeBlock: string | null;
@@ -159,10 +161,13 @@ export async function loadShipmentContext(
     const lots=allLots.filter(l=>!l.shipping_date||l.shipping_date<=defaultBatchDate);
     const storeOrders=await listStoreShippingOrders(customerId,defaultBatchDate);
     const logisticsPending = await listLogisticsShippingItems(customerId, defaultBatchDate ?? todayISO());
+    const { error: paymentError } = await createAdminClient().rpc("assert_customer_shipping_ready_for_date", {p_customer:customerId,p_day:defaultBatchDate});
+    if (paymentError && paymentError.code !== "P0001") return failure("Não foi possível conferir os pagamentos. Atualize a tela antes de emitir.");
 
     return {
       ok: true,
       data: {
+        paymentBlock: paymentError?.message ?? null,
         lots,
         storeOrders,
         logisticsPending: logisticsPending ?? [],
@@ -290,9 +295,9 @@ export async function quoteShipmentAction(input: {
       .eq("id", input.customerId)
       .maybeSingle();
 
-    const destinationCep = customer?.address_cep;
-    if (!destinationCep) {
-      return failure("O cliente ainda não tem CEP preenchido.");
+    const destinationCep = customer?.address_cep?.replace(/[\s.-]/g, "");
+    if (!destinationCep || !/^\d{8}$/.test(destinationCep) || destinationCep === "00000000") {
+      return failure("Confira o CEP do cliente: informe 8 dígitos válidos.");
     }
 
     const { options, errors } = await quoteFrete({

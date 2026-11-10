@@ -28,11 +28,11 @@ import type {
   ShipmentVolume,
 } from "@/lib/shipments";
 import { spToday } from "@/lib/dates";
+import { recipientIssues } from "@/lib/shipment-readiness";
 import {freightPeriodForDate} from "@/lib/freight";
 import { nextShippingDate } from "@/lib/lots";
 import { notifyCustomer } from "@/lib/notifications-server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isChargeActive } from "@/lib/charges";
 
 /**
  * Núcleo dos envios SuperFrete (F4) — server-only.
@@ -221,6 +221,7 @@ export type ShipmentQueueLot = {
 export type ShipmentFreightStatus = "paid" | "awaiting" | "due" | "none";
 
 export type ShipmentQueueRow = {
+  recipientIssues?: string[];
   labelOnly?: boolean;
   customerId: string;
   name: string | null;
@@ -229,6 +230,7 @@ export type ShipmentQueueRow = {
   paidTotal: number;
   unpaidTotal: number;
   blockingUnpaidTotal?: number;
+  blockingUnpaidCount?: number;
   shippingDate: string | null;
   pendingShipment: Shipment | null;
   freightStatus: ShipmentFreightStatus;
@@ -331,19 +333,27 @@ export async function listShipmentQueue(params: {
 
   const customerIds = [...new Set([...rows.map(row => row.customer_id),...storeCustomers.map(row=>row.customer_id),...prizeCustomers.map(row=>row.customer_id)])];
   const unpaidByCustomer = new Map<string, number>();
+  const unpaidCountByCustomer = new Map<string, number>();
   const customersWithOpenCharges = new Set<string>();
   const freightStates = new Map<string, ShipmentFreightStatus>();
+  const recipientWarnings = new Map<string, string[]>();
   const scopeDay=params.periodTo??params.periodFrom??storeDate;
   for (const customerChunk of chunk(customerIds, 100)) {
-    const [pending, charges, freight] = await Promise.all([
+    const [pending, charges, freight, recipients] = await Promise.all([
       admin.from("lots").select("customer_id,arremate_value,charge_id").in("customer_id", customerChunk).eq("status", "pending_payment").eq("shipping_date",scopeDay),
       admin.from("charges").select("id,customer_id,status,expires_at,freight_period,freight_amount").in("customer_id", customerChunk).in("status", ["pending", "in_process"]),
       admin.rpc("shipping_freight_states", { p_customers: customerChunk }),
+      admin.from("customers").select("id,name,email,cpf_cnpj,address_cep,address_street,address_district,address_city,address_state").in("id",customerChunk),
     ]);
-    if (pending.error || charges.error || freight.error) throw new Error("Não foi possível conferir pagamentos e fretes da fila.");
-    for (const row of pending.data ?? []) unpaidByCustomer.set(row.customer_id, round2((unpaidByCustomer.get(row.customer_id) ?? 0) + Number(row.arremate_value)));
+    if (pending.error || charges.error || freight.error || recipients.error) throw new Error("Não foi possível conferir cadastro, pagamentos e fretes da fila.");
+    for (const customer of recipients.data ?? []) recipientWarnings.set(customer.id, recipientIssues(customer));
+    for (const row of pending.data ?? []) {
+      unpaidByCustomer.set(row.customer_id, round2((unpaidByCustomer.get(row.customer_id) ?? 0) + Number(row.arremate_value)));
+      unpaidCountByCustomer.set(row.customer_id, (unpaidCountByCustomer.get(row.customer_id) ?? 0) + 1);
+    }
     const scopedChargeIds=new Set((pending.data??[]).map(l=>l.charge_id).filter(Boolean));
-    for (const row of charges.data ?? []) if (isChargeActive(row as never)&&(scopedChargeIds.has(row.id)||(Number(row.freight_amount)>0&&row.freight_period===freightPeriodForDate(scopeDay)))) customersWithOpenCharges.add(row.customer_id);
+    // O prazo local não confirma cancelamento no provedor. Igual à validação de emissão.
+    for (const row of charges.data ?? []) if (scopedChargeIds.has(row.id)||(Number(row.freight_amount)>0&&row.freight_period===freightPeriodForDate(scopeDay))) customersWithOpenCharges.add(row.customer_id);
     for (const row of freight.data ?? []) freightStates.set(row.customer_id, row.status as ShipmentFreightStatus);
   }
 
@@ -446,6 +456,7 @@ export async function listShipmentQueue(params: {
     const unpaidTotal = round2(entry.lots.filter(lot => lot.status === "pending_payment").reduce((sum, lot) => sum + lot.arremate_value, 0));
 
     queue.push({
+      recipientIssues: recipientWarnings.get(customerId) ?? ["cadastro do destinatário indisponível"],
       customerId,
       name: entry.name,
       phone_e164: entry.phone_e164,
@@ -453,6 +464,7 @@ export async function listShipmentQueue(params: {
       paidTotal,
       unpaidTotal,
       blockingUnpaidTotal: unpaidByCustomer.get(customerId) ?? 0,
+      blockingUnpaidCount: unpaidCountByCustomer.get(customerId) ?? 0,
       shippingDate:
         entry.lots.find((lot) => lot.shipping_date)?.shipping_date ?? (storeCustomers.some(o=>o.customer_id===customerId)?storeDate:params.periodTo??prizeCustomers.find(p=>p.customer_id===customerId)?.shipping_date??storeDate),
       pendingShipment: entry.pendingShipment,
@@ -592,19 +604,7 @@ function normalizePhone(phoneE164: string): string | null {
 
 /** Campos obrigatórios do destinatário que faltam na ficha do cliente. */
 export function missingRecipientFields(customer: CustomerRow): string[] {
-  const missing: string[] = [];
-  if (!customer.name?.trim()) missing.push("nome completo");
-  if (!customer.email?.trim()) missing.push("e-mail");
-  const document = (customer.cpf_cnpj ?? "").replace(/\D/g, "");
-  if (document.length !== 11 && document.length !== 14) {
-    missing.push("CPF ou CNPJ");
-  }
-  if (!customer.address_cep) missing.push("CEP");
-  if (!customer.address_street) missing.push("rua");
-  if (!customer.address_district) missing.push("bairro");
-  if (!customer.address_city) missing.push("cidade");
-  if (!customer.address_state) missing.push("UF");
-  return missing;
+  return recipientIssues(customer);
 }
 
 function buildRecipient(customer: CustomerRow): SfParty {
@@ -616,8 +616,8 @@ function buildRecipient(customer: CustomerRow): SfParty {
     complement: customer.address_complement?.trim() || undefined,
     district: customer.address_district!.trim().slice(0, 60),
     city: customer.address_city!.trim().slice(0, 50),
-    state_abbr: customer.address_state!.toUpperCase(),
-    postal_code: customer.address_cep!,
+    state_abbr: customer.address_state!.trim().toUpperCase(),
+    postal_code: customer.address_cep!.replace(/\D/g,""),
     email: customer.email!.trim(),
     phone: normalizePhone(customer.phone_e164),
     document,
@@ -919,13 +919,11 @@ async function emitShipmentInternal(input: {
     picked.map((lot) => ({ shipment_id: shipmentId, lot_id: lot.id })),
   ) : {error:null};
   if (linkError) {
-    await cancelOrder(cart.id, "Falha ao vincular os lotes no CRM").catch(() => null);
-    try {
-      await admin.from("shipments").delete().eq("id", shipmentId);
-    } catch {
-      /* best effort */
-    }
-    throw new Error(`Falha ao vincular os lotes: ${linkError.message}`);
+    await admin.from("shipments").update({cancellation_origin:"rollback",cancellation_reason:`Falha ao vincular lotes: ${linkError.message}`.slice(0,500)}).eq("id",shipmentId);
+    let confirmed=false;
+    try { await cancelOrder(cart.id,"Falha ao vincular os lotes no CRM"); confirmed=normalizeSfStatus((await getOrderInfo(cart.id)).status)==="cancelled"; } catch { console.error("[shipments] cancelamento da vinculação não confirmado:",shipmentId); }
+    if(confirmed) await admin.from("shipments").update({status:"cancelled",cancelled_at:new Date().toISOString()}).eq("id",shipmentId).eq("status","pending");
+    throw new Error(confirmed ? "Falha ao vincular os lotes. A etiqueta foi cancelada e o histórico foi preservado." : "Falha ao vincular os lotes. O cancelamento ainda não foi confirmado; sincronize este envio antes de emitir outra etiqueta.");
   }
 
   const { error: storeError } = await admin.rpc('bind_shipment_contents', { p_shipment: shipmentId, p_expected: expectedContent });

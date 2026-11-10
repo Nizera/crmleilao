@@ -1,12 +1,12 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { isChargeActive, type ChargeStatus } from "@/lib/charges";
-import { spMonthOf, spToday } from "@/lib/dates";
+import { spDayOf, spMonthOf, spToday } from "@/lib/dates";
 import { LOT_STATUS_LABELS, type LotStatus } from "@/lib/lots";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInAuctionPeriod, resolveAuctionPeriod } from "@/lib/auction-period";
 import { computePeriodFreight, type ScopeLot, type ScopeCharge, type ScopeShipment, type ScopeFreightUsage, type ScopeFreightItem, type PeriodFreightStats } from "@/lib/dashboard-scope";
-import { fetchScopeRows } from "@/lib/dashboard-scope-server";
+import { fetchScopeRows, fetchScheduledShipments } from "@/lib/dashboard-scope-server";
 import { computePeriodReceipts } from "@/lib/period-receipts";
 import { loadFreightReceipts } from "@/lib/period-receipts-server";
 
@@ -64,7 +64,7 @@ export type DashboardStats = {
   nextBatch: { shippingDate: string; count: number } | null;
 };
 
-/** Mensal/acumulado são gerais. Todos os demais dados pertencem aos lotes cadastrados no intervalo. */
+/** Envios usam data prevista; recebimentos usam pagamento; demais KPIs usam cadastro dos lotes. */
 async function computeDashboardStats(asOf: string, from?: string, to?: string): Promise<DashboardStats> {
   const period = resolveAuctionPeriod(asOf, { from, to });
   const db = createAdminClient();
@@ -85,13 +85,15 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   const sales = active.filter(lot => Number(lot.arremate_value) > 0);
   const customerIds = [...new Set(active.map(lot => lot.customer_id))];
   const lotIds = active.map(lot => lot.id);
-  const [chargesRes, linksRes, usageRes, freightRes] = await Promise.all([
+  const [chargesRes, linksRes, usageRes, freightRes, scheduledRes] = await Promise.all([
     fetchScopeRows<ScopeCharge>(db, "charges", "customer_id", customerIds, "id, customer_id, status, amount, freight_amount, expires_at, paid_at"),
     fetchScopeRows<ScopeShipment>(db, "shipment_lots", "lot_id", lotIds, "lot_id, shipment_id, shipment:shipments(id, status)", ["shipment_id", "lot_id"]),
     fetchScopeRows<ScopeFreightUsage>(db, "shipment_freight_usage", "customer_id", customerIds, "charge_id, shipment_id, shipment:shipments(status)", ["charge_id"]),
     fetchScopeRows<ScopeFreightItem>(db, "charge_freight_items", "customer_id", customerIds, "charge_id, first_lot_id, freight_period, freight_amount", ["charge_id", "freight_period"]),
+    fetchScheduledShipments(db,period.from.slice(0,10),spDayOf(Date.parse(period.endUtc)-1)),
   ]);
   for (const result of [chargesRes, linksRes, usageRes, freightRes]) if (result.error) console.error("[dashboard] falha na consulta do período:", result.error.message);
+  if (scheduledRes.error) console.error("[dashboard] falha nas etiquetas por data prevista:",scheduledRes.error.message);
   if (lotsError) console.error("[dashboard] falha nos lotes:", lotsError.message);
   const paid = sales.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
   let receiptError=false;
@@ -121,7 +123,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   const charges = chargesRes.data.filter(charge => chargeIds.has(charge.id));
   const open = charges.filter(charge => isChargeActive({ status: charge.status as ChargeStatus, expires_at: charge.expires_at }, now));
   const customers = new Map(active.map(lot => [lot.customer_id, lot.customer]));
-  const shipments = new Map(linksRes.data.filter(link => link.shipment && link.shipment.status !== "cancelled").map(link => [link.shipment_id, link.shipment!]));
+  const shipments = new Map(scheduledRes.data.filter(s => s.status !== "cancelled").map(s => [s.id,s]));
   const pipeline = PIPELINE_ORDER.map(status => {
     const rows = scoped.filter(lot => lot.status === status);
     return { status, label: LOT_STATUS_LABELS[status], count: rows.length, value: sum(rows) };
@@ -135,7 +137,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   for (const lot of active) if (lot.status === "paid" && lot.shipping_date && lot.shipping_date >= today) batches.set(lot.shipping_date, (batches.get(lot.shipping_date) ?? 0) + 1);
   const nextBatch = [...batches.entries()].sort(([a], [b]) => a.localeCompare(b))[0];
   return {
-    ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !lotsError && !linksRes.error, closing: !lotsError, freight: !receiptError && !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
+    ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !scheduledRes.error, closing: !lotsError, freight: !receiptError && !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
     revenue: {
       day: sum(sales), dayLots: sales.length, month: monthRevenue, prevMonth: previousRevenue,
       deltaPct: previousRevenue > 0 ? Math.round((monthRevenue - previousRevenue) / previousRevenue * 100) : null,
@@ -167,4 +169,4 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   };
 }
 
-export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-positive-sales-v5"], { tags: ["dashboard"], revalidate: 30 });
+export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-shipping-date-v6"], { tags: ["dashboard"], revalidate: 30 });

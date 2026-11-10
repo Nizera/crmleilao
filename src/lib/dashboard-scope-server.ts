@@ -1,6 +1,18 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+/** Etiquetas pela data prevista do envio, independente da data de cadastro dos itens. */
+export async function fetchScheduledShipments(db: ReturnType<typeof createAdminClient>, from: string, through: string) {
+  const rows: {id:string;status:string}[] = [];
+  for (let offset=0;;offset+=500) {
+    const {data,error}=await db.from("shipments").select("id,status").gte("batch_date",from).lte("batch_date",through).order("id").range(offset,offset+499);
+    if(error)return {data:[],error};
+    rows.push(...(data??[]));
+    if((data?.length??0)<500)break;
+  }
+  return {data:rows,error:null};
+}
+
 /** Consultas paginadas e em blocos para não estourar a URL do PostgREST. */
 export async function fetchScopeRows<T>(
   db: ReturnType<typeof createAdminClient>, table: string, column: string,
