@@ -299,8 +299,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
                   <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
-                  {issue.source_kind === "raffle" && (!issue.moved_at || !issue.shipping_declared_value) && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
-                  {(!issue.moved_at || (issue.source_kind === "raffle" && !issue.shipping_declared_value)) && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
+                  {issue.source_kind === "raffle" && !issue.moved_at && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$, opcional)<input type="number" min="0" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
+                  {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
                     const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(storeDeclared[issue.id] ?? issue.shipping_declared_value)) : await handleLogisticsPendingAction(issue.id, "box");
                     if (!result.ok) { toast.error(result.error); return; }
                     const refreshed = await getSeparationReportAction(date);

@@ -232,8 +232,7 @@ function ShipmentForm({
       return `Faltam dados do destinatário: ${context.missing.join(", ")}.`;
     }
     if (context.storeBlock) return context.storeBlock;
-    if(context.logisticsPending.some(i=>!i.moved_at||(i.source_kind==='raffle'&&Number(i.shipping_declared_value)<=0)))return "Confira os itens avulsos e o valor declarado dos prêmios no relatório.";
-    if (picked.size === 0 && !context.storeOrders.length && !context.logisticsPending.some(i=>i.source_kind==='raffle')) return "Selecione um lote ou separe um produto ou prêmio.";
+    if (picked.size === 0 && !context.storeOrders.length && !context.logisticsPending.some(i=>i.source_kind==='raffle')) return "Selecione um lote ou confira os produtos e prêmios disponíveis.";
     if(context.storeOrders.some(o=>!o.boxed_at||!o.shipping_declared_value))return "Confira a separação e o valor declarado dos pedidos da loja.";
     if(declaredInvalid)return "Confira o valor declarado do pacote.";
     if(declaredTotal<=0)return "Os itens estão zerados. Informe o valor declarado do prêmio.";
@@ -418,7 +417,7 @@ function ShipmentForm({
                 {!picked.size&&!context.storeOrders.length&&context.logisticsPending.every(i=>i.source_kind==='raffle')&&<p className="mb-2 font-medium">Envio exclusivo de prêmio: frete por conta da empresa, sem usar crédito do cliente.</p>}
                 <p className="font-medium">Pendências logísticas para este envio</p>
                 {context.logisticsPending.map(issue => <p key={issue.id} className="mt-1 break-words text-xs">{issue.quantity} × {issue.title} · {issue.moved_at ? "Na caixa" : "A separar no relatório"}</p>)}
-                <p className="mt-2 text-xs text-muted-foreground">Incluídas automaticamente após a separação, sem cobrança adicional. Confira as dimensões e o peso do pacote.</p>
+                <p className="mt-2 text-xs text-muted-foreground">Estes itens serão incluídos na etiqueta mesmo sem movimentação no relatório. Confira se estão no pacote, além das dimensões e do peso. Itens de outras datas permanecem fora deste envio.</p>
               </div>}
               {context.storeOrders.length>0 && <div className="rounded-md border p-3 text-sm"><p className="font-medium">Pedidos da loja incluídos neste pacote</p>{context.storeOrders.map(order=><div key={order.id} className="mt-2 text-xs"><p>{order.code} · {order.boxed_at?'Na caixa':'A separar'} · {order.shipping_declared_value?formatBRL(Number(order.shipping_declared_value)):'Conferir valor declarado'}</p>{order.items.filter(i=>i.delivery_kind==='physical').map((item,index)=><p key={index}>{item.quantity} × {item.name}</p>)}</div>)}<p className="mt-2 text-xs text-muted-foreground">O mesmo frete do pacote é usado com ou sem lotes de leilão.</p></div>}
               {context.lots.length === 0 ? (

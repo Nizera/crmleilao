@@ -26,7 +26,7 @@ export async function raffleCampaignLifecycle(id:string, action:"archive"|"resto
 export async function boxRaffleAward(id: string, value: number): Promise<ActionResult> {
   try {
     await staff();
-    if (!z.uuid().safeParse(id).success || !Number.isFinite(value) || value <= 0 || value > 100000) return { ok: false, error: "Informe o valor declarado do prêmio em reais." };
+    if (!z.uuid().safeParse(id).success || !Number.isFinite(value) || value < 0 || value > 100000) return { ok: false, error: "Confira o valor declarado do prêmio ou deixe em branco." };
     const { error } = await (await createClient()).rpc("box_raffle_award", { p_issue: id, p_value: value });
     if (error) throw error;
     invalidate(); revalidatePath("/admin/envios"); return { ok: true, data: null };

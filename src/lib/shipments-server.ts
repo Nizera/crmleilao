@@ -845,8 +845,6 @@ async function emitShipmentInternal(input: {
   await assertShipmentPayments(input.customerId);
   const {error: storeReadyError} = await admin.rpc('assert_store_shipping_ready', {p_customer:input.customerId,p_day:batchDate});
   if (storeReadyError) throw new Error(storeReadyError.message);
-  const logisticsBlock = await logisticsShippingBlock(input.customerId, batchDate);
-  if (logisticsBlock) throw new Error(logisticsBlock);
 
   const storeOrders=await listStoreShippingOrders(input.customerId,batchDate);
   const logistics = await listLogisticsShippingItems(input.customerId,batchDate);
@@ -958,15 +956,7 @@ async function assertShipmentPayments(customerId:string){
 
 export async function storeShippingBlock(customerId:string, day:string) {
   const {error}=await createAdminClient().rpc('assert_store_shipping_ready',{p_customer:customerId,p_day:day});
-  return error ? error.message : await logisticsShippingBlock(customerId, day);
-}
-
-async function logisticsShippingBlock(customerId: string, day: string): Promise<string | null> {
-  const { data, error } = await createAdminClient().from("logistics_pending").select("id")
-    .eq("customer_id", customerId).lte("shipping_date", day).is("shipment_id", null)
-    .is("cancelled_at", null).is("moved_at", null).limit(1);
-  if (error) throw new Error("Não foi possível conferir as pendências logísticas.");
-  return data?.length ? "Separe as pendências logísticas deste cliente antes de emitir a etiqueta." : null;
+  return error ? error.message : null;
 }
 
 async function assertBoundStorePayments(shipmentId:string) {
