@@ -51,9 +51,9 @@ export function ShipmentFormSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl"
+        className="flex min-w-0 flex-col gap-0 overflow-hidden p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-3xl"
       >
-        <SheetHeader className="border-b px-6 py-4">
+        <SheetHeader className="shrink-0 border-b py-4 pl-4 pr-12 sm:pl-6">
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>
             Agrupe os lotes e pedidos pagos de um cliente, cote e emita a etiqueta
@@ -305,7 +305,7 @@ function ShipmentForm({
 
   return (
     <form
-      className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6"
       onSubmit={(event) => {
         if (!selected) search(event);
         else event.preventDefault();
@@ -432,7 +432,7 @@ function ShipmentForm({
                     {context.lots.map((lot) => (
                       <li
                         key={lot.id}
-                        className="flex items-center gap-3 px-3 py-2.5"
+                        className="flex min-w-0 items-start gap-3 px-3 py-2.5"
                       >
                         <Checkbox
                           id={`ship-lot-${lot.id}`}
@@ -442,14 +442,14 @@ function ShipmentForm({
                         />
                         <label
                           htmlFor={`ship-lot-${lot.id}`}
-                          className="flex flex-1 cursor-pointer items-center justify-between gap-3"
+                          className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-start justify-between gap-x-3 gap-y-1"
                         >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
+                          <span className="min-w-0 flex-1 basis-40">
+                            <span className="block break-words text-sm font-medium [overflow-wrap:anywhere]">
                               {lot.code} · {lot.title}
                             </span>
                           </span>
-                          <span className="whitespace-nowrap text-sm text-muted-foreground">
+                          <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
                             {formatBRL(lot.arremate_value)}
                           </span>
                         </label>
