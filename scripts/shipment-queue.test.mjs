@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
-test('fila respeita data prevista, vínculos de outra saída e distingue pendência exibida de bloqueio global',async()=>{
+test('fila respeita data prevista, vínculos de outra saída e não bloqueia por pendências de outra data',async()=>{
  const day='2026-11-03',customer={id:'c',name:'Exemplo',phone_e164:'+5511000000000'};
  const lot=(id,status,date,value)=>({id,code:id,title:id,status,shipping_date:date,auction_date:date,arremate_value:value,customer_id:'c',customers:customer});
  const tables={lots:[lot('paid','paid',day,30),lot('due','pending_payment',day,10),lot('old','pending_payment','2026-10-27',50),lot('foreign','paid',day,20),lot('sent','shipped',day,40)],store_orders:[],logistics_pending:[],charges:[],external_prize_freight_releases:[],shipment_lots:[{lot_id:'paid',shipment_id:'s'},{lot_id:'foreign',shipment_id:'other'}],shipments:[{id:'s',status:'released',batch_date:day,tracking_code:'AA123456789BR',code:'E1'},{id:'other',status:'released',batch_date:'2026-10-27',code:'E2'}]};
@@ -7,6 +7,6 @@ test('fila respeita data prevista, vínculos de outra saída e distingue pendên
  const db={from:query,rpc:async()=>({data:[{customer_id:'c',status:'paid'}],error:null})};const exports={};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/shipments-server.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Date,console,require:n=>({'@/lib/supabase/admin':{createAdminClient:()=>db},'@/lib/dates':{spToday:()=>day},'@/lib/lots':{nextShippingDate:()=>day},'@/lib/charges':{isChargeActive:()=>false}}[n]??{})});
  const result=await exports.listShipmentQueue({periodFrom:day,periodTo:day,q:'AA123456789BR'});
- assert.equal(result.rows.length,1);const row=result.rows[0];assert.deepEqual(Array.from(row.lots,l=>l.id),['paid','due']);assert.equal(row.unpaidTotal,10);assert.equal(row.blockingUnpaidTotal,60);assert.equal(row.paidTotal,30);assert.equal(row.pendingShipment.code,'E1');
+ assert.equal(result.rows.length,1);const row=result.rows[0];assert.deepEqual(Array.from(row.lots,l=>l.id),['paid','due']);assert.equal(row.unpaidTotal,10);assert.equal(row.blockingUnpaidTotal,10);assert.equal(row.paidTotal,30);assert.equal(row.pendingShipment.code,'E1');
  assert.equal((await exports.listShipmentQueue({periodFrom:day,periodTo:day,q:'inexistente'})).rows.length,0);
 });

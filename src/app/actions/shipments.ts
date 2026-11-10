@@ -47,6 +47,14 @@ import { createClient } from "@/lib/supabase/server";
 import { waMessageLink } from "@/lib/lots";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
+export async function recordExternalFreightPayment(customerId:string,day:string,reason:string):Promise<ActionResult>{
+ try{const {profile}=await requireAdmin();if(profile.role==='viewer')return failure('Seu perfil é somente leitura.');
+ if(!z.object({customerId:z.uuid(),day:z.iso.date(),reason:z.string().trim().min(5).max(350)}).safeParse({customerId,day,reason}).success)return failure('Confira a data e informe o motivo da confirmação.');
+ const {error}=await(await createClient()).rpc('record_external_freight_payment',{p_customer:customerId,p_day:day,p_reason:reason.trim()});
+ if(error)return failure(error.code==='P0001'?error.message:'Não foi possível registrar. Confira a migration 0078.');
+ revalidateShipmentPaths();revalidatePath('/admin/cobrancas');return {ok:true,data:null};
+ }catch(error){rethrowIfRedirect(error);return failure('Não foi possível registrar o frete pago por fora.');}
+}
 export async function getShipmentPriceHistoryAction(id: string): Promise<ActionResult<NonNullable<Shipment["priceHistory"]>>> {
   try {
     await requireAdmin();
@@ -110,9 +118,12 @@ export type ShipmentContext = {
 /** Contexto da tela "Novo envio" (lotes elegíveis + pendências + ambiente). */
 export async function loadShipmentContext(
   customerId: string,
+  batchDate?:string,
 ): Promise<ActionResult<ShipmentContext>> {
   try {
     await requireAdmin();
+
+    if(batchDate&&!z.iso.date().safeParse(batchDate).success)return failure('Data de envio inválida.');
 
     const supabase = await createClient();
     const { data: customer, error } = await supabase
@@ -126,7 +137,7 @@ export async function loadShipmentContext(
     if (error) return failure(`Falha ao carregar cliente: ${error.message}`);
     if (!customer) return failure("Cliente não encontrado.");
 
-    const lots = await listEligibleShipmentLots(customerId);
+    const allLots = await listEligibleShipmentLots(customerId);
     const missing = missingRecipientFields(
       customer as Parameters<typeof missingRecipientFields>[0],
     );
@@ -140,11 +151,12 @@ export async function loadShipmentContext(
       customer.address_cep,
     ].filter(Boolean) as string[];
 
-    const shippingDates = lots
+    const shippingDates = allLots
       .map((lot) => lot.shipping_date)
       .filter((date): date is string => Boolean(date))
       .sort();
-    const defaultBatchDate = shippingDates[0] ?? nextShippingDate(todayISO());
+    const defaultBatchDate = batchDate??shippingDates[0] ?? nextShippingDate(todayISO());
+    const lots=allLots.filter(l=>!l.shipping_date||l.shipping_date<=defaultBatchDate);
     const storeOrders=await listStoreShippingOrders(customerId,defaultBatchDate);
     const logisticsPending = await listLogisticsShippingItems(customerId, defaultBatchDate ?? todayISO());
 
@@ -230,7 +242,7 @@ async function insuranceFor(
   lotIds: string[],
   day:string,
 ): Promise<number> {
-  const eligible = await listEligibleShipmentLots(customerId);
+  const eligible = await listEligibleShipmentLots(customerId,day);
   const picked = eligible.filter((lot) => lotIds.includes(lot.id));
   const storeOrders=await listStoreShippingOrders(customerId,day);
   const logistics = await listLogisticsShippingItems(customerId,day);

@@ -28,6 +28,7 @@ import type {
   ShipmentVolume,
 } from "@/lib/shipments";
 import { spToday } from "@/lib/dates";
+import {freightPeriodForDate} from "@/lib/freight";
 import { nextShippingDate } from "@/lib/lots";
 import { notifyCustomer } from "@/lib/notifications-server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -44,7 +45,7 @@ const SHIPMENT_BASE_COLUMNS = [
   "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
   "price, original_price, price_baseline_legacy, price_change_count, price_changed_at, price_checked_at, price_difference, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
-  "cancelled_at, created_by, created_at, updated_at, freight_payer,",
+  "cancelled_at, cancellation_origin, cancellation_reason, created_by, created_at, updated_at, freight_payer,",
   "customer:customers(id, name, phone_e164)",
 ].join(" ");
 
@@ -169,6 +170,7 @@ export type EligibleShipmentLot = {
 /** Lotes `paid` do cliente que ainda não estão em nenhum envio ativo. */
 export async function listEligibleShipmentLots(
   customerId: string,
+  day?:string,
 ): Promise<EligibleShipmentLot[]> {
   const admin = createAdminClient();
 
@@ -199,7 +201,7 @@ export async function listEligibleShipmentLots(
     for (const link of links ?? []) busy.add(link.lot_id);
   }
 
-  return (lots as EligibleShipmentLot[]).filter((lot) => !busy.has(lot.id));
+  return (lots as EligibleShipmentLot[]).filter((lot) => !busy.has(lot.id)&&(!day||!lot.shipping_date||lot.shipping_date<=day));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -331,15 +333,17 @@ export async function listShipmentQueue(params: {
   const unpaidByCustomer = new Map<string, number>();
   const customersWithOpenCharges = new Set<string>();
   const freightStates = new Map<string, ShipmentFreightStatus>();
+  const scopeDay=params.periodTo??params.periodFrom??storeDate;
   for (const customerChunk of chunk(customerIds, 100)) {
     const [pending, charges, freight] = await Promise.all([
-      admin.from("lots").select("customer_id,arremate_value").in("customer_id", customerChunk).eq("status", "pending_payment"),
-      admin.from("charges").select("customer_id,status,expires_at").in("customer_id", customerChunk).in("status", ["pending", "in_process"]),
+      admin.from("lots").select("customer_id,arremate_value,charge_id").in("customer_id", customerChunk).eq("status", "pending_payment").eq("shipping_date",scopeDay),
+      admin.from("charges").select("id,customer_id,status,expires_at,freight_period,freight_amount").in("customer_id", customerChunk).in("status", ["pending", "in_process"]),
       admin.rpc("shipping_freight_states", { p_customers: customerChunk }),
     ]);
     if (pending.error || charges.error || freight.error) throw new Error("Não foi possível conferir pagamentos e fretes da fila.");
     for (const row of pending.data ?? []) unpaidByCustomer.set(row.customer_id, round2((unpaidByCustomer.get(row.customer_id) ?? 0) + Number(row.arremate_value)));
-    for (const row of charges.data ?? []) if (isChargeActive(row as never)) customersWithOpenCharges.add(row.customer_id);
+    const scopedChargeIds=new Set((pending.data??[]).map(l=>l.charge_id).filter(Boolean));
+    for (const row of charges.data ?? []) if (isChargeActive(row as never)&&(scopedChargeIds.has(row.id)||(Number(row.freight_amount)>0&&row.freight_period===freightPeriodForDate(scopeDay)))) customersWithOpenCharges.add(row.customer_id);
     for (const row of freight.data ?? []) freightStates.set(row.customer_id, row.status as ShipmentFreightStatus);
   }
 
@@ -456,7 +460,7 @@ export async function listShipmentQueue(params: {
       hasActiveCharge: customersWithOpenCharges.has(customerId),
       storeOrderCount:storeCustomers.filter(o=>o.customer_id===customerId).length,
       raffleAwardCount:prizeCustomers.filter(o=>o.customer_id===customerId).length,
-      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&((entry.lots.length===0&&prizeCustomers.some(p=>p.customer_id===customerId))||(entry.lots.length>0&&!prizeCustomers.some(p=>p.customer_id===customerId)&&entry.lots.every(l=>l.arremate_value===0&&releasedPrizeLots.has(l.id)))),
+      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&(entry.lots.length>0||prizeCustomers.some(p=>p.customer_id===customerId))&&entry.lots.every(l=>l.arremate_value===0&&releasedPrizeLots.has(l.id)),
     });
   }
 
@@ -786,7 +790,7 @@ async function applyOrderInfo(
     return { ok: true };
   }
 
-  if (target === "cancelled") patch.cancelled_at = shipment.cancelled_at ?? new Date().toISOString();
+  if (target === "cancelled") {patch.cancelled_at = shipment.cancelled_at ?? new Date().toISOString();patch.cancellation_origin=shipment.cancellation_origin??"superfrete";}
   if (target === "posted" && !shipment.posted_at && !patch.posted_at) patch.posted_at = new Date().toISOString();
   if (target === "delivered" && !shipment.delivered_at) {
     patch.delivered_at = new Date().toISOString();
@@ -835,14 +839,14 @@ async function emitShipmentInternal(input: {
     );
   }
 
-  const eligible = await listEligibleShipmentLots(input.customerId);
+  const batchDate = input.batchDate ?? nextShippingDate(spToday());
+  const eligible = await listEligibleShipmentLots(input.customerId,batchDate);
   const picked = eligible.filter((lot) => input.lotIds.includes(lot.id));
 
   if (new Set(input.lotIds).size !== input.lotIds.length || picked.length !== input.lotIds.length) {
     throw new Error("Revise os lotes selecionados; há itens inválidos ou indisponíveis.");
   }
-  const batchDate = input.batchDate ?? nextShippingDate(spToday());
-  await assertShipmentPayments(input.customerId);
+  await assertShipmentPayments(input.customerId,batchDate);
   const {error: storeReadyError} = await admin.rpc('assert_store_shipping_ready', {p_customer:input.customerId,p_day:batchDate});
   if (storeReadyError) throw new Error(storeReadyError.message);
 
@@ -869,6 +873,9 @@ async function emitShipmentInternal(input: {
   if(logisticsSubtotal>0)automaticProducts.push({name:"Prêmios de rifa",quantity:1,unitary_value:logisticsSubtotal});
 
   const products: SfProduct[]=manualDeclaration?[{name:"Documento",quantity:1,unitary_value:declaredValue}]:automaticProducts;
+  const expectedContent=shipmentContentSnapshot(picked,storeOrders,logistics,manualDeclaration?declaredValue:0);
+  const {error:preflightError}=await admin.rpc('validate_shipment_draft',{p_customer:input.customerId,p_day:batchDate,p_expected:expectedContent});
+  if(preflightError)throw new Error(preflightError.code==='PGRST202'?'Aplique a migration 0077 para atualizar a validação dos envios.':preflightError.message);
 
   // 1) Etiqueta na SuperFrete (status pending).
   const cart = await createCart({
@@ -921,11 +928,14 @@ async function emitShipmentInternal(input: {
     throw new Error(`Falha ao vincular os lotes: ${linkError.message}`);
   }
 
-  const { error: storeError } = await admin.rpc('bind_shipment_contents', { p_shipment: shipmentId, p_expected: shipmentContentSnapshot(picked,storeOrders,logistics,manualDeclaration?declaredValue:0) });
+  const { error: storeError } = await admin.rpc('bind_shipment_contents', { p_shipment: shipmentId, p_expected: expectedContent });
   if (storeError) {
-    await cancelOrder(cart.id, 'Compras da loja ainda não estão prontas para envio').catch(() => null);
-    await admin.from('shipments').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', shipmentId);
-    throw new Error(storeError.message);
+    const reason=`Falha ao vincular conteúdo: ${storeError.message}`.slice(0,500);
+    await admin.from('shipments').update({cancellation_origin:'rollback',cancellation_reason:reason}).eq('id',shipmentId);
+    let confirmed=false;
+    try{await cancelOrder(cart.id,'Falha de validação do conteúdo do pacote no CRM');confirmed=normalizeSfStatus((await getOrderInfo(cart.id)).status)==='cancelled';}catch{console.error('[shipments] cancelamento compensatório não confirmado:',shipmentId);}
+    if(confirmed)await admin.from('shipments').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', shipmentId).eq('status','pending');
+    throw new Error(confirmed?`${storeError.message} A etiqueta foi cancelada automaticamente antes da conclusão.`:`${storeError.message} O cancelamento da etiqueta ainda não foi confirmado. Não emita outra; sincronize o envio.`);
   }
 
   // 3) Pagamento com o saldo da carteira — pode falhar (sem saldo).
@@ -948,9 +958,9 @@ async function emitShipmentInternal(input: {
   return { shipment, warning };
 }
 
-async function assertShipmentPayments(customerId:string){
+async function assertShipmentPayments(customerId:string,day:string){
   const admin=createAdminClient();
-  const {error}=await admin.rpc('assert_customer_shipping_ready',{p_customer:customerId});
+  const {error}=await admin.rpc('assert_customer_shipping_ready_for_date',{p_customer:customerId,p_day:day});
   if(error)throw new Error(error.message || 'Não foi possível conferir as pendências do cliente.');
 }
 
@@ -975,7 +985,7 @@ export async function payShipment(id: string): Promise<Shipment> {
     throw new Error("Este envio não está aguardando pagamento.");
   }
 
-  await assertShipmentPayments(shipment.customer_id);
+  await assertShipmentPayments(shipment.customer_id,shipment.batch_date);
   await assertBoundStorePayments(shipment.id);
 
   // Claim atômico: só quem leva o UPDATE dispara o checkout. Sem isso dois
@@ -1093,7 +1103,9 @@ export async function cancelShipment(id: string): Promise<Shipment> {
     throw new Error("Só é possível cancelar antes da postagem.");
   }
 
+  await createAdminClient().from('shipments').update({cancellation_origin:'admin',cancellation_reason:'Cancelamento solicitado pela equipe no painel.'}).eq('id',id);
   await cancelOrder(shipment.sf_order_id, "Cancelado pelo CRM CarasLegends");
+  if(normalizeSfStatus((await getOrderInfo(shipment.sf_order_id)).status)!=='cancelled')throw new Error('Cancelamento solicitado, mas ainda não confirmado pela SuperFrete. Sincronize o envio.');
 
   const result = await applyStatusChange(shipment, "cancelled", {
     cancelled_at: new Date().toISOString(),
@@ -1190,6 +1202,7 @@ export async function applySuperfreteEvent(input: {
     patch.delivered_at = str("delivered_at") ?? shipment.delivered_at ?? now;
   }
   if (target === "cancelled") {
+    patch.cancellation_origin=shipment.cancellation_origin??'superfrete';
     patch.cancelled_at = str("canceled_at") ?? shipment.cancelled_at ?? now;
   }
 

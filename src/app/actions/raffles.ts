@@ -14,6 +14,39 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isProductImageContent } from "@/lib/store-admin";
 
 function invalidate() { revalidatePath("/rifas", "layout"); revalidatePath("/admin/rifa", "layout"); revalidatePath("/painel/rifas", "layout"); revalidatePath("/admin/relatorios"); }
+export async function manageRaffleReservation(id: string, action: "paid_external" | "cancel" | "refund_confirmed", reason: string, confirmed: boolean): Promise<ActionResult> {
+  try {
+    const profile = await staff();
+    const input = z.object({ id: z.uuid(), action: z.enum(["paid_external", "cancel", "refund_confirmed"]), reason: z.string().trim().min(10).max(500), confirmed: z.literal(true) }).safeParse({ id, action, reason, confirmed });
+    if (!input.success) return { ok: false, error: "Confirme a ação e informe o motivo (10 a 500 caracteres)." };
+    const db = createAdminClient();
+    const { data: order, error } = await db.from("raffle_orders").select("*").eq("id", id).single();
+    if (error || !order || !["creating", "pending"].includes(order.status)) return { ok: false, error: "A reserva mudou. Atualize a tela antes de continuar." };
+    if (order.status === "creating") return { ok: false, error: "O Pix ainda está sendo criado. Aguarde a conclusão antes de alterar a reserva." };
+    let closed = !order.mp_order_id;
+    if (order.mp_order_id && action !== "refund_confirmed") {
+      const current = await getOrder(order.mp_order_id);
+      if (!current || current.id !== order.mp_order_id || current.externalReference !== order.external_reference || Math.round(current.amount * 100) !== Math.round(Number(order.amount) * 100)) throw new Error("Pagamento divergente.");
+      if (["processed", "refunded", "charged_back"].includes(current.status)) {
+        await syncRafflePayment(order as RaffleOrder); invalidate();
+        return { ok: false, error: "O provedor confirmou pagamento ou estorno. Confira a situação atualizada da reserva." };
+      }
+      const { data: latest, error: latestError } = await db.from("raffle_orders").select("status").eq("id", id).single();
+      if (latestError || !latest) throw latestError ?? new Error("Reserva indisponível.");
+      if (latest.status === "paid" || latest.status === "review") { invalidate(); return { ok: false, error: "O provedor confirmou pagamento ou estorno. Confira a situação atualizada da reserva." }; }
+      // A sincronização pode ter encerrado a reserva; não reabre cotas já liberadas.
+      if (!["creating", "pending"].includes(latest.status)) { invalidate(); return action === "cancel" ? { ok: true, data: null } : { ok: false, error: "A reserva foi encerrada. Não é possível confirmar pagamento por fora em cotas liberadas." }; }
+      await cancelPixOrder(order.mp_order_id);
+      const payment = await getOrder(order.mp_order_id);
+      if (!payment || payment.id !== order.mp_order_id || payment.externalReference !== order.external_reference || Math.round(payment.amount * 100) !== Math.round(Number(order.amount) * 100)) throw new Error("Pagamento divergente.");
+      closed = ["canceled", "expired", "failed"].includes(payment.status);
+      if (!closed) { await syncRafflePayment(order as RaffleOrder); invalidate(); return { ok: false, error: "O Pix ainda não foi encerrado. Nenhuma liberação manual foi feita; confira o pagamento e tente novamente." }; }
+    }
+    const { error: writeError } = await db.rpc("manage_raffle_reservation", { p_order: id, p_actor: profile.id, p_action: action, p_reason: input.data.reason, p_provider_closed: closed });
+    if (writeError) throw writeError;
+    invalidate(); return { ok: true, data: null };
+  } catch (error) { return failure(error); }
+}
 export async function raffleCampaignLifecycle(id:string, action:"archive"|"restore"|"delete"):Promise<ActionResult>{
   try{
     await staff();

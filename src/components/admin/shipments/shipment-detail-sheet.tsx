@@ -173,6 +173,7 @@ export function ShipmentDetailSheet({
         </SheetHeader>
 
         <div className="flex flex-col gap-5 px-6 py-5">
+          {shipment.status==='cancelled'&&<section className="rounded-lg border border-amber-400/40 p-3 text-sm"><h3 className="font-semibold">Origem do cancelamento</h3><p>{shipment.cancellation_origin==='rollback'?'Cancelamento automático após falha na emissão.':shipment.cancellation_origin==='admin'?'Cancelamento solicitado pela equipe no painel.':shipment.cancellation_origin==='superfrete'?'Cancelamento informado pela SuperFrete.':'Registro antigo: o motivo não foi gravado pelo sistema.'}</p>{shipment.cancellation_reason&&<p className="mt-1 break-words text-muted-foreground">{shipment.cancellation_reason}</p>}</section>}
           <section className="grid gap-3 rounded-lg border p-3 text-sm">
             <h3 className="font-semibold">Custo da etiqueta</h3>
             <dl className="grid grid-cols-2 gap-3">

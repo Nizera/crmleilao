@@ -21,6 +21,7 @@ import {
   syncShipmentAction,
   ensureWebhookAction,
   releaseExternalPrizeFreight,
+  recordExternalFreightPayment,
 } from "@/app/actions/shipments";
 import { ShipmentDetailSheet } from "@/components/admin/shipments/shipment-detail-sheet";
 import { ShipmentFormSheet } from "@/components/admin/shipments/shipment-form-sheet";
@@ -251,11 +252,18 @@ export function ShipmentsView({
     const label = row.companyFreight ? "Frete por conta da empresa (prêmio)" : row.freightStatus === "paid" ? "Frete pago" : row.freightStatus === "awaiting" ? "Frete aguardando" : row.freightStatus === "due" ? "Frete pendente" : "Sem frete";
     return label;
   };
-  const releaseFreight=(row:ShipmentQueueRow)=>{
+  const releasePrizeFreight=(row:ShipmentQueueRow)=>{
     const ids=row.lots.filter(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status)).map(l=>l.id);
     const reason=window.prompt('Motivo da liberação do frete dos prêmios de R$ 0:', 'Prêmio da rifa.digital — frete por conta da empresa');
     if(reason===null)return;
     startTransition(async()=>{const result=await releaseExternalPrizeFreight(row.customerId,ids,reason);if(!result.ok)toast.error(result.error);else{toast.success('Frete liberado para os prêmios selecionados.');router.refresh();}});
+  };
+
+  const releaseFreight=(row:ShipmentQueueRow)=>{
+    const reason=window.prompt('Confirme o recebimento de R$20 de frete por fora do app. Informe o motivo/observação:','Frete recebido por fora, confirmado pela equipe');
+    if(reason===null)return;
+    if(!row.shippingDate){toast.error('Selecione a data do envio.');return;}
+    startTransition(async()=>{const result=await recordExternalFreightPayment(row.customerId,row.shippingDate!,reason);if(!result.ok)toast.error(result.error);else{toast.success('Frete pago por fora registrado. Nenhum Pix foi gerado.');router.refresh();}});
   };
 
   const notify = (shipment: Shipment) => {
@@ -598,7 +606,7 @@ export function ShipmentsView({
                         >
                           Emitir envio
                         </Button>
-                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releaseFreight(row)}>Liberar frete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72"><DropdownMenuItem disabled={row.freightStatus==='paid'||row.companyFreight} onClick={()=>releaseFreight(row)}>Liberar frete · pago por fora</DropdownMenuItem><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releasePrizeFreight(row)}>Frete da empresa · prêmios de R$ 0</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -635,6 +643,7 @@ export function ShipmentsView({
         <ShipmentFormSheet
           open
           title="Emitir envio"
+          initialBatchDate={emitTarget.shippingDate??undefined}
           initialCustomer={{
             id: emitTarget.customerId,
             name: emitTarget.name,

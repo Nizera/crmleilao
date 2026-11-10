@@ -58,6 +58,8 @@ export type ShipmentAddress = {
 };
 
 export type Shipment = {
+  cancellation_origin?: "admin" | "rollback" | "superfrete" | null;
+  cancellation_reason?: string | null;
   freight_payer?: "customer" | "company";
   logisticsPending?: { id: string; code: string; title: string; quantity: number }[];
   storeOrders?: {id:string;code:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];

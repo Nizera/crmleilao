@@ -34,6 +34,7 @@ type Props = {
   onCreated: (shipment: Shipment) => void;
   /** Abre já com esse cliente escolhido (fila de envios). */
   initialCustomer?: { id: string; name: string | null; phone_e164: string } | null;
+  initialBatchDate?:string;
   /** Rótulo do cabeçalho. */
   title?: string;
 };
@@ -45,6 +46,7 @@ export function ShipmentFormSheet({
   onOpenChange,
   onCreated,
   initialCustomer,
+  initialBatchDate,
   title = "Novo envio",
 }: Props) {
   return (
@@ -64,6 +66,7 @@ export function ShipmentFormSheet({
           <ShipmentForm
             onDone={(shipment) => onCreated(shipment)}
             initialCustomer={initialCustomer}
+            initialBatchDate={initialBatchDate}
           />
         )}
       </SheetContent>
@@ -74,9 +77,11 @@ export function ShipmentFormSheet({
 function ShipmentForm({
   onDone,
   initialCustomer,
+  initialBatchDate,
 }: {
   onDone: (shipment: Shipment) => void;
   initialCustomer?: { id: string; name: string | null; phone_e164: string } | null;
+  initialBatchDate?:string;
 }) {
   const [pending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -98,6 +103,7 @@ function ShipmentForm({
   const [loadingContext, setLoadingContext] = useState(Boolean(initialCustomer));
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchDate, setBatchDate] = useState("");
+  const [contextDay, setContextDay] = useState(initialBatchDate);
   const [volume, setVolume] = useState<Volume>({
     height: 6,
     width: 16,
@@ -119,7 +125,7 @@ function ShipmentForm({
     if (!selected) return;
     let cancelled = false;
 
-    loadShipmentContext(selected.id)
+    loadShipmentContext(selected.id,contextDay)
       .then((result) => {
         if (cancelled) return;
         if (result.ok) {
@@ -142,7 +148,7 @@ function ShipmentForm({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected,contextDay]);
 
   const search = (event: FormEvent) => {
     event.preventDefault();
@@ -468,7 +474,19 @@ function ShipmentForm({
                     id="batch-date"
                     type="date"
                     value={batchDate}
-                    onChange={(event) => setBatchDate(event.target.value)}
+                    onChange={(event) => {
+                      const day = event.target.value;
+                      setBatchDate(day);
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day !== contextDay) {
+                        setContextDay(day);
+                        setContext(null);
+                        setPicked(new Set());
+                        setLoadingContext(true);
+                        setServerError(null);
+                        setOptions(null);
+                        setServiceId(null);
+                      }
+                    }}
                     disabled={pending}
                   />
                 </div>
