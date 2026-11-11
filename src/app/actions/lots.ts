@@ -23,6 +23,7 @@ import {
 } from "@/lib/lots";
 import { createClient } from "@/lib/supabase/server";
 import { prepareLotFinancialChange } from "@/lib/lot-payment-guard";
+import { lotPricing } from "@/lib/lot-pricing";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -123,6 +124,7 @@ export async function saveLot(
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
     const values = parsed.data;
+    const price = lotPricing(values.arremate_value, values.discount_amount);
     const items = parseLotItems(formData.get("items"));
 
     const customer = await resolveCustomerId(values);
@@ -133,7 +135,7 @@ export async function saveLot(
     const previous = values.id
       ? await supabase
           .from("lots")
-          .select("id, images, moved_at, status, paid_at, charge_id, customer_id, arremate_value")
+          .select("id, images, moved_at, status, paid_at, charge_id, customer_id, arremate_value, discount_amount")
           .eq("id", values.id)
           .maybeSingle()
       : null;
@@ -141,7 +143,7 @@ export async function saveLot(
     if (values.id && !previous?.data) return failure("Lote não encontrado.");
 
     const financialChange = previous?.data && (
-      Number(previous.data.arremate_value) !== Number(values.arremate_value.replace(",", ".")) ||
+      Number(previous.data.arremate_value) !== price.total ||
       previous.data.customer_id !== customer_id ||
       (previous.data.status !== values.status && (previous.data.status === "pending_payment" || ["cancelled", "pending_payment"].includes(values.status)))
     );
@@ -186,7 +188,8 @@ export async function saveLot(
       customer_id,
       title: values.title,
       description: values.description || null,
-      arremate_value: Number(values.arremate_value.replace(",", ".")),
+      arremate_value: price.total,
+      discount_amount: price.discount,
       status: values.status,
       auction_date: values.auction_date,
       shipping_date:
@@ -204,6 +207,7 @@ export async function saveLot(
         .eq("id", values.id)
         .eq("status", previous!.data!.status)
         .eq("arremate_value", previous!.data!.arremate_value)
+        .eq("discount_amount", previous!.data!.discount_amount)
         .eq("customer_id", previous!.data!.customer_id);
       if (financialChange && previous?.data) {
         // Se outra requisição cobrar ou pagar o lote durante a edição,

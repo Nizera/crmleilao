@@ -32,6 +32,7 @@ export type LotRow = {
   description: string | null;
   images: string[];
   arremate_value: number;
+  discount_amount?: number;
   status: LotStatus;
   /** Cobrança que está cobrando este lote (nula quando elegível para nova cobrança). */
   charge_id: string | null;
@@ -149,6 +150,7 @@ export const lotSchema = z.object({
       /^\d{1,9}([.,]\d{1,2})?$/,
       "Valor inválido, use algo como 45 ou 45,50",
     ),
+  discount_amount: z.string().trim().regex(/^\d{1,9}([.,]\d{1,2})?$/, "Desconto inválido, informe um valor em reais").optional().or(z.literal("")),
   auction_date: z
     .string()
     .trim()
@@ -161,7 +163,7 @@ export const lotSchema = z.object({
     .or(z.literal("")),
   status: z.enum(LOT_STATUSES),
   notes: z.string().trim().max(4000).optional(),
-});
+}).refine(values => Number((values.discount_amount || "0").replace(",", ".")) <= Number(values.arremate_value.replace(",", ".")), {message:"O desconto não pode ser maior que o valor do lote.",path:["discount_amount"]});
 
 export type LotFormValues = z.input<typeof lotSchema>;
 

@@ -119,7 +119,7 @@ export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
 
 /** Colunas sempre presentes de um lote (listagens e detalhe). */
 const LOT_BASE_COLUMNS = [
-  "id, code, customer_id, title, arremate_value, status,",
+  "id, code, customer_id, title, arremate_value, discount_amount, status,",
   "charge_id, payment_due_at, payment_expired_at, pix_paused_at,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id)",
@@ -952,7 +952,7 @@ const CHARGE_LIST_COLUMNS = [
   "description, ticket_url, expires_at, paid_at,",
   "created_by, created_at, updated_at, pix_issue_since, pix_issue_code, pix_last_attempt_at,",
   "customer:customers!inner(id, name, phone_e164),",
-  "lots:lots(id, code, title, arremate_value, status)",
+  "lots:lots(id, code, title, arremate_value, discount_amount, status)",
 ].join(" ");
 
 /**

@@ -1,4 +1,6 @@
 "use client";
+import { LotPrice } from "@/components/shared/lot-price";
+
 import { readSelfPaymentStates } from "@/app/actions/payment-status";
 
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
@@ -400,7 +402,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
                       </span>
                     </span>
                     <span className="ml-2 shrink-0 text-sm font-bold text-ouro-ink">
-                      {formatBRL(lot.arremate_value)}
+                      {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
                     </span>
                   </li>
                 ))}

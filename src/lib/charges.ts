@@ -30,6 +30,7 @@ export type ChargeCustomerRef = {
 };
 
 export type ChargeLotRef = {
+  discount_amount?: number;
   payment_due_at?: string | null;
   id: string;
   code: string;

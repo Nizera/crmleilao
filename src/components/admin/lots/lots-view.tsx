@@ -1,4 +1,6 @@
 "use client";
+import { LotPrice } from "@/components/shared/lot-price";
+
 
 import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
@@ -52,7 +54,6 @@ import {
 } from "@/components/ui/table";
 import {
   buildLotMessage,
-  formatBRL,
   formatDateBR,
   lotImageUrl,
   LOT_STATUSES,
@@ -410,7 +411,7 @@ export function LotsView({
                   {formatQty(qtyByLot.get(lot.id))}
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
-                  {formatBRL(lot.arremate_value)}
+                  {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
                 </TableCell>
                 <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
                   <LotStatusBadge status={lot.status} size="sm" />

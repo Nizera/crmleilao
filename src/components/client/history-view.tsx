@@ -1,4 +1,6 @@
 "use client";
+import { LotPrice } from "@/components/shared/lot-price";
+
 
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -78,7 +80,7 @@ function LotRow({ lot }: { lot: Lot }) {
         <span className="truncate font-medium">
           {lot.code} · {lot.title}
         </span>
-        <span className="text-xs text-muted-foreground">{formatBRL(lot.arremate_value)}</span>
+        <span className="text-xs text-muted-foreground">{<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}</span>
       </span>
       <LotStatusBadge status={lot.status} />
     </Link>

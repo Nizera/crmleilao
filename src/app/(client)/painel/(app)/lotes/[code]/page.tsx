@@ -1,3 +1,4 @@
+import { LotPrice } from "@/components/shared/lot-price";
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -15,7 +16,6 @@ import { getLotByCode, listLotItems, requireCustomer } from "@/lib/dal";
 import { getChargeById } from "@/lib/charges-server";
 import { isChargeActive } from "@/lib/charges";
 import {
-  formatBRL,
   formatDateBR,
   lotImageUrl,
 } from "@/lib/lots";
@@ -103,7 +103,7 @@ export default async function CustomerLotPage({
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Detail
             label="Valor"
-            value={formatBRL(lot.arremate_value)}
+            value={<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
             className="text-ouro-ink"
           />
           <Detail label="Data do leilão" value={formatDateBR(lot.auction_date)} />
@@ -167,7 +167,7 @@ function Detail({
   className,
 }: {
   label: string;
-  value: string;
+  value: import("react").ReactNode;
   className?: string;
 }) {
   return (

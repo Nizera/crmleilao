@@ -1,4 +1,6 @@
 "use client";
+import { lotPricing } from "@/lib/lot-pricing";
+import { LotPrice } from "@/components/shared/lot-price";
 
 import {
   useEffect,
@@ -154,7 +156,8 @@ function LotForm({
       customer_name: lot?.customer?.name ?? "",
       title: lot?.title ?? "",
       description: lot?.description ?? "",
-      arremate_value: lot ? String(lot.arremate_value) : "",
+      arremate_value: lot ? String((Math.round(Number(lot.arremate_value)*100)+Math.round(Number(lot.discount_amount??0)*100))/100) : "",
+      discount_amount: lot?.discount_amount ? String(lot.discount_amount) : "",
       auction_date: lot?.auction_date ?? todayISO(),
       shipping_date:
         lot?.shipping_date ??
@@ -166,6 +169,9 @@ function LotForm({
 
   const remaining = MAX_IMAGES - keptImages.length - uploads.length;
   const statusValue = useWatch({ control: form.control, name: "status" });
+  const originalValue = useWatch({ control: form.control, name: "arremate_value" });
+  const discountValue = useWatch({ control: form.control, name: "discount_amount" });
+  const pricePreview = (() => { try { return lotPricing(originalValue ?? "", discountValue); } catch { return null; } })();
 
   const addFiles = async (list: FileList | File[] | null) => {
     if (!list || remaining <= 0 || compressing) return;
@@ -240,7 +246,7 @@ function LotForm({
   const submit = form.handleSubmit((values) => {
     setServerError(null);
     if (lot?.charge_id && lot.status === "pending_payment" && (
-      Number(values.arremate_value.replace(",", ".")) !== Number(lot.arremate_value) ||
+      lotPricing(values.arremate_value, values.discount_amount).total !== Number(lot.arremate_value) ||
       values.customer_id !== lot.customer_id || values.status !== lot.status
     ) && !window.confirm("Esta alteração encerrará o Pix aberto deste cliente no Mercado Pago, incluindo os demais lotes dessa cobrança. Depois, o cliente poderá gerar um novo Pix com o total atualizado. Continuar?")) return;
 
@@ -440,7 +446,7 @@ function LotForm({
         </Field>
 
         <Field data-invalid={!!errors.arremate_value}>
-          <FieldLabel htmlFor="arremate_value">Valor do arremate</FieldLabel>
+          <FieldLabel htmlFor="arremate_value">Valor original do arremate (R$)</FieldLabel>
           <Input
             id="arremate_value"
             inputMode="decimal"
@@ -448,11 +454,18 @@ function LotForm({
             {...form.register("arremate_value")}
           />
           <FieldDescription>
-            Valor final arrematado no grupo. O lance do leilão é fixo de{" "}
+            Valor antes do desconto. O lance do leilão é fixo de{" "}
             {formatBRL(bidIncrement)}.
           </FieldDescription>
           <FieldError>{errors.arremate_value?.message}</FieldError>
         </Field>
+        <Field data-invalid={!!errors.discount_amount}>
+          <FieldLabel htmlFor="discount_amount">Desconto (R$)</FieldLabel>
+          <Input id="discount_amount" inputMode="decimal" placeholder="0,00" {...form.register("discount_amount")} />
+          <FieldDescription>Opcional. O desconto será abatido do valor do lote; o frete continua separado.</FieldDescription>
+          <FieldError>{errors.discount_amount?.message}</FieldError>
+        </Field>
+        {pricePreview && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><p className="mb-1 text-xs text-muted-foreground">Valor final do lote</p><p className="font-bold"><LotPrice value={pricePreview.total} discount={pricePreview.discount} /></p></div>}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.auction_date}>

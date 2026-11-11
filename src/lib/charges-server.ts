@@ -32,7 +32,7 @@ const CHARGE_BASE_COLUMNS = [
   "description, ticket_url, expires_at, paid_at, freight_amount, freight_period,",
   "created_by, created_at, updated_at, pix_issue_since, pix_issue_code, pix_last_attempt_at,",
   "customer:customers(id, name, phone_e164),",
-  "lots:lots(id, code, title, arremate_value, status, auction_date)",
+  "lots:lots(id, code, title, arremate_value, discount_amount, status, auction_date)",
 ].join(" ");
 
 /** Listagem: sem `qr_code`/`qr_code_base64` (até 4 KB por linha). */
@@ -59,11 +59,12 @@ async function resolvePixIssue(id:string) {
 /** Lotes `pending_payment` do cliente que ainda não estão numa cobrança aberta. */
 export async function listEligibleLots(customerId: string): Promise<ChargeLotRef[]> {
   const refs = await listEligibleLotRefs(customerId);
-  return refs.map(({ id, code, title, arremate_value, status, auction_date, payment_due_at }) => ({
+  return refs.map(({ id, code, title, arremate_value, discount_amount, status, auction_date, payment_due_at }) => ({
     id,
     code,
     title,
     arremate_value,
+    discount_amount,
     status,
     auction_date, payment_due_at,
   }));
@@ -81,7 +82,7 @@ export async function listEligibleLotRefs(
   const { data, error } = await admin
     .from("lots")
     .select(
-      "id, code, title, arremate_value, status, auction_date, payment_due_at, charge_id, charge:charges(status, expires_at)",
+      "id, code, title, arremate_value, discount_amount, status, auction_date, payment_due_at, charge_id, charge:charges(status, expires_at)",
     )
     .eq("customer_id", customerId)
     .eq("status", "pending_payment")
@@ -102,6 +103,7 @@ export async function listEligibleLotRefs(
       code: row.code,
       title: row.title,
       arremate_value: row.arremate_value,
+      discount_amount: row.discount_amount,
       status: row.status,
       auction_date: row.auction_date,
       charge_id: row.charge_id,

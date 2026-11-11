@@ -1,4 +1,6 @@
 "use client";
+import { LotPrice } from "@/components/shared/lot-price";
+
 
 import {auctionDeadlineLabel} from "@/lib/auction-deadlines";
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
@@ -12,7 +14,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ImageLightbox } from "@/components/client/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatBRL, formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
+import { formatDateBR, lotImageUrl, type Lot } from "@/lib/lots";
 
 type Props = {
   lots: Lot[];
@@ -145,14 +147,14 @@ export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Prop
                 >
                   {lot.title}
                 </Link>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-2">
                   <span
                     className={cn(
                       "text-sm font-bold",
                       pending ? "text-ouro-ink" : "text-foreground",
                     )}
                   >
-                    {formatBRL(lot.arremate_value)}
+                    {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
                   </span>
                   <span className="text-xs text-muted-foreground">•</span>
                   <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
