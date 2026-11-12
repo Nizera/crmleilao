@@ -18,7 +18,7 @@ export default async function RelatoriosPage({
   // `?d=AAAA-MM-DD` permite linkar/direcionar um dia específico; sem isso,
   // abre no dia de hoje.
   const raw = first((await searchParams).d);
-  const date = raw && isISODate(raw) ? raw : todayISO();
+  const date = raw && (raw === "all" || isISODate(raw)) ? raw : todayISO();
   const report = await getSeparationReport(date);
 
   return (

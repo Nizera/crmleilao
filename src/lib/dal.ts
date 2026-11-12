@@ -352,7 +352,7 @@ export const searchCustomers = cache(
 /*  Clientes (F2) — lista paginada e ficha com histórico                      */
 /* -------------------------------------------------------------------------- */
 
-export type CustomerDetail = Customer & {
+export type CustomerDetail = Customer & ShippingProfile & {
   access?: {warning_count:number;blocked_at:string|null}|null;
   email: string | null;
   cpf_cnpj: string | null;
@@ -363,7 +363,7 @@ export type CustomerDetail = Customer & {
 };
 
 const CUSTOMER_COLUMNS =
-  "id, name, phone_e164, email, cpf_cnpj, auth_user_id, created_at, updated_at, access:customer_access_state(warning_count,blocked_at)";
+  "id, name, phone_e164, email, cpf_cnpj, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state, auth_user_id, created_at, updated_at, access:customer_access_state(warning_count,blocked_at)";
 
 export type CustomerPage = {
   rows: CustomerDetail[];

@@ -34,6 +34,7 @@ function reportLoader({ missing = true, queryError, lots = [], issues = [], frei
   } };
   const exports = {};
   const dependencies = {
+    '@/lib/dates': {spToday:()=> '2026-11-11'},
     'server-only': {}, '@/lib/notes': { loadNotes: async () => new Map() },
     '@/lib/supabase/admin': { createAdminClient: () => db },
     '@/lib/supabase/server': { createClient: async () => db },
@@ -41,7 +42,7 @@ function reportLoader({ missing = true, queryError, lots = [], issues = [], frei
   };
   const source = ts.transpileModule(readFileSync('src/lib/reports-server.ts','utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(source, { exports, require: name => { if (!(name in dependencies)) throw new Error(name); return dependencies[name]; } });
-  return { load: () => exports.getSeparationReport('2026-11-03'), calls };
+  return { load: (day = '2026-11-03') => exports.getSeparationReport(day), calls };
 }
 
 test('Migration ausente não derruba relatório vazio e retorna aviso também para impressão', async () => {
@@ -127,4 +128,22 @@ test('cobrança aberta vinculada ao lote selecionado continua bloqueando pacote 
 
 test('falha ao consultar liberações de prêmios interrompe relatório em vez de esconder itens',async()=>{
   await assert.rejects(reportLoader({lots:[lot('paid','a')],releaseError:true}).load(),/liberações de frete/);
+});
+
+
+test('todas as datas reúne semanas anteriores, preserva movimentação e exclui etiquetas já liberadas',async()=>{
+ const old={...lot('old','a'),shipping_date:'2026-10-27',moved_at:'2026-10-28T10:00:00Z'};
+ const future={...lot('future','a','pending_payment'),shipping_date:'2026-11-17'};
+ const issued=lot('issued','b');
+ const issue={id:'replacement',shipping_date:'2026-10-20',customers:customer('a'),shipment_id:null,cancelled_at:null};
+ const report=await reportLoader({missing:false,lots:[old,future,issued],issues:[issue],
+   freight:[{customer_id:'a',status:'paid'},{customer_id:'b',status:'paid'}],
+   links:[{lot_id:'issued',shipment:{batch_date:'2026-11-03',status:'posted'}}]}).load('all');
+ assert.equal(report.shippingDate,'all');
+ assert.equal(report.customers.length,1);
+ assert.equal(report.customers[0].lots.length,1);
+ assert.equal(report.customers[0].lots[0].id,'old');
+ assert.equal(report.customers[0].lots[0].shippingDate,'2026-10-27');
+ assert.ok(report.customers[0].lots[0].movedAt);
+ assert.equal(report.customers[0].logisticsPending.length,1,'reposição vencida não é duplicada entre datas');
 });

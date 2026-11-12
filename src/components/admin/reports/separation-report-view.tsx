@@ -61,6 +61,12 @@ function addressLine(address: SeparationAddress): string {
   return [withComplement, place, cep].filter(Boolean).join(" · ");
 }
 
+function shippingLabel(day?: string): string {
+  if (!day) return "";
+  const overdue = day < spDayOf(new Date().toISOString());
+  return `Envio previsto: ${formatDateBR(day)}${overdue ? " · Data prevista já passou" : ""}`;
+}
+
 type Props = {
   initialDate: string;
   initialReport: SeparationReport;
@@ -124,7 +130,6 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
   const changeDate = (value: string) => {
     if (!value) return;
-    setDate(value);
     setCustomerId(ALL);
     setSelectedIds([]);
     startTransition(async () => {
@@ -133,6 +138,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         toast.error(result.error);
         return;
       }
+      setDate(value);
       setReport(result.data);
     });
   };
@@ -169,7 +175,14 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
       {(report.warnings ?? []).map(warning => <p key={warning} role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200 print:text-black">{warning}</p>)}
 
       <div className="flex flex-wrap items-end gap-3 print:hidden">
-        <Field className="w-44">
+        <Field className="w-full sm:w-48">
+          <FieldLabel>Período de envio</FieldLabel>
+          <Select value={date === ALL ? ALL : "date"} onValueChange={value => changeDate(value === ALL ? ALL : initialDate === ALL ? spDayOf(new Date().toISOString()) : initialDate)} disabled={isPending}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="date">Uma data específica</SelectItem><SelectItem value={ALL}>Todas as datas</SelectItem></SelectContent>
+          </Select>
+        </Field>
+        {date !== ALL && <Field className="w-full sm:w-44">
           <FieldLabel htmlFor="separation-date">Data de envio</FieldLabel>
           <Input
             id="separation-date"
@@ -178,9 +191,9 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
             onChange={(event) => changeDate(event.target.value)}
             disabled={isPending}
           />
-        </Field>
+        </Field>}
 
-        <Field className="w-64">
+        <Field className="w-full sm:w-64">
           <FieldLabel>Cliente</FieldLabel>
           <Select
             value={selectedId}
@@ -244,9 +257,9 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
               Os Caras das Legends · Separação
             </p>
             <h3 className="text-lg font-semibold">
-              {formatDateBR(report.shippingDate)}
+              {report.shippingDate === ALL ? "Todas as datas · Itens ainda não enviados" : formatDateBR(report.shippingDate)}
               <span className="ml-2 font-normal text-muted-foreground">
-                {weekdayOf(report.shippingDate)}
+                {report.shippingDate === ALL ? "" : weekdayOf(report.shippingDate)}
               </span>
             </h3>
           </div>
@@ -259,8 +272,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
         {customers.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum item para separar com envio previsto até{" "}
-            {formatDateBR(report.shippingDate)}.
+            Nenhum item encontrado para o período: {" "}
+            {report.shippingDate === ALL ? "Todas as datas · Itens ainda não enviados" : formatDateBR(report.shippingDate)}.
           </p>
         ) : (
           customers.map((customer) => {
@@ -296,6 +309,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                 </div>)}
                 {customer.logisticsPending.map(issue => <div key={issue.id} className="mb-3 rounded-md border border-amber-500/40 p-3 break-inside-avoid">
                   <p className="text-sm font-semibold">{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
+                  {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(issue.shippingDate)}</p>}
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
                   <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
@@ -335,6 +349,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                       </Button>
                       </div>
                     </div>
+                    {date === ALL && <p className="px-3 py-1 text-xs text-muted-foreground">{shippingLabel(lot.shippingDate)}</p>}
                     {lot.createdAt && <p className="border-t px-3 py-1.5 text-[11px] leading-relaxed text-muted-foreground print:text-black">{lotRegistrationLabel(lot.createdAt)}</p>}
                     {(lot.movedItems.length > 0 || lot.description?.trim() || lot.notes?.trim()) && (
                       <div className="grid gap-1 px-3 py-2 text-xs print:text-black">

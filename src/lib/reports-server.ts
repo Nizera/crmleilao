@@ -12,6 +12,7 @@ const REPORT_LOTS_PAGE_SIZE = 500;
 export type SeparationLot = {
   id: string;
   createdAt: string;
+  shippingDate?: string;
   code: string;
   title: string;
   description: string | null;
@@ -32,7 +33,7 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
-  logisticsPending?: { id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
+  logisticsPending?: { shippingDate?: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
   storeOrders?: {shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
@@ -43,6 +44,7 @@ export type SeparationCustomer = {
 
 export type SeparationReport = {
   warnings?: string[];
+  excludedCustomerIds?: string[];
   shippingDate: string;
   customers: SeparationCustomer[];
   totals: {
@@ -84,18 +86,20 @@ type LotRow = {
  */
 export async function getSeparationReport(
   shippingDate: string,
+  outstandingOnly = false,
 ): Promise<SeparationReport> {
+  if (shippingDate === "all") return getAllSeparationReport();
   const admin = createAdminClient();
 
   // Reposições vencidas continuam na fila até entrarem em uma etiqueta.
   // Não são arremates: a conferência não depende de pagamentos do cliente.
-  type PendingRow = { id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
+  type PendingRow = { shipping_date: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
   const pendingRows: PendingRow[] = [];
   const warnings: string[] = [];
   let logisticsAvailable = true;
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
-      .select("id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .lte("shipping_date", shippingDate).is("cancelled_at", null).is("shipment_id", null)
       .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
     if (error) {
@@ -113,9 +117,9 @@ export async function getSeparationReport(
 
   // O histórico de separação mantém as reposições já vinculadas ao pacote
   // desta data, mesmo quando foram originalmente previstas para outro dia.
-  for (let from = 0; logisticsAvailable; from += REPORT_LOTS_PAGE_SIZE) {
+  for (let from = 0; logisticsAvailable && !outstandingOnly; from += REPORT_LOTS_PAGE_SIZE) {
     const { data, error } = await admin.from("logistics_pending")
-      .select("id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .eq("shipment.batch_date", shippingDate).is("cancelled_at", null)
       .order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
     if (error) throw new Error("Não foi possível carregar as reposições vinculadas ao envio.");
@@ -201,6 +205,7 @@ export async function getSeparationReport(
   for(const id of candidateIds)if(paymentBlockedCustomers.has(id)||freightBlockedCustomers.has(id))blockedCustomers.add(id);
   const eligibleRows = rows.filter(row => {
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
+    if (outstandingOnly && (releasedLotIds.has(row.id) || row.status !== "paid")) return false;
     if (releasedLotIds.has(row.id)) return true;
     return !paymentBlockedCustomers.has(row.customers.id)
       && (!freightBlockedCustomers.has(row.customers.id) || releasedPrizeIds.has(row.id));
@@ -237,6 +242,7 @@ export async function getSeparationReport(
       movedAt: row.moved_at,
       movedItems: itemsByLot.get(row.id) ?? [],
       createdAt: row.created_at,
+      shippingDate,
     };
 
     const entry = byCustomer.get(customer.id) ?? {
@@ -269,7 +275,7 @@ export async function getSeparationReport(
       lots: [],
     };
     entry.logisticsPending = [...(entry.logisticsPending ?? []), {
-      id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, source_kind: row.source_kind, shipping_declared_value: Number(row.shipping_declared_value), moved_at: row.moved_at,
+      shippingDate: row.shipping_date, id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, source_kind: row.source_kind, shipping_declared_value: Number(row.shipping_declared_value), moved_at: row.moved_at,
       shipmentCode: row.shipment?.code ?? null,
     }];
     byCustomer.set(customer.id, entry);
@@ -294,6 +300,7 @@ export async function getSeparationReport(
 
   return {
     shippingDate,
+    excludedCustomerIds: candidateIds.filter(id => !byCustomer.has(id)),
     warnings,
     customers,
     totals: {
@@ -302,4 +309,42 @@ export async function getSeparationReport(
       excludedCustomers: candidateIds.filter(id => !byCustomer.has(id)).length,
     },
   };
+}
+
+/** Visão geral: reutiliza a conferência financeira de cada remessa, sem permitir
+ * que débitos de uma remessa futura bloqueiem os itens de uma data anterior. */
+async function getAllSeparationReport(): Promise<SeparationReport> {
+  const admin = createAdminClient();
+  const dates = new Set<string>();
+  for (const table of ["lots", "logistics_pending"] as const) {
+    for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
+      let query = admin.from(table).select("shipping_date");
+      query = table === "lots" ? query.in("status", ["paid", "pending_payment"]) : query.is("shipment_id", null).is("cancelled_at", null);
+      const {data,error} = await query.order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
+      if (error) throw new Error("Não foi possível carregar todas as datas de separação.");
+      for (const row of data ?? []) if (row.shipping_date) dates.add(row.shipping_date);
+      if ((data ?? []).length < REPORT_LOTS_PAGE_SIZE) break;
+    }
+  }
+  // Também contempla compras da loja sem lotes ou prêmios associados.
+  const {spToday} = await import("@/lib/dates");
+  dates.add(spToday());
+  const customers = new Map<string, SeparationCustomer>();
+  const warnings = new Set<string>();
+  const excludedIds = new Set<string>();
+  for (const day of [...dates].sort()) {
+    const report = await getSeparationReport(day, true);
+    for (const id of report.excludedCustomerIds ?? []) excludedIds.add(id);
+    for (const warning of report.warnings ?? []) warnings.add(warning);
+    for (const customer of report.customers) {
+      const previous = customers.get(customer.customerId);
+      if (!previous) { customers.set(customer.customerId, customer); continue; }
+      previous.lots = [...new Map([...previous.lots,...customer.lots].map(item => [item.id,item])).values()];
+      previous.logisticsPending = [...new Map([...(previous.logisticsPending??[]),...(customer.logisticsPending??[])].map(item=>[item.id,item])).values()];
+      previous.storeOrders = [...new Map([...(previous.storeOrders??[]),...(customer.storeOrders??[])].map(item=>[item.id,item])).values()];
+    }
+  }
+  const rows = [...customers.values()].filter(c=>c.lots.length || c.logisticsPending?.length || c.storeOrders?.length)
+    .sort((a,b)=>(a.name??"ZZZ").localeCompare(b.name??"ZZZ","pt-BR"));
+  return {shippingDate:"all",warnings:[...warnings],customers:rows,totals:{customers:rows.length,lots:rows.reduce((n,c)=>n+c.lots.length,0),excludedCustomers:[...excludedIds].filter(id=>!customers.has(id)).length}};
 }

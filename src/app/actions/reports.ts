@@ -19,7 +19,7 @@ export async function getSeparationReportAction(
 ): Promise<ActionResult<SeparationReport>> {
   try {
     await requireAdmin();
-    if (!ISO_DATE.test(shippingDate)) return failure("Data inválida.");
+    if (shippingDate !== "all" && !ISO_DATE.test(shippingDate)) return failure("Data inválida.");
     return { ok: true, data: await getSeparationReport(shippingDate) };
   } catch (error) {
     rethrowIfRedirect(error);

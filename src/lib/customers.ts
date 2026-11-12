@@ -25,7 +25,7 @@ const emailField = z
   );
 
 export const customerFormSchema = z.object({
-  id: z.string().trim().optional(),
+  id: z.string().trim().refine(v => !v || z.uuid().safeParse(v).success, "Cliente inválido").optional(),
   name: z
     .string()
     .trim()
@@ -39,6 +39,13 @@ export const customerFormSchema = z.object({
     .max(20, "CPF/CNPJ muito longo")
     .refine(value=>!value||isValidBrazilianDocument(value),"CPF/CNPJ inválido: confira o número completo.")
     .optional(),
+  address_cep: z.string().trim().refine(v => !v || /^\d{5}-?\d{3}$/.test(v), "CEP inválido: use 8 dígitos").optional(),
+  address_street: z.string().trim().max(160).optional(),
+  address_number: z.string().trim().max(20).optional(),
+  address_complement: z.string().trim().max(80).optional(),
+  address_district: z.string().trim().max(80).optional(),
+  address_city: z.string().trim().max(80).optional(),
+  address_state: z.string().trim().refine(v => !v || BRAZIL_UFS.includes(v.toUpperCase() as typeof BRAZIL_UFS[number]), "UF inválida").optional(),
   notes: z
     .string()
     .trim()
