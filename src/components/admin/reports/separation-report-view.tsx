@@ -1,5 +1,6 @@
 "use client";
 
+import {filterReportCustomers} from "@/lib/report-search";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Eye, LoaderCircle } from "lucide-react";
@@ -77,6 +78,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
   const [date, setDate] = useState(initialDate);
   const [report, setReport] = useState(initialReport);
   const [customerId, setCustomerId] = useState(ALL);
+  const [search,setSearch] = useState("");
   const [movementFilter, setMovementFilter] = useState(UNMOVED);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [gallery, setGallery] = useState<{ src: string; alt: string }[]>([]);
@@ -115,7 +117,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           (customer) => customer.customerId === selectedId,
         );
 
-  const customers = baseCustomers.map((customer) => ({
+  const movementCustomers = baseCustomers.map((customer) => ({
     ...customer,
     logisticsPending: (customer.logisticsPending ?? []).filter(issue => movementFilter === MOVED ? !!issue.moved_at : movementFilter === ALL || !issue.moved_at),
     storeOrders: (customer.storeOrders ?? []).filter(order => movementFilter === MOVED ? !!order.boxed_at : movementFilter === ALL || !order.boxed_at),
@@ -124,6 +126,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
     ),
   })).filter((customer) => customer.lots.length > 0 || customer.storeOrders.length > 0 || customer.logisticsPending.length > 0);
 
+  const customers = filterReportCustomers(movementCustomers,search);
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
   const visibleIds = new Set(customers.flatMap((customer) => customer.lots.map((lot) => lot.id)));
   const selectedVisibleIds = selectedIds.filter((id) => visibleIds.has(id));
@@ -175,6 +178,13 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
       {(report.warnings ?? []).map(warning => <p key={warning} role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200 print:text-black">{warning}</p>)}
 
       <div className="flex flex-wrap items-end gap-3 print:hidden">
+        <Field className="w-full">
+          <FieldLabel htmlFor="report-search">Pesquisar no relatório</FieldLabel>
+          <div className="flex min-w-0 gap-2">
+            <Input id="report-search" className="min-w-0 flex-1" type="search" value={search} maxLength={160} onChange={event=>{setSearch(event.target.value);setSelectedIds([]);}} placeholder="Cliente, código, jogador, card ou descrição…" disabled={isPending} />
+            {search && <Button type="button" variant="outline" onClick={()=>{setSearch("");setSelectedIds([]);}}>Limpar busca</Button>}
+          </div>
+        </Field>
         <Field className="w-full sm:w-48">
           <FieldLabel>Período de envio</FieldLabel>
           <Select value={date === ALL ? ALL : "date"} onValueChange={value => changeDate(value === ALL ? ALL : initialDate === ALL ? spDayOf(new Date().toISOString()) : initialDate)} disabled={isPending}>
@@ -298,6 +308,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
                 {customer.storeOrders.map(order => <div key={order.id} className="mb-3 rounded-md border border-ouro/40 p-3 break-inside-avoid">
                   <p className="text-sm font-semibold">Loja · {order.code} {order.boxed_at ? '· Na caixa' : '· A separar'}</p>
+                  {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(order.shippingDate)}</p>}
                   <ul className="mt-2 grid gap-1 text-xs">{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><li key={index}>{item.quantity}× {item.name}</li>)}</ul>
                   {order.fulfillment_status==='processing' && (!order.boxed_at||!order.shipping_declared_value) && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais (obrigatório para produtos em Caracoins)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} placeholder="Em reais, automático; em Caracoins, informe o valor" className="h-9 max-w-sm rounded-md border bg-background px-2"/></label>}
                   {(!order.boxed_at||!order.shipping_declared_value) && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
@@ -313,7 +324,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
                   <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
-                  {issue.source_kind === "raffle" && !issue.moved_at && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$, opcional)<input type="number" min="0" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
+                  {issue.source_kind === "raffle" && !issue.moved_at && !issue.shipmentCode && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$, opcional)<input type="number" min="0" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
                   {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
                     const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(storeDeclared[issue.id] ?? issue.shipping_declared_value)) : await handleLogisticsPendingAction(issue.id, "box");
                     if (!result.ok) { toast.error(result.error); return; }

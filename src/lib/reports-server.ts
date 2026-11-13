@@ -1,10 +1,10 @@
 import "server-only";
 
-import { type LotStatus } from "@/lib/lots";
+import { nextShippingDate, type LotStatus } from "@/lib/lots";
+import {spToday} from "@/lib/dates";
 import { loadNotes } from "@/lib/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isChargeActive } from "@/lib/charges";
-import { createClient } from "@/lib/supabase/server";
 
 /** Lotes por página, abaixo do limite padrão do PostgREST. */
 const REPORT_LOTS_PAGE_SIZE = 500;
@@ -20,6 +20,7 @@ export type SeparationLot = {
   status: LotStatus;
   movedAt: string | null;
   movedItems: string[];
+  searchItems?: string[];
 };
 
 export type SeparationAddress = {
@@ -34,7 +35,7 @@ export type SeparationAddress = {
 
 export type SeparationCustomer = {
   logisticsPending?: { shippingDate?: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
-  storeOrders?: {shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
+  storeOrders?: {shippingDate?:string;shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
   phone_e164: string;
@@ -79,6 +80,27 @@ type LotRow = {
   } | null;
 };
 
+type ReportStoreRow = NonNullable<SeparationCustomer["storeOrders"]>[number] & {customer_id:string;created_at:string;shippingDate:string};
+
+async function loadReportStoreOrders(): Promise<ReportStoreRow[]> {
+  const admin=createAdminClient();
+  const result:ReportStoreRow[]=[];
+  for(let from=0;;from+=REPORT_LOTS_PAGE_SIZE){
+    const {data,error}=await admin.from("store_orders")
+      .select("id,code,customer_id,created_at,boxed_at,fulfillment_status,shipping_declared_value,items:store_order_items(name,quantity,delivery_kind)")
+      .eq("payment_status","paid").neq("fulfillment_status","fulfilled").is("shipment_id",null)
+      .order("created_at").order("id").range(from,from+REPORT_LOTS_PAGE_SIZE-1);
+    if(error)throw new Error("Não foi possível conferir os pedidos da loja para a separação.");
+    for(const order of data??[])if(order.items?.some(item=>item.delivery_kind==="physical"))result.push({...order,shippingDate:nextShippingDate(spToday())} as ReportStoreRow);
+    if((data?.length??0)<REPORT_LOTS_PAGE_SIZE)return result;
+  }
+}
+
+function uniqueItems<T extends {id:string}>(items:T[]):T[]{return [...new Map(items.map(item=>[item.id,item])).values()];}
+function deduplicateCustomers(customers:SeparationCustomer[]):SeparationCustomer[]{
+  return customers.map(customer=>({...customer,lots:uniqueItems(customer.lots),logisticsPending:uniqueItems(customer.logisticsPending??[]),storeOrders:uniqueItems(customer.storeOrders??[])}));
+}
+
 /**
  * Relatório de separação de um dia de envio: lotes com `shipping_date` na
  * data (cancelados ficam de fora), agrupados por cliente e identificados
@@ -87,42 +109,30 @@ type LotRow = {
 export async function getSeparationReport(
   shippingDate: string,
   outstandingOnly = false,
+  preloadedStore?: ReportStoreRow[],
 ): Promise<SeparationReport> {
   if (shippingDate === "all") return getAllSeparationReport();
   const admin = createAdminClient();
 
-  // Reposições vencidas continuam na fila até entrarem em uma etiqueta.
-  // Não são arremates: a conferência não depende de pagamentos do cliente.
+  // Uma única consulta pela data prevista do item evita repetir prêmios entre
+  // dias ou incluí-los novamente pela data da etiqueta.
   type PendingRow = { shipping_date: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
   const pendingRows: PendingRow[] = [];
   const warnings: string[] = [];
-  let logisticsAvailable = true;
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
-    const { data, error } = await admin.from("logistics_pending")
-      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
-      .lte("shipping_date", shippingDate).is("cancelled_at", null).is("shipment_id", null)
+    let pendingQuery = admin.from("logistics_pending")
+      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+      .eq("shipping_date", shippingDate).is("cancelled_at", null)
       .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
+    if (outstandingOnly) pendingQuery = pendingQuery.is("shipment_id", null);
+    const { data, error } = await pendingQuery;
     if (error) {
       if (["PGRST205", "42P01"].includes(error.code)) {
-        logisticsAvailable = false;
         warnings.push("As pendências logísticas não foram carregadas: aplique a migration 0035 no Supabase e atualize a tela. Este relatório contém somente os itens disponíveis; não use para concluir a separação de reposições.");
         break;
       }
       throw new Error("Não foi possível conferir as pendências logísticas. Tente novamente antes de separar os envios.");
     }
-    const page = (data ?? []) as unknown as PendingRow[];
-    pendingRows.push(...page);
-    if (page.length < REPORT_LOTS_PAGE_SIZE) break;
-  }
-
-  // O histórico de separação mantém as reposições já vinculadas ao pacote
-  // desta data, mesmo quando foram originalmente previstas para outro dia.
-  for (let from = 0; logisticsAvailable && !outstandingOnly; from += REPORT_LOTS_PAGE_SIZE) {
-    const { data, error } = await admin.from("logistics_pending")
-      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments!inner(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
-      .eq("shipment.batch_date", shippingDate).is("cancelled_at", null)
-      .order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
-    if (error) throw new Error("Não foi possível carregar as reposições vinculadas ao envio.");
     const page = (data ?? []) as unknown as PendingRow[];
     pendingRows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
@@ -147,12 +157,7 @@ export async function getSeparationReport(
     rows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
-  const db = await createClient();
-  const {data:storeRows,error:storeError}=await db.rpc('get_store_fulfillment',{p_day:shippingDate});
-  if(storeError)throw new Error('Não foi possível conferir os pedidos da loja para a separação.');
-  type StoreRow=NonNullable<SeparationCustomer['storeOrders']>[number]&{customer_id:string;physical:boolean};
-  const physicalStore=(storeRows??[] as StoreRow[]).filter((o:StoreRow)=>o.physical) as StoreRow[];
-
+  const physicalStore = (preloadedStore ?? await loadReportStoreOrders()).filter(order=>order.shippingDate===shippingDate);
 
   // Um pacote liberado já passou pela conferência: pendências de outra data
   // não podem retirar seu conteúdo da separação nem do histórico impresso.
@@ -212,14 +217,16 @@ export async function getSeparationReport(
   });
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();
+  const searchableItemsByLot = new Map<string,string[]>();
   for(let from=0;from<itemIds.length;from+=200) {
     const { data: items, error: itemsError } = await admin.from("lot_items")
       .select("lot_id, qty, applied, color, player:players(name)").in("lot_id", itemIds.slice(from,from+200));
     if (itemsError) throw new Error(`Falha ao carregar itens movimentados: ${itemsError.message}`);
     for (const item of items ?? []) {
-      if (!item.applied) continue;
       const player = item.player as unknown as { name: string } | null;
       const details = `${item.qty} × ${player?.name ?? "Item"} · ${item.color}`;
+      searchableItemsByLot.set(item.lot_id,[...(searchableItemsByLot.get(item.lot_id)??[]),details]);
+      if (!item.applied) continue;
       itemsByLot.set(item.lot_id, [...(itemsByLot.get(item.lot_id) ?? []), details]);
     }
   }
@@ -241,6 +248,7 @@ export async function getSeparationReport(
       status: row.status,
       movedAt: row.moved_at,
       movedItems: itemsByLot.get(row.id) ?? [],
+      searchItems: searchableItemsByLot.get(row.id) ?? [],
       createdAt: row.created_at,
       shippingDate,
     };
@@ -289,7 +297,7 @@ export async function getSeparationReport(
   for(const order of physicalStore){if(blockedCustomers.has(order.customer_id))continue;const entry=byCustomer.get(order.customer_id);if(entry)entry.storeOrders=[...(entry.storeOrders??[]),order];}
 
   // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.
-  const customers = [...byCustomer.values()].sort((a, b) => {
+  const customers = deduplicateCustomers([...byCustomer.values()]).sort((a, b) => {
     const left = a.name?.trim() || null;
     const right = b.name?.trim() || null;
     if (!left && !right) return 0;
@@ -326,14 +334,15 @@ async function getAllSeparationReport(): Promise<SeparationReport> {
       if ((data ?? []).length < REPORT_LOTS_PAGE_SIZE) break;
     }
   }
+  const storeOrders=await loadReportStoreOrders();
+  for(const order of storeOrders)dates.add(order.shippingDate);
   // Também contempla compras da loja sem lotes ou prêmios associados.
-  const {spToday} = await import("@/lib/dates");
   dates.add(spToday());
   const customers = new Map<string, SeparationCustomer>();
   const warnings = new Set<string>();
   const excludedIds = new Set<string>();
   for (const day of [...dates].sort()) {
-    const report = await getSeparationReport(day, true);
+    const report = await getSeparationReport(day, true, storeOrders);
     for (const id of report.excludedCustomerIds ?? []) excludedIds.add(id);
     for (const warning of report.warnings ?? []) warnings.add(warning);
     for (const customer of report.customers) {
@@ -344,7 +353,7 @@ async function getAllSeparationReport(): Promise<SeparationReport> {
       previous.storeOrders = [...new Map([...(previous.storeOrders??[]),...(customer.storeOrders??[])].map(item=>[item.id,item])).values()];
     }
   }
-  const rows = [...customers.values()].filter(c=>c.lots.length || c.logisticsPending?.length || c.storeOrders?.length)
+  const rows = deduplicateCustomers([...customers.values()]).filter(c=>c.lots.length || c.logisticsPending?.length || c.storeOrders?.length)
     .sort((a,b)=>(a.name??"ZZZ").localeCompare(b.name??"ZZZ","pt-BR"));
   return {shippingDate:"all",warnings:[...warnings],customers:rows,totals:{customers:rows.length,lots:rows.reduce((n,c)=>n+c.lots.length,0),excludedCustomers:[...excludedIds].filter(id=>!customers.has(id)).length}};
 }

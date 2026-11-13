@@ -7,12 +7,12 @@ import ts from 'typescript';
 const customer = id => ({ id, name: 'Cliente teste', phone_e164: '+5511000000000' });
 const lot = (id, customerId, status = 'paid') => ({ id, code: id, title: 'Figurinha teste', status, arremate_value: 100, charge_id: null, shipping_date: '2026-11-03', created_at: '2026-10-29T12:00:00Z', customers: customer(customerId), customer_id: customerId, moved_at: null });
 
-function reportLoader({ missing = true, queryError, lots = [], issues = [], freightError = false, freight = [], links = [], releases = [], charges = [], releaseError = false } = {}) {
+function reportLoader({ missing = true, queryError, lots = [], issues = [], freightError = false, freight = [], links = [], releases = [], charges = [], releaseError = false, orders = [] } = {}) {
   const calls = [];
   const db = { from(table) {
     const call = { table, select: '' };
     calls.push(call);
-    let rows = [...({ lots, logistics_pending: issues, charges, lot_items: [], shipment_lots: links, external_prize_freight_releases: releases }[table] ?? [])];
+    let rows = [...({ lots, logistics_pending: issues, charges, lot_items: [], shipment_lots: links, external_prize_freight_releases: releases, store_orders:orders }[table] ?? [])];
     const field = (row, key) => key.split('.').reduce((value, part) => value?.[part], row);
     return {
       select(value) { call.select = value; return this; },
@@ -34,7 +34,8 @@ function reportLoader({ missing = true, queryError, lots = [], issues = [], frei
   } };
   const exports = {};
   const dependencies = {
-    '@/lib/dates': {spToday:()=> '2026-11-11'},
+    '@/lib/dates': {spToday:()=> '2026-11-11',spDayOf:date=>new Date(new Date(date).getTime()-3*3600000).toISOString().slice(0,10)},
+    '@/lib/lots':{nextShippingDate:day=>{const date=new Date(day+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+((2-date.getUTCDay()+7)%7||7));return date.toISOString().slice(0,10)}},
     'server-only': {}, '@/lib/notes': { loadNotes: async () => new Map() },
     '@/lib/supabase/admin': { createAdminClient: () => db },
     '@/lib/supabase/server': { createClient: async () => db },
@@ -146,4 +147,67 @@ test('todas as datas reúne semanas anteriores, preserva movimentação e exclui
  assert.equal(report.customers[0].lots[0].shippingDate,'2026-10-27');
  assert.ok(report.customers[0].lots[0].movedAt);
  assert.equal(report.customers[0].logisticsPending.length,1,'reposição vencida não é duplicada entre datas');
+});
+
+
+test('prêmios e pendências previstos para 10/11 não aparecem nos dias 11, 12 e 13',async()=>{
+ const issues=['raffle','replacement'].flatMap(kind=>[
+   {id:`${kind}-10`,title:kind,source_kind:kind,shipping_date:'2026-11-10',customers:customer('cleber'),shipment_id:null,cancelled_at:null,moved_at:'2026-11-12T05:00:00Z'},
+   {id:`${kind}-17`,title:kind,source_kind:kind,shipping_date:'2026-11-17',customers:customer('cleber'),shipment_id:null,cancelled_at:null,moved_at:null},
+ ]);
+ const {load}=reportLoader({missing:false,issues});
+ for(const day of ['2026-11-11','2026-11-12','2026-11-13']){
+   const report=await load(day);assert.equal(report.customers.length,0,day);
+ }
+ const day10=await load('2026-11-10');assert.equal(day10.customers[0].logisticsPending.length,2);
+ assert.ok(day10.customers[0].logisticsPending.every(item=>item.shippingDate==='2026-11-10'));
+ const day17=await load('2026-11-17');assert.equal(day17.customers[0].logisticsPending.length,2);
+ assert.ok(day17.customers[0].logisticsPending.every(item=>item.shippingDate==='2026-11-17'));
+ const all=await load('all');assert.equal(all.customers[0].logisticsPending.length,4,'Todas as datas mantém cada item uma vez');
+});
+
+test('etiqueta não faz o mesmo item aparecer novamente em outra data',async()=>{
+ const issue={id:'linked',shipping_date:'2026-11-03',customers:customer('cleber'),shipment_id:'s',cancelled_at:null,shipment:{code:'ENV-TESTE',batch_date:'2026-11-10'}};
+ const {load}=reportLoader({missing:false,issues:[issue]});
+ assert.equal((await load('2026-11-03')).customers[0].logisticsPending[0].shipmentCode,'ENV-TESTE');
+ assert.equal((await load('2026-11-10')).customers.length,0);
+ assert.equal((await load('2026-11-11')).customers.length,0);
+ assert.equal((await load('all')).customers.length,0);
+});
+
+
+test('vários clientes e datas: cada ID aparece uma única vez e na respectiva data',async()=>{
+ const days=['2026-11-03','2026-11-10','2026-11-17'];
+ const lots=[],issues=[];
+ for(const customerId of ['cleber','cliente-b','cliente-c'])for(const day of days){
+   lots.push({...lot(`${customerId}-${day}`,customerId),shipping_date:day});
+   for(const source_kind of ['raffle','replacement'])issues.push({id:`${source_kind}-${customerId}-${day}`,shipping_date:day,source_kind,customers:customer(customerId),cancelled_at:null,shipment_id:null,moved_at:null});
+ }
+ // Defesa adicional contra repetição nos resultados de joins/leitura.
+ lots.push(lots[0]);issues.push(issues[0]);
+ const orders=[{id:'store-a',code:'LJ-A',customer_id:'cleber',payment_status:'paid',fulfillment_status:'processing',shipment_id:null,created_at:'2026-11-01T10:00:00Z',boxed_at:null,items:[{name:'Card',quantity:1,delivery_kind:'physical'}]}];
+ orders.push(orders[0]);
+ const {load}=reportLoader({missing:false,lots,issues,orders,freight:['cleber','cliente-b','cliente-c'].map(customer_id=>({customer_id,status:'paid'}))});
+ for(const day of days){
+   const report=await load(day);
+   assert.equal(report.customers.length,3);
+   assert.equal(report.totals.lots,3);
+   for(const c of report.customers){
+     assert.equal(c.lots.length,1);
+     assert.ok(c.lots.every(l=>l.shippingDate===day));
+     assert.equal(c.logisticsPending.length,2);
+     assert.ok(c.logisticsPending.every(p=>p.shippingDate===day));
+   }
+ }
+ const report=await load('all');
+ assert.equal(report.customers.length,3);assert.equal(report.totals.lots,9);
+ for(const c of report.customers){
+   assert.equal(c.lots.length,3);assert.equal(c.logisticsPending.length,6);
+   assert.equal(new Set(c.lots.map(l=>l.id)).size,3);
+   assert.equal(new Set(c.logisticsPending.map(p=>p.id)).size,6);
+   assert.equal(new Set(c.lots.map(l=>l.shippingDate)).size,3);
+ }
+ assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders.length,1);
+ assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders[0].shippingDate,'2026-11-17');
+ assert.equal((await load('2026-11-12')).customers.length,0);
 });
