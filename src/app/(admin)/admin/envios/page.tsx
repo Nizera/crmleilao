@@ -1,3 +1,5 @@
+import {findShipmentItems} from "@/lib/shipment-item-search-server";
+import {unifiedShipmentRows} from "@/lib/shipment-list";
 import { ShipmentsView } from "@/components/admin/shipments/shipments-view";
 import { listShipments, requireAdmin, type ShipmentPage } from "@/lib/dal";
 import { sfConfigured, sfSandbox } from "@/lib/superfrete";
@@ -32,6 +34,7 @@ export default async function EnviosPage({
 
   const params = await searchParams;
   const q = first(params.q);
+  const itemQuery = first(params.item).trim().slice(0,160);
   const priceChanges = ["changed", "increase", "decrease"].includes(first(params.cost)) ? first(params.cost) as "changed" | "increase" | "decrease" : "all";
   const rawStatus = first(params.status) || "all";
   const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : "all";
@@ -91,8 +94,11 @@ export default async function EnviosPage({
     ? [(await getOrigin()) !== null, (await getWebhookSecret()) !== null]
     : [false, false];
 
+  const itemMatches = migrationReady && itemQuery ? await findShipmentItems(unifiedShipmentRows(queue,data.rows),itemQuery,date) : null;
   return (
     <ShipmentsView
+      itemQuery={itemQuery}
+      itemMatches={itemMatches}
       {...data}
       queue={queue}
       queueTruncated={useQueue && queueTruncated}

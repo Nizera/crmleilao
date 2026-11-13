@@ -1,5 +1,6 @@
 "use client";
 
+import {shipmentSearchKey} from "@/lib/shipment-item-search";
 import { unifiedShipmentRows, shipmentListSummary } from "@/lib/shipment-list";
 import { shipmentQueueIssues } from "@/lib/shipment-readiness";
 import { useState, useTransition, type FormEvent } from "react";
@@ -67,6 +68,8 @@ type Props = {
   page: number;
   pageSize: number;
   q: string;
+  itemQuery?: string;
+  itemMatches?: string[] | null;
   status: string;
   priceChanges?: string;
   summary?: ShipmentCostSummary | null;
@@ -93,6 +96,8 @@ export function ShipmentsView({
   page,
   pageSize,
   q,
+  itemQuery = "",
+  itemMatches = null,
   status,
   priceChanges = "all",
   summary: serverSummary = null,
@@ -111,6 +116,8 @@ export function ShipmentsView({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState(q);
+  const [itemSearch,setItemSearch] = useState(itemQuery);
+  const matchingItems = itemMatches ? new Set(itemMatches) : null;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [emitTarget, setEmitTarget] = useState<ShipmentQueueRow | null>(null);
@@ -127,7 +134,7 @@ export function ShipmentsView({
     const shipmentMatches = queueStatus === "all" || (queueStatus === "unissued" ? !row.pendingShipment : row.pendingShipment?.status === queueStatus);
     const delta = Number(row.pendingShipment?.price_difference ?? 0);
     const costMatches = costFilter === "all" || (!!row.pendingShipment && (costFilter === "changed" ? delta !== 0 : costFilter === "increase" ? delta > 0 : delta < 0));
-    return freightMatches && shipmentMatches && costMatches;
+    return freightMatches && shipmentMatches && costMatches && (!matchingItems || matchingItems.has(shipmentSearchKey(row)));
   }).sort((a, b) => {
     const unpaid = (row: ShipmentQueueRow) => !row.companyFreight && ["due", "awaiting"].includes(row.freightStatus) ? 1 : 0;
     const primary = queueSort === "unpaid" ? unpaid(b) - unpaid(a) : queueSort === "paid_total" ? b.paidTotal - a.paidTotal : queueSort === "unpaid_total" ? b.unpaidTotal - a.unpaidTotal : 0;
@@ -152,6 +159,7 @@ export function ShipmentsView({
     nextHistoryDate = isQueue || historyDateFiltered ? nextDate : "",
   ) => {
     const params = new URLSearchParams();
+    if(itemSearch.trim())params.set("item",itemSearch.trim().slice(0,160));
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
     if (nextView === "historico") {
       params.set("vista", "historico");
@@ -421,7 +429,7 @@ export function ShipmentsView({
         <div className="sm:col-span-2 xl:col-span-4">{isQueue && <Button asChild variant="outline" size="sm"><Link href={buildHref(query, "all", 1, date, "fila", "all")} onClick={()=>{setQueueStatus("all");setCostFilter("all");setFreightFilter("all");setListPage(1);}}>Ver todas as etiquetas</Link></Button>}<p className="mt-2 text-xs text-muted-foreground">Todas as etiquetas da data e dos filtros selecionados, incluindo postadas e entregues. Totais de todas as páginas.</p>{summary && summary.currentTotal == null && <p>Aplique a migration 0060 para carregar os totais atualizados.</p>}</div>
       </section>}
       <div className="flex flex-wrap items-center gap-2">
-        <form onSubmit={search} className="flex w-full min-w-0 flex-1 items-center gap-2 sm:min-w-56">
+        <form onSubmit={search} className="flex w-full min-w-0 flex-1 flex-wrap items-end gap-2 sm:min-w-56">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -431,16 +439,23 @@ export function ShipmentsView({
               className="pl-9"
             />
           </div>
+          <label className="grid min-w-0 flex-1 gap-1 text-xs font-medium sm:min-w-52">
+            Buscar item do envio
+            <Input aria-label="Buscar card, jogador ou descrição" value={itemSearch} maxLength={160} onChange={e=>setItemSearch(e.target.value)} placeholder="Ex.: Diaz Lilás, card, Messi…" />
+          </label>
           <Button type="submit" variant="outline">
             Buscar
           </Button>
-          {q && (
+          {(q || itemQuery) && (
             <Button
               type="button"
               variant="ghost"
               onClick={() => {
                 setQuery("");
-                router.replace(buildHref("", status, 1, date, isQueue ? "fila" : "historico"));
+                setItemSearch("");
+                const href = new URL(buildHref("", status, 1, date, isQueue ? "fila" : "historico"),window.location.origin);
+                href.searchParams.delete("item");
+                router.replace(href.pathname+href.search);
               }}
             >
               Limpar
