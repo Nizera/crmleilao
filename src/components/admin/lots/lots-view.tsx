@@ -1,4 +1,5 @@
 "use client";
+import {downloadCustomerLotsPdf} from "@/app/actions/customer-lots-pdf";
 import { LotPrice } from "@/components/shared/lot-price";
 
 
@@ -17,6 +18,7 @@ import {
   ArrowDownUp,
   Images,
   RotateCcw,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -118,6 +120,31 @@ export function LotsView({
   const [gallery, setGallery] = useState<{ src: string; alt: string }[]>([]);
   const [imageIndex, setImageIndex] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const [reportSelection,setReportSelection] = useState<Record<string,{customerId:string;name:string}>>({});
+  const [downloadingReport,setDownloadingReport] = useState(false);
+  const reportIds=Object.keys(reportSelection);
+  const reportCustomers=new Set(Object.values(reportSelection).map(item=>item.customerId));
+  const reportCustomer=Object.values(reportSelection)[0];
+  const toggleReportLot=(lot:Lot,checked:boolean)=>{
+    if(checked && reportIds.length>=200){toast.error("Selecione até 200 lotes por relatório.");return;}
+    if(checked && reportCustomer && reportCustomer.customerId!==lot.customer_id){toast.error("Selecione apenas lotes do mesmo cliente.");return;}
+    setReportSelection(previous=>{const next={...previous};if(checked)next[lot.id]={customerId:lot.customer_id,name:lot.customer?.name||"Cliente"};else delete next[lot.id];return next;});
+  };
+  const downloadReport=async()=>{
+    if(!reportIds.length||reportCustomers.size!==1||downloadingReport)return;
+    setDownloadingReport(true);
+    try{
+      const result=await downloadCustomerLotsPdf(reportIds);
+      if(!result.ok){toast.error(result.error);return;}
+      const bytes=Uint8Array.from(atob(result.data.base64),char=>char.charCodeAt(0));
+      const url=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
+      const anchor=document.createElement("a");anchor.href=url;anchor.download=result.data.filename;document.body.appendChild(anchor);anchor.click();anchor.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+      toast.success("Relatório baixado.");
+    }catch{toast.error("Não foi possível baixar o relatório. Atualize a página e tente novamente.");}
+    finally{setDownloadingReport(false);}
+  };
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -367,10 +394,20 @@ export function LotsView({
         <Button asChild size="sm" variant="outline"><Link href={adminListHref("/admin/lotes", { q, status: status === ALL ? undefined : status, from: dateFrom, to: dateTo, sort: sort === "newest" ? undefined : sort })}>Remover filtro de envio</Link></Button>
       </div>}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+        <div className="min-w-0 text-sm">
+          {reportIds.length ? <><p className="break-words font-medium">{reportCustomer?.name} · {reportIds.length} lote(s) selecionado(s)</p><p className="text-xs text-muted-foreground">O PDF inclui somente a seleção, com os valores atuais dos arremates.</p></> : <p className="text-muted-foreground">Selecione os lotes de um mesmo cliente para baixar um relatório em PDF.</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {reportIds.length>0 && <Button type="button" variant="ghost" disabled={downloadingReport} onClick={()=>setReportSelection({})}>Limpar seleção</Button>}
+          <Button type="button" variant="outline" disabled={!reportIds.length||reportCustomers.size!==1||downloadingReport} onClick={downloadReport}><Download />{downloadingReport?"Gerando PDF…":"Baixar relatório"}</Button>
+        </div>
+      </div>
       <div className="min-w-0 rounded-md border">
         <Table className="min-w-[940px] table-fixed">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-9"><span className="sr-only">Selecionar para relatório</span></TableHead>
               <TableHead className="w-[72px]">Código</TableHead>
               <TableHead className="w-[104px]" title="Data e hora do cadastro, no horário de São Paulo">Cadastro</TableHead>
               <TableHead className="w-[22%]">Cliente</TableHead>
@@ -386,7 +423,10 @@ export function LotsView({
           </TableHeader>
           <TableBody>
             {lots.map((lot) => (
-              <TableRow key={lot.id}>
+              <TableRow key={lot.id} data-state={reportSelection[lot.id]?"selected":undefined}>
+                <TableCell>
+                  <input type="checkbox" className="size-4 accent-yellow-500" aria-label={`Selecionar lote ${lot.code} para relatório`} checked={!!reportSelection[lot.id]} disabled={downloadingReport||lot.status==="cancelled"||!lot.customer_id||!!(reportCustomer&&reportCustomer.customerId!==lot.customer_id)} title={reportCustomer&&reportCustomer.customerId!==lot.customer_id?"Limpe a seleção para escolher outro cliente":"Incluir no relatório do cliente"} onChange={event=>toggleReportLot(lot,event.target.checked)} />
+                </TableCell>
                 <TableCell className="font-mono text-xs">{lot.code}</TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">
                   <time dateTime={lot.created_at} title="Horário de São Paulo">
@@ -486,7 +526,7 @@ export function LotsView({
 
             {lots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center">
+                <TableCell colSpan={10} className="h-32 text-center">
                   <span className="text-muted-foreground">
                     {total === 0 && !q && status === ALL
                       ? "Cadastre o primeiro arremate com o botão “Novo lote”."

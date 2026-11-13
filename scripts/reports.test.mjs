@@ -167,7 +167,7 @@ test('prêmios e pendências previstos para 10/11 não aparecem nos dias 11, 12 
 });
 
 test('etiqueta não faz o mesmo item aparecer novamente em outra data',async()=>{
- const issue={id:'linked',shipping_date:'2026-11-03',customers:customer('cleber'),shipment_id:'s',cancelled_at:null,shipment:{code:'ENV-TESTE',batch_date:'2026-11-10'}};
+ const issue={id:'linked',shipping_date:'2026-11-03',customers:customer('cleber'),shipment_id:'s',cancelled_at:null,shipment:{code:'ENV-TESTE',batch_date:'2026-11-10',status:'posted'}};
  const {load}=reportLoader({missing:false,issues:[issue]});
  assert.equal((await load('2026-11-03')).customers[0].logisticsPending[0].shipmentCode,'ENV-TESTE');
  assert.equal((await load('2026-11-10')).customers.length,0);
@@ -210,4 +210,22 @@ test('vários clientes e datas: cada ID aparece uma única vez e na respectiva d
  assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders.length,1);
  assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders[0].shippingDate,'2026-11-17');
  assert.equal((await load('2026-11-12')).customers.length,0);
+});
+
+
+test('Anderson: etiqueta emitida não oculta lote pago não movimentado em 03/11 nem Todas as datas',async()=>{
+ const item={...lot('anderson-lot','anderson'),code:'16F9F792',moved_at:null};
+ const report=reportLoader({missing:false,lots:[item],freight:[{customer_id:'anderson',status:'paid'}],links:[{lot_id:item.id,shipment:{batch_date:'2026-11-03',status:'released'}}]});
+ for(const day of ['2026-11-03','all']){
+   const result=await report.load(day);
+   assert.equal(result.customers[0].lots[0].code,'16F9F792');
+   assert.equal(result.customers[0].lots[0].movedAt,null);
+   assert.equal(result.customers[0].lots.length,1);
+ }
+});
+
+test('Todas as datas mantém prêmios ligados a etiquetas emitidas, mas exclui postados e entregues',async()=>{
+ const issues=['pending','released','posted','delivered'].map(status=>({id:status,shipping_date:'2026-11-03',customers:customer('a'),cancelled_at:null,shipment_id:`s-${status}`,moved_at:null,shipment:{code:`ENV-${status}`,status,batch_date:'2026-11-03'}}));
+ const result=await reportLoader({missing:false,issues}).load('all');
+ assert.deepEqual(Array.from(result.customers[0].logisticsPending,item=>item.id),['pending','released']);
 });

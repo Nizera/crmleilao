@@ -116,15 +116,14 @@ export async function getSeparationReport(
 
   // Uma única consulta pela data prevista do item evita repetir prêmios entre
   // dias ou incluí-los novamente pela data da etiqueta.
-  type PendingRow = { shipping_date: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string } | null };
+  type PendingRow = { shipping_date: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; customers: LotRow["customers"]; shipment?: { code: string; status: string } | null };
   const pendingRows: PendingRow[] = [];
   const warnings: string[] = [];
   for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
-    let pendingQuery = admin.from("logistics_pending")
-      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments(code,batch_date),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
+    const pendingQuery = admin.from("logistics_pending")
+      .select("shipping_date,id,code,title,quantity,reason,source_kind,shipping_declared_value,moved_at,shipment:shipments(code,batch_date,status),customers(id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state)")
       .eq("shipping_date", shippingDate).is("cancelled_at", null)
       .order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
-    if (outstandingOnly) pendingQuery = pendingQuery.is("shipment_id", null);
     const { data, error } = await pendingQuery;
     if (error) {
       if (["PGRST205", "42P01"].includes(error.code)) {
@@ -134,7 +133,7 @@ export async function getSeparationReport(
       throw new Error("Não foi possível conferir as pendências logísticas. Tente novamente antes de separar os envios.");
     }
     const page = (data ?? []) as unknown as PendingRow[];
-    pendingRows.push(...page);
+    pendingRows.push(...page.filter(row=>!outstandingOnly || !row.shipment || ["pending","released"].includes(row.shipment.status)));
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
 
@@ -162,6 +161,7 @@ export async function getSeparationReport(
   // Um pacote liberado já passou pela conferência: pendências de outra data
   // não podem retirar seu conteúdo da separação nem do histórico impresso.
   const releasedLotIds = new Set<string>();
+  const dispatchedLotIds = new Set<string>();
   const releasedPrizeIds = new Set<string>();
   for (let from = 0; from < rows.length; from += 200) {
     const ids = rows.slice(from, from + 200).map(row => row.id);
@@ -173,7 +173,11 @@ export async function getSeparationReport(
       admin.from("external_prize_freight_releases").select("lot_id,customer_id").in("lot_id", ids),
     ]);
     if (links.error || prizes.error) throw new Error("Não foi possível conferir os pacotes e as liberações de frete dos prêmios.");
-    for (const link of links.data ?? []) releasedLotIds.add(link.lot_id);
+    for (const link of links.data ?? []) {
+      releasedLotIds.add(link.lot_id);
+      const shipment = Array.isArray(link.shipment) ? link.shipment[0] : link.shipment;
+      if (shipment && ["posted","delivered"].includes(shipment.status)) dispatchedLotIds.add(link.lot_id);
+    }
     for (const prize of prizes.data ?? []) {
       const row = rows.slice(from, from + 200).find(lot => lot.id === prize.lot_id);
       if (row && row.customers?.id === prize.customer_id && Number(row.arremate_value) === 0) releasedPrizeIds.add(prize.lot_id);
@@ -210,7 +214,7 @@ export async function getSeparationReport(
   for(const id of candidateIds)if(paymentBlockedCustomers.has(id)||freightBlockedCustomers.has(id))blockedCustomers.add(id);
   const eligibleRows = rows.filter(row => {
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
-    if (outstandingOnly && (releasedLotIds.has(row.id) || row.status !== "paid")) return false;
+    if (outstandingOnly && (dispatchedLotIds.has(row.id) || row.status !== "paid")) return false;
     if (releasedLotIds.has(row.id)) return true;
     return !paymentBlockedCustomers.has(row.customers.id)
       && (!freightBlockedCustomers.has(row.customers.id) || releasedPrizeIds.has(row.id));
@@ -327,7 +331,7 @@ async function getAllSeparationReport(): Promise<SeparationReport> {
   for (const table of ["lots", "logistics_pending"] as const) {
     for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
       let query = admin.from(table).select("shipping_date");
-      query = table === "lots" ? query.in("status", ["paid", "pending_payment"]) : query.is("shipment_id", null).is("cancelled_at", null);
+      query = table === "lots" ? query.in("status", ["paid", "pending_payment"]) : query.is("cancelled_at", null);
       const {data,error} = await query.order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
       if (error) throw new Error("Não foi possível carregar todas as datas de separação.");
       for (const row of data ?? []) if (row.shipping_date) dates.add(row.shipping_date);
