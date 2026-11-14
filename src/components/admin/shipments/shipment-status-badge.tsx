@@ -13,10 +13,10 @@ const TONE: Record<ShipmentStatus, string> = {
   cancelled: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400",
 };
 
-export function ShipmentStatusBadge({ status }: { status: ShipmentStatus }) {
+export function ShipmentStatusBadge({ status, deliveryMethod }: { status: ShipmentStatus; deliveryMethod?: "superfrete" | "motoboy" }) {
   return (
     <Badge variant="outline" className={TONE[status]}>
-      {SHIPMENT_STATUS_LABELS[status]}
+      {deliveryMethod === "motoboy" && status === "posted" ? "Em entrega · motoboy" : SHIPMENT_STATUS_LABELS[status]}
     </Badge>
   );
 }

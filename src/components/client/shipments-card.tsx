@@ -29,15 +29,16 @@ function stepsDone(status: ShipmentStatus): number | null {
   }
 }
 
-function Stepper({ status }: { status: ShipmentStatus }) {
+function Stepper({ status, local }: { status: ShipmentStatus; local?: boolean }) {
+  const steps = local ? ["Preparação", "Saída", "Em entrega", "Entregue"] : STEPS;
   const done = stepsDone(status);
   if (done == null) return null;
-  const allDone = done === STEPS.length;
+  const allDone = done === steps.length;
 
   return (
     <div className="mt-3 flex min-w-0 flex-col gap-2 border-t pt-3">
       <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] font-bold uppercase min-[400px]:grid-cols-4">
-        {STEPS.map((step, index) => {
+        {steps.map((step, index) => {
           const isDone = index < done;
           const isCurrent = !allDone && index === done;
 
@@ -67,7 +68,7 @@ function Stepper({ status }: { status: ShipmentStatus }) {
         })}
       </div>
       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        {STEPS.map((step, index) => (
+        {steps.map((step, index) => (
           <span
             key={step}
             className={cn(
@@ -158,7 +159,7 @@ export function ClientShipmentsCard({
                   </span>
                 </div>
               </div>
-              <ShipmentStatusBadge status={shipment.status} />
+              <ShipmentStatusBadge status={shipment.status} deliveryMethod={shipment.delivery_method} />
             </div>
             {shipment.freight_payer==='company' && <p className="mt-2 text-xs font-medium text-ouro-ink">Frete do prêmio por nossa conta.</p>}
             {!!shipment.logisticsPending?.length && <div className="mt-3 grid min-w-0 gap-1 rounded-lg border p-3 text-xs [overflow-wrap:anywhere]"><p className="font-semibold">Itens adicionais neste pacote</p>{shipment.logisticsPending.map(item=><p key={item.id}>{item.quantity} × {item.title}</p>)}</div>}
@@ -185,7 +186,8 @@ export function ClientShipmentsCard({
               </div>
             )}
 
-            <Stepper status={shipment.status} />
+            <Stepper status={shipment.status} local={shipment.delivery_method === "motoboy"} />
+            {shipment.delivery_note && <p className="mt-3 text-sm text-muted-foreground [overflow-wrap:anywhere]">{shipment.delivery_note}</p>}
 
             {(
               <div className="mt-3 flex min-w-0 flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
@@ -210,7 +212,7 @@ export function ClientShipmentsCard({
                     <ExternalLink className="size-3.5" />
                   </a>
                 )}
-                {!shipment.tracking_url && !shipment.tracking_code && (
+                {shipment.delivery_method !== "motoboy" && !shipment.tracking_url && !shipment.tracking_code && (
                   <button type="button" disabled className="col-span-2 min-h-11 cursor-not-allowed rounded-lg border px-2 text-[11px] text-muted-foreground" title="O código de rastreio ainda não está disponível.">
                     Rastrear · indisponível
                   </button>

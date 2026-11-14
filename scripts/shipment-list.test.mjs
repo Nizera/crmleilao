@@ -11,3 +11,15 @@ test('postados, múltiplas etiquetas por cliente e cancelados não desaparecem; 
  const rows=api.unifiedShipmentRows([],labels);assert.equal(rows.length,3);const summary=api.shipmentListSummary(rows);assert.equal(summary.labels,2);assert.equal(summary.cancelled,1);assert.equal(summary.currentTotal,47.78);assert.equal(summary.emissionTotal,43.73);assert.equal(summary.adjustmentTotal,4.05);assert.equal(summary.changedLabels,2);
  const filtered=api.shipmentListSummary(rows.filter(r=>r.pendingShipment.status==='posted'));assert.equal(filtered.labels,1);assert.equal(filtered.currentTotal,37.78);
 });
+
+test('Anderson: quatro lotes da etiqueta cancelada não são os cinco lotes postados',()=>{
+ const lot=(id,value)=>({id,code:id,title:id,status:'paid',arremate_value:value});
+ const waiting=[lot('album',40),lot('yamal',120),lot('benzema',0),lot('diaz',0)];
+ const cancelled={id:'old',customer_id:'anderson',batch_date:'2026-11-03',status:'cancelled',lots:waiting};
+ const posted={id:'new',customer_id:'anderson',batch_date:'2026-11-03',status:'posted',lots:['haaland','plaqueta-diaz','plaqueta-wirtz','bellingham','caicedo'].map(id=>({id,code:id,title:id}))};
+ const queue=[{customerId:'anderson',name:'Anderson',phone_e164:'',lots:waiting,paidTotal:160,unpaidTotal:0,pendingShipment:null,freightStatus:'paid',hasActiveCharge:false}];
+ const rows=api.unifiedShipmentRows(queue,[cancelled,posted]);
+ assert.equal(rows.length,3);assert.equal(rows.find(r=>r.pendingShipment?.id==='old').lots.length,4);assert.equal(rows.find(r=>r.pendingShipment?.id==='new').lots.length,5);
+ const unissued=rows.find(r=>!r.pendingShipment);assert.equal(unissued.lots.length,4);assert.equal(unissued.paidTotal,160);
+ assert.equal(unissued.lots.some(l=>posted.lots.some(p=>p.id===l.id)),false);
+});

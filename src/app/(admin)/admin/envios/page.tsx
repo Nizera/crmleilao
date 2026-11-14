@@ -71,7 +71,7 @@ export default async function EnviosPage({
       });
     }
     const labelRows = [...data.rows];
-    for (let labelPage = 2; labelRows.length < data.total && labelPage <= 40; labelPage++) {
+    for (let labelPage = 2; labelRows.length < data.total; labelPage++) {
       const next = await listShipments({q, status: "all", page: labelPage, pageSize: 50, batchDate: useQueue || ISO.test(rawDate) ? date : undefined});
       if (!next.rows.length) break;
       labelRows.push(...next.rows);

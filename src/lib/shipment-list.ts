@@ -26,7 +26,7 @@ export function unifiedShipmentRows(queue: ShipmentQueueRow[], shipments: Shipme
 }
 
 export function shipmentListSummary(rows: ShipmentQueueRow[]) {
-  const labels = new Map(rows.filter(r => r.pendingShipment).map(r => [r.pendingShipment!.id, r.pendingShipment!]));
+  const labels = new Map(rows.filter(r => r.pendingShipment && r.pendingShipment.delivery_method !== "motoboy").map(r => [r.pendingShipment!.id, r.pendingShipment!]));
   const active = [...labels.values()].filter(s => s.status !== "cancelled");
   const cents = (v: number | null | undefined) => Math.round(Number(v ?? 0) * 100);
   const emission = active.reduce((sum,s) => sum+cents(s.original_price ?? s.price),0);

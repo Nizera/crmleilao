@@ -58,6 +58,8 @@ export type ShipmentAddress = {
 };
 
 export type Shipment = {
+  delivery_method?: "superfrete" | "motoboy";
+  delivery_note?: string | null;
   cancellation_origin?: "admin" | "rollback" | "superfrete" | null;
   cancellation_reason?: string | null;
   freight_payer?: "customer" | "company";
@@ -84,7 +86,7 @@ export type Shipment = {
   insurance_value: number | null;
   volume: ShipmentVolume | null;
   address: ShipmentAddress | null;
-  sf_order_id: string;
+  sf_order_id: string | null;
   tracking_code: string | null;
   tracking_url: string | null;
   label_print_url: string | null;

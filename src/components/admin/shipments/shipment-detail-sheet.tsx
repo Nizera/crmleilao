@@ -23,6 +23,7 @@ import {
   syncShipmentAction,
   getShipmentPriceHistoryAction,
 } from "@/app/actions/shipments";
+import { handleLocalDelivery } from "@/app/actions/local-deliveries";
 import { ShipmentStatusBadge } from "@/components/admin/shipments/shipment-status-badge";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
@@ -155,7 +156,7 @@ export function ShipmentDetailSheet({
         <SheetHeader className="border-b px-6 py-4">
           <div className="flex items-center justify-between gap-3">
             <SheetTitle className="font-mono">{shipment.code}</SheetTitle>
-            <ShipmentStatusBadge status={shipment.status} />
+            <ShipmentStatusBadge status={shipment.status} deliveryMethod={shipment.delivery_method} />
           </div>
           <SheetDescription>
             {shipment.customer ? (
@@ -174,7 +175,7 @@ export function ShipmentDetailSheet({
 
         <div className="flex flex-col gap-5 px-6 py-5">
           {shipment.status==='cancelled'&&<section className="rounded-lg border border-amber-400/40 p-3 text-sm"><h3 className="font-semibold">Origem do cancelamento</h3><p>{shipment.cancellation_origin==='rollback'?'Cancelamento automático após falha na emissão.':shipment.cancellation_origin==='admin'?'Cancelamento solicitado pela equipe no painel.':shipment.cancellation_origin==='superfrete'?'Cancelamento informado pela SuperFrete.':'Registro antigo: o motivo não foi gravado pelo sistema.'}</p>{shipment.cancellation_reason&&<p className="mt-1 break-words text-muted-foreground">{shipment.cancellation_reason}</p>}</section>}
-          <section className="grid gap-3 rounded-lg border p-3 text-sm">
+          {shipment.delivery_method !== "motoboy" && <section className="grid gap-3 rounded-lg border p-3 text-sm">
             <h3 className="font-semibold">Custo da etiqueta</h3>
             <dl className="grid grid-cols-2 gap-3">
               <Field label={shipment.price_baseline_legacy ? "Primeiro valor registrado" : "Valor na emissão"} value={formatBRL(shipment.original_price ?? null)} />
@@ -195,10 +196,11 @@ export function ShipmentDetailSheet({
             {priceHistory?.id === shipment.id && priceHistory.count === (shipment.price_change_count ?? 0) && <div className="grid gap-2 text-xs">
               {priceHistory.error ? <p role="alert">{priceHistory.error}</p> : priceHistory.items?.length ? <><p className="text-muted-foreground">Últimas {priceHistory.items.length} alterações registradas (até 50).</p>{priceHistory.items.map(item => <p key={item.id} className="rounded-md bg-muted p-2"><strong>{formatBRL(item.previous_price)} → {formatBRL(item.current_price)}</strong><span className="mt-1 block text-muted-foreground">Identificado em {new Date(item.observed_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span></p>)}</> : <p className="text-muted-foreground">Nenhuma alteração registrada desde o início do controle.</p>}
             </div>}
-          </section>
+          </section>}
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <Field label="Transportadora" value={shipment.carrier ?? shipment.service_name ?? "—"} />
             <Field label="Envio (terça)" value={formatDateBR(shipment.batch_date)} />
+            {shipment.delivery_method === "motoboy" ? <Field label="Saída em" value={<DateBR time value={shipment.posted_at} fallback="—" />} /> : <>
             <Field label="Valor" value={finalPrice != null ? formatBRL(finalPrice) : "—"} />
             <Field
               label="Desconto já aplicado"
@@ -219,11 +221,12 @@ export function ShipmentDetailSheet({
             />
             <Field label="Etiqueta paga em" value={<DateBR time value={shipment.paid_at} fallback="—" />} />
             <Field label="Postado em" value={<DateBR time value={shipment.posted_at} fallback="—" />} />
+            </>}
             <Field label="Entregue em" value={<DateBR time value={shipment.delivered_at} fallback="—" />} />
             <Field label="Cancelado em" value={<DateBR time value={shipment.cancelled_at} fallback="—" />} />
           </dl>
 
-          {volume && (
+          {shipment.delivery_method !== "motoboy" && volume && (
             <div className="rounded-md border px-3 py-2.5 text-sm">
               <p className="text-xs font-medium text-muted-foreground">Caixa</p>
               <p>
@@ -257,7 +260,7 @@ export function ShipmentDetailSheet({
           )}
 
           <div className="rounded-md border px-3 py-2.5 text-sm">
-            <p className="text-xs font-medium text-muted-foreground">Rastreio</p>
+            <p className="text-xs font-medium text-muted-foreground">{shipment.delivery_method === "motoboy" ? "Entrega própria" : "Rastreio"}</p>
             {shipment.tracking_code ? (
               <div className="mt-0.5 flex items-center justify-between gap-2">
                 <span className="font-mono">{shipment.tracking_code}</span>
@@ -275,7 +278,7 @@ export function ShipmentDetailSheet({
               </div>
             ) : (
               <p className="mt-0.5 text-muted-foreground">
-                Sem código ainda — sincronize ou aguarde o webhook.
+                {shipment.delivery_method === "motoboy" ? "Entrega por motoboy, sem rastreio de transportadora." : "Sem código ainda — sincronize ou aguarde o webhook."}
               </p>
             )}
           </div>
@@ -311,8 +314,13 @@ export function ShipmentDetailSheet({
             </ul>
           </div>
 
+          {shipment.delivery_note && <p className="rounded-md border p-3 text-sm [overflow-wrap:anywhere]">{shipment.delivery_note}</p>}
           <div className="flex flex-wrap gap-2 border-t pt-4">
-            {canPayShipment(shipment.status) && (
+            {shipment.delivery_method === "motoboy" && shipment.status === "posted" && <>
+              <Button disabled={pending !== null} onClick={() => { if (window.confirm("O motoboy confirmou a entrega ao cliente?")) run(shipment.id, () => handleLocalDelivery(shipment.id, "delivered")); }}>Marcar como entregue</Button>
+              <Button variant="destructive" disabled={pending !== null} onClick={() => { if (window.confirm("Cancelar esta saída por motoboy? Os itens e o frete pago ficarão disponíveis novamente. Confirme que o pacote voltou antes de cancelar.")) run(shipment.id, () => handleLocalDelivery(shipment.id, "cancel")); }}>Cancelar saída</Button>
+            </>}
+            {shipment.delivery_method !== "motoboy" && canPayShipment(shipment.status) && (
               <Button
                 size="sm"
                 disabled={pending !== null}
@@ -326,7 +334,7 @@ export function ShipmentDetailSheet({
                 Pagar etiqueta
               </Button>
             )}
-            {shipment.status !== "cancelled" && (
+            {shipment.delivery_method !== "motoboy" && shipment.status !== "cancelled" && (
               <Button
                 size="sm"
                 variant="outline"
@@ -341,7 +349,7 @@ export function ShipmentDetailSheet({
                 Sincronizar
               </Button>
             )}
-            <Button
+            {shipment.delivery_method !== "motoboy" && <Button
               size="sm"
               variant="outline"
               disabled={pending !== null}
@@ -349,7 +357,7 @@ export function ShipmentDetailSheet({
             >
               <Printer />
               Etiqueta PDF
-            </Button>
+            </Button>}
             {shipment.tracking_code && (
               <Button
                 size="sm"
@@ -361,7 +369,7 @@ export function ShipmentDetailSheet({
                 Avisar cliente
               </Button>
             )}
-            {canCancelShipment(shipment.status) && (
+            {shipment.delivery_method !== "motoboy" && canCancelShipment(shipment.status) && (
               <Button
                 size="sm"
                 variant="destructive"
@@ -375,8 +383,7 @@ export function ShipmentDetailSheet({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Última atualização: <DateBR time value={shipment.updated_at} /> · pedido
-            SuperFrete <span className="font-mono">{shipment.sf_order_id}</span>
+            Última atualização: <DateBR time value={shipment.updated_at} />{shipment.sf_order_id && <> · pedido SuperFrete <span className="font-mono">{shipment.sf_order_id}</span></>}
           </p>
         </div>
       </SheetContent>

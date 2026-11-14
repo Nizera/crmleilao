@@ -1,3 +1,4 @@
+import { collectShipmentQueueRows } from "@/lib/shipment-queue-pages";
 import "server-only";
 import { superfreteOrderPrice } from "@/lib/shipment-price";
 import { shipmentValues } from "@/lib/shipment-values";
@@ -42,7 +43,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Colunas comuns de listagem e detalhe (o detalhe soma o histórico `events`). */
 const SHIPMENT_BASE_COLUMNS = [
-  "id, code, customer_id, batch_date, status, service_id, service_name, carrier,",
+  "id, code, customer_id, batch_date, status, delivery_method, delivery_note, service_id, service_name, carrier,",
   "price, original_price, price_baseline_legacy, price_change_count, price_changed_at, price_checked_at, price_difference, discount, delivery_time, insurance_value, volume, address, sf_order_id,",
   "tracking_code, tracking_url, label_print_url, paid_at, posted_at, delivered_at,",
   "cancelled_at, cancellation_origin, cancellation_reason, created_by, created_at, updated_at, freight_payer,",
@@ -291,13 +292,14 @@ export async function listShipmentQueue(params: {
     )
     .in("status", ["paid", "pending_payment"])
     .order("shipping_date", { ascending: true })
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (params.periodFrom) query = query.gte("shipping_date", params.periodFrom);
   if (params.periodTo) query = query.lte("shipping_date", params.periodTo);
 
-  const { data: lots, error } = await query.limit(QUEUE_LOTS_CAP + 1);
-  if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
+  const allForDay = !!params.periodFrom && params.periodFrom === params.periodTo;
+  const lots = await collectShipmentQueueRows((from, to) => query.range(from, to), allForDay);
 
   const rows = (lots ?? []) as unknown as {
     id: string;
@@ -316,18 +318,18 @@ export async function listShipmentQueue(params: {
   }[];
 
   const storeDate=nextShippingDate(spToday());
-  const storeResult=await admin.from('store_orders').select('id,customer_id,created_at,items:store_order_items(delivery_kind),customers(id,name,phone_e164)').eq('payment_status','paid').neq('fulfillment_status','fulfilled').is('shipment_id',null).order('created_at').limit(QUEUE_LOTS_CAP+1);
-  if(storeResult.error)throw new Error('Não foi possível carregar as compras da loja para a fila.');
+  const storeQuery=admin.from('store_orders').select('id,customer_id,created_at,items:store_order_items(delivery_kind),customers(id,name,phone_e164)').eq('payment_status','paid').neq('fulfillment_status','fulfilled').is('shipment_id',null).order('created_at').order('id');
+  const storeInPeriod=(!params.periodFrom||storeDate>=params.periodFrom)&&(!params.periodTo||storeDate<=params.periodTo);
+  const storeResult={data:storeInPeriod?await collectShipmentQueueRows((from,to)=>storeQuery.range(from,to),allForDay):[]};
   const storeCustomers=(storeResult.data??[]).filter(o=>o.items.some(i=>i.delivery_kind==='physical')&&(!params.periodFrom||storeDate>=params.periodFrom)&&(!params.periodTo||storeDate<=params.periodTo));
   let prizeQuery=admin.from('logistics_pending').select('id,customer_id,shipping_date,customers(id,name,phone_e164)').eq('source_kind','raffle').is('cancelled_at',null).is('shipment_id',null).order('shipping_date').order('id');
   // Prêmio atrasado continua na fila da próxima saída, como no relatório.
   if(params.periodFrom)prizeQuery=prizeQuery.gte('shipping_date',params.periodFrom);
   if(params.periodTo)prizeQuery=prizeQuery.lte('shipping_date',params.periodTo);
-  const prizeResult=await prizeQuery.limit(QUEUE_LOTS_CAP+1);
-  if(prizeResult.error)throw new Error('Não foi possível carregar os prêmios para a fila.');
-  const prizeCustomers=(prizeResult.data??[]).slice(0,QUEUE_LOTS_CAP);
-  const truncated = rows.length > QUEUE_LOTS_CAP || (storeResult.data?.length??0)>QUEUE_LOTS_CAP || (prizeResult.data?.length??0)>QUEUE_LOTS_CAP;
-  if (rows.length > QUEUE_LOTS_CAP) rows.length = QUEUE_LOTS_CAP;
+  const prizeRows=await collectShipmentQueueRows((from,to)=>prizeQuery.range(from,to),allForDay);
+  const prizeCustomers=allForDay?prizeRows:prizeRows.slice(0,QUEUE_LOTS_CAP);
+  const truncated = !allForDay && (rows.length > QUEUE_LOTS_CAP || storeResult.data.length>QUEUE_LOTS_CAP || prizeRows.length>QUEUE_LOTS_CAP);
+  if (!allForDay && rows.length > QUEUE_LOTS_CAP) rows.length = QUEUE_LOTS_CAP;
 
   if (rows.length === 0 && !storeCustomers.length && !prizeCustomers.length) return { rows: [], truncated };
 
@@ -979,6 +981,7 @@ async function assertBoundStorePayments(shipmentId:string) {
 export async function payShipment(id: string): Promise<Shipment> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
+  if (shipment.delivery_method === "motoboy" || !shipment.sf_order_id) throw new Error("Esta é uma entrega própria. Use as ações de motoboy, sem etiqueta SuperFrete.");
   if (shipment.status !== "pending") {
     throw new Error("Este envio não está aguardando pagamento.");
   }
@@ -1057,6 +1060,7 @@ export async function reconcileShipmentCosts(budgetMs = 12000): Promise<{ checke
   const { data, error } = await admin.from("shipments")
     .select("id")
     .in("status", ["posted", "delivered"])
+    .not("sf_order_id", "is", null)
     .gte("batch_date", new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10))
     .or(`price_checked_at.is.null,price_checked_at.lt.${new Date(Date.now() - 12 * 3600000).toISOString()}`)
     .order("price_checked_at", { ascending: true, nullsFirst: true })
@@ -1067,7 +1071,7 @@ export async function reconcileShipmentCosts(budgetMs = 12000): Promise<{ checke
     const results = await Promise.allSettled((data ?? []).slice(offset, offset + 3).map(async row => {
       const shipment = await getShipmentById(row.id);
       // Pode ter sido cancelado por outra operação desde a seleção.
-      if (!shipment || !["posted", "delivered"].includes(shipment.status)) return false;
+      if (!shipment || !shipment.sf_order_id || shipment.delivery_method === "motoboy" || !["posted", "delivered"].includes(shipment.status)) return false;
       const remaining = deadline - Date.now();
       if (remaining < 500) return false;
       const info = await getOrderInfo(shipment.sf_order_id, Math.min(8000, remaining));
@@ -1085,6 +1089,7 @@ export async function reconcileShipmentCosts(budgetMs = 12000): Promise<{ checke
 export async function syncShipment(id: string): Promise<Shipment> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
+  if (shipment.delivery_method === "motoboy" || !shipment.sf_order_id) throw new Error("Esta é uma entrega própria. Use as ações de motoboy, sem etiqueta SuperFrete.");
 
   const info = await getOrderInfo(shipment.sf_order_id);
   await applyOrderInfo(shipment, info);
@@ -1097,6 +1102,7 @@ export async function syncShipment(id: string): Promise<Shipment> {
 export async function cancelShipment(id: string): Promise<Shipment> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
+  if (shipment.delivery_method === "motoboy" || !shipment.sf_order_id) throw new Error("Esta é uma entrega própria. Use as ações de motoboy, sem etiqueta SuperFrete.");
   if (shipment.status !== "pending" && shipment.status !== "released") {
     throw new Error("Só é possível cancelar antes da postagem.");
   }
@@ -1121,6 +1127,7 @@ export async function cancelShipment(id: string): Promise<Shipment> {
 export async function refreshPrintUrl(id: string): Promise<{ url: string }> {
   const shipment = await getShipmentById(id);
   if (!shipment) throw new Error("Envio não encontrado.");
+  if (shipment.delivery_method === "motoboy" || !shipment.sf_order_id) throw new Error("Esta é uma entrega própria. Use as ações de motoboy, sem etiqueta SuperFrete.");
 
   const url = await tagPrintUrl(shipment.sf_order_id);
 
