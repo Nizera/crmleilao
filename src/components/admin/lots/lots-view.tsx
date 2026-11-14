@@ -23,7 +23,7 @@ import {
 import { toast } from "sonner";
 
 import { inviteLinkForCustomer } from "@/app/actions/invites";
-import { getLotDetailAction, logWaMessage, setLotStatus, recoverExpiredLotAction } from "@/app/actions/lots";
+import { getLotDetailAction, logWaMessage, setLotStatus, recoverExpiredLotAction, recoverCancelledLotsAction } from "@/app/actions/lots";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
 import { ImageLightbox } from "@/components/client/image-lightbox";
@@ -121,15 +121,27 @@ export function LotsView({
   const [imageIndex, setImageIndex] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const [reportSelection,setReportSelection] = useState<Record<string,{customerId:string;name:string}>>({});
+  const [reportSelection,setReportSelection] = useState<Record<string,{customerId:string;name:string;status:string}>>({});
   const [downloadingReport,setDownloadingReport] = useState(false);
   const reportIds=Object.keys(reportSelection);
   const reportCustomers=new Set(Object.values(reportSelection).map(item=>item.customerId));
   const reportCustomer=Object.values(reportSelection)[0];
+  const allCancelled = reportIds.length > 0 && Object.values(reportSelection).every(item => item.status === "cancelled");
+  const hasCancelled = Object.values(reportSelection).some(item => item.status === "cancelled");
+  const recoverSelected = () => {
+    if (!allCancelled || reportCustomers.size !== 1 || pending) return;
+    if (!window.confirm(`Recuperar os ${reportIds.length} lotes selecionados de ${reportCustomer.name}? Todos voltarão para Aguardando pagamento com novo prazo de 24 horas. Advertências e bloqueios existentes não serão removidos. Nenhum Pix antigo será reutilizado.`)) return;
+    startTransition(async () => {
+      const result = await recoverCancelledLotsAction(reportIds);
+      if (!result.ok) { toast.error(result.error); return; }
+      toast.success(`${result.data.count} lote(s) recuperado(s). Novo prazo de 24 horas.`);
+      setReportSelection({}); router.refresh();
+    });
+  };
   const toggleReportLot=(lot:Lot,checked:boolean)=>{
-    if(checked && reportIds.length>=200){toast.error("Selecione até 200 lotes por relatório.");return;}
+    if(checked && reportIds.length>=200){toast.error("Selecione até 200 lotes por operação.");return;}
     if(checked && reportCustomer && reportCustomer.customerId!==lot.customer_id){toast.error("Selecione apenas lotes do mesmo cliente.");return;}
-    setReportSelection(previous=>{const next={...previous};if(checked)next[lot.id]={customerId:lot.customer_id,name:lot.customer?.name||"Cliente"};else delete next[lot.id];return next;});
+    setReportSelection(previous=>{const next={...previous};if(checked)next[lot.id]={customerId:lot.customer_id,name:lot.customer?.name||"Cliente",status:lot.status};else delete next[lot.id];return next;});
   };
   const downloadReport=async()=>{
     if(!reportIds.length||reportCustomers.size!==1||downloadingReport)return;
@@ -396,18 +408,19 @@ export function LotsView({
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
         <div className="min-w-0 text-sm">
-          {reportIds.length ? <><p className="break-words font-medium">{reportCustomer?.name} · {reportIds.length} lote(s) selecionado(s)</p><p className="text-xs text-muted-foreground">O PDF inclui somente a seleção, com os valores atuais dos arremates.</p></> : <p className="text-muted-foreground">Selecione os lotes de um mesmo cliente para baixar um relatório em PDF.</p>}
+          {reportIds.length ? <><p className="break-words font-medium">{reportCustomer?.name} · {reportIds.length} lote(s) selecionado(s)</p><p className="text-xs text-muted-foreground">Selecione apenas cancelados para recuperar, ou lotes ativos para gerar o PDF.</p></> : <p className="text-muted-foreground">Selecione lotes de um mesmo cliente para baixar o PDF ou recuperar cancelados.</p>}
         </div>
         <div className="flex flex-wrap gap-2">
-          {reportIds.length>0 && <Button type="button" variant="ghost" disabled={downloadingReport} onClick={()=>setReportSelection({})}>Limpar seleção</Button>}
-          <Button type="button" variant="outline" disabled={!reportIds.length||reportCustomers.size!==1||downloadingReport} onClick={downloadReport}><Download />{downloadingReport?"Gerando PDF…":"Baixar relatório"}</Button>
+          {reportIds.length>0 && <Button type="button" variant="ghost" disabled={downloadingReport||pending} onClick={()=>setReportSelection({})}>Limpar seleção</Button>}
+          <Button type="button" variant="outline" disabled={!allCancelled||reportCustomers.size!==1||pending||downloadingReport} onClick={recoverSelected}><RotateCcw />{pending?"Recuperando…":"Recuperar selecionados"}</Button>
+          <Button type="button" variant="outline" disabled={!reportIds.length||reportCustomers.size!==1||downloadingReport||pending||hasCancelled} onClick={downloadReport}><Download />{downloadingReport?"Gerando PDF…":"Baixar relatório"}</Button>
         </div>
       </div>
       <div className="min-w-0 rounded-md border">
         <Table className="min-w-[940px] table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-9"><span className="sr-only">Selecionar para relatório</span></TableHead>
+              <TableHead className="w-9"><span className="sr-only">Selecionar lote</span></TableHead>
               <TableHead className="w-[72px]">Código</TableHead>
               <TableHead className="w-[104px]" title="Data e hora do cadastro, no horário de São Paulo">Cadastro</TableHead>
               <TableHead className="w-[22%]">Cliente</TableHead>
@@ -425,7 +438,7 @@ export function LotsView({
             {lots.map((lot) => (
               <TableRow key={lot.id} data-state={reportSelection[lot.id]?"selected":undefined}>
                 <TableCell>
-                  <input type="checkbox" className="size-4 accent-yellow-500" aria-label={`Selecionar lote ${lot.code} para relatório`} checked={!!reportSelection[lot.id]} disabled={downloadingReport||lot.status==="cancelled"||!lot.customer_id||!!(reportCustomer&&reportCustomer.customerId!==lot.customer_id)} title={reportCustomer&&reportCustomer.customerId!==lot.customer_id?"Limpe a seleção para escolher outro cliente":"Incluir no relatório do cliente"} onChange={event=>toggleReportLot(lot,event.target.checked)} />
+                  <input type="checkbox" className="size-4 accent-yellow-500" aria-label={`Selecionar lote ${lot.code} para ações`} checked={!!reportSelection[lot.id]} disabled={downloadingReport||pending||!lot.customer_id||!!(reportCustomer&&reportCustomer.customerId!==lot.customer_id)} title={reportCustomer&&reportCustomer.customerId!==lot.customer_id?"Limpe a seleção para escolher outro cliente":"Selecionar lote do cliente"} onChange={event=>toggleReportLot(lot,event.target.checked)} />
                 </TableCell>
                 <TableCell className="font-mono text-xs">{lot.code}</TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">

@@ -447,6 +447,21 @@ export async function recoverExpiredLotAction(id: string): Promise<ActionResult<
   return setLotStatus(id, "pending_payment", true);
 }
 
+export async function recoverCancelledLotsAction(ids: string[]): Promise<ActionResult<{ count: number }>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") return failure("Seu perfil é somente leitura.");
+    const parsed = z.array(z.uuid()).min(1).max(200).refine(values => new Set(values).size === values.length).safeParse(ids);
+    if (!parsed.success) return failure("Selecione de 1 a 200 lotes diferentes do mesmo cliente.");
+    const { data, error } = await (await createClient()).rpc("recover_cancelled_lots_batch", { p_ids: parsed.data });
+    if (error?.code === "PGRST202") return failure("A recuperação em lote precisa da atualização 0087 no banco. Nenhum lote foi alterado.");
+    if (error) return failure(error.code === "P0001" ? error.message : "Não foi possível recuperar os lotes. Atualize e tente novamente.");
+    updateTag("dashboard");
+    revalidatePath("/admin/lotes"); revalidatePath("/admin/cobrancas"); revalidatePath("/admin/relatorios"); revalidatePath("/painel", "layout");
+    return { ok: true, data: { count: Number(data) } };
+  } catch (error) { rethrowIfRedirect(error); return failure("Não foi possível recuperar os lotes."); }
+}
+
 /**
  * Troca o token de convite por um marcador, dentro da URL.
  *
