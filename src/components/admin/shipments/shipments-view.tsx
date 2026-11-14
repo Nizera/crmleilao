@@ -1,5 +1,6 @@
 "use client";
 
+import { PostponeShipmentSheet } from "@/components/admin/shipments/postpone-shipment-sheet";
 import {shipmentSearchKey} from "@/lib/shipment-item-search";
 import { unifiedShipmentRows, shipmentListSummary } from "@/lib/shipment-list";
 import { shipmentQueueIssues } from "@/lib/shipment-readiness";
@@ -121,6 +122,7 @@ export function ShipmentsView({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [emitTarget, setEmitTarget] = useState<ShipmentQueueRow | null>(null);
+  const [postponeTarget, setPostponeTarget] = useState<ShipmentQueueRow | null>(null);
   const [detail, setDetail] = useState<Shipment | null>(null);
   const [activatingWebhook, setActivatingWebhook] = useState(false);
   const [freightFilter, setFreightFilter] = useState("all");
@@ -626,7 +628,7 @@ export function ShipmentsView({
                           Emitir envio
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setEmitTarget(row)} title="Conferir cadastro, pagamentos e conteúdo antes de emitir">Conferir</Button>
-                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72"><DropdownMenuItem disabled={row.freightStatus==='paid'||row.companyFreight} onClick={()=>releaseFreight(row)}>Liberar frete · pago por fora</DropdownMenuItem><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releasePrizeFreight(row)}>Frete da empresa · prêmios de R$ 0</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opções de envio de ${row.name??'cliente'}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72"><DropdownMenuItem onClick={()=>setPostponeTarget(row)}>Adiar envio</DropdownMenuItem><DropdownMenuItem disabled={row.freightStatus==='paid'||row.companyFreight} onClick={()=>releaseFreight(row)}>Liberar frete · pago por fora</DropdownMenuItem><DropdownMenuItem disabled={!row.lots.some(l=>l.arremate_value===0&&['paid','pending_payment'].includes(l.status))} onClick={()=>releasePrizeFreight(row)}>Frete da empresa · prêmios de R$ 0</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -679,6 +681,8 @@ export function ShipmentsView({
           }}
         />
       )}
+
+      {postponeTarget && <PostponeShipmentSheet customerId={postponeTarget.customerId} name={postponeTarget.name} from={postponeTarget.shippingDate ?? date} onClose={() => setPostponeTarget(null)} />}
 
       <ShipmentDetailSheet
         shipment={detail}
