@@ -104,6 +104,17 @@ export async function createRaffle(input: unknown): Promise<ActionResult<string>
   } catch (error) { return failure(error); }
 }
 
+export async function duplicateRaffle(source: string, request: string): Promise<ActionResult<string>> {
+  try {
+    await staff();
+    if (!z.uuid().safeParse(source).success || !z.uuid().safeParse(request).success) return { ok: false, error: "Campanha inválida." };
+    const { data, error } = await (await createClient()).rpc("duplicate_raffle_campaign", { p_source: source, p_request: request });
+    if (error?.code === "PGRST202") return { ok: false, error: "A duplicação precisa da atualização 0086 no banco. Nenhuma cópia foi criada." };
+    if (error) throw error;
+    invalidate(); return { ok: true, data: String(data) };
+  } catch (error) { return failure(error); }
+}
+
 export async function saveRafflePromotions(id:string,tiers:unknown,expected:unknown):Promise<ActionResult> {
   try {
     await staff();

@@ -1,12 +1,12 @@
 import { raffleNetRevenue } from "@/lib/raffle-presentation";
 import Link from "next/link";
-import { ArrowUpRight, Gift, MoreHorizontal, Plus, Search } from "lucide-react";
+import { ArrowUpRight, Gift, Plus, Search } from "lucide-react";
 import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import type { Raffle } from "@/lib/raffles";
 import { raffleMoney, raffleStatus } from "@/lib/raffles";
 import { RaffleUnavailable } from "@/components/raffles/raffle-shared";
-import { RaffleLifecycleButtons } from "@/components/raffles/raffle-admin";
+import { RaffleCampaignActions } from "@/components/raffles/raffle-campaign-actions";
 import { RaffleBadge, RaffleEmpty, RafflePagination, RaffleProgress } from "@/components/raffles/raffle-ui";
 import { readRafflePresentation } from "@/lib/raffle-presentation-server";
 export const metadata = { title: "Campanhas de rifas" };
@@ -32,7 +32,7 @@ export default async function RafflePage({ searchParams }: { searchParams: Promi
       <td data-label="Situação"><RaffleBadge status={c.status}>{c.archived_at ? "Arquivada" : ready ? "Pronta para apuração" : raffleStatus[c.status]}</RaffleBadge></td>
       <td data-label="Cotas"><div className="min-w-24 max-w-40">{stats ? <><strong className="mb-2 block tabular-nums">{stats.paid}/{c.total_numbers}</strong><RaffleProgress paid={stats.paid} reserved={stats.reserved} total={c.total_numbers} /></> : <span>{c.total_numbers} cotas</span>}</div></td>
       <td data-label="Recebido líquido"><strong className="whitespace-nowrap tabular-nums">{stats ? raffleMoney(raffleNetRevenue(stats.received).net) : "—"}</strong>{stats && <p className="rf-caption mt-1">Bruto: {raffleMoney(stats.received)} · API 1%: {raffleMoney(raffleNetRevenue(stats.received).fee)}</p>}</td>
-      <td data-label="Ações"><div className="flex flex-wrap items-center gap-2"><Link className={`rf-button ${ready ? "rf-button-primary" : ""}`} href={`/admin/rifa/${c.id}${ready ? "?tab=result" : ""}`}>{ready ? "Apurar" : c.status === "closed" ? "Ver resultado" : "Gerenciar"}<ArrowUpRight size={14} /></Link>{profile.role !== "viewer" && <details><summary aria-label={`Mais ações de ${c.title}`} className="cursor-pointer list-none rounded-md border p-2"><MoreHorizontal size={16} /></summary><div className="mt-2"><RaffleLifecycleButtons campaign={c} owner={profile.role === "owner"} /></div></details>}</div></td>
+      <td data-label="Ações"><div className="flex flex-wrap items-center gap-2"><Link className={`rf-button ${ready ? "rf-button-primary" : ""}`} href={`/admin/rifa/${c.id}${ready ? "?tab=result" : ""}`}>{ready ? "Apurar" : c.status === "closed" ? "Ver resultado" : "Gerenciar"}<ArrowUpRight size={14} /></Link>{profile.role !== "viewer" && <RaffleCampaignActions campaign={c} owner={profile.role === "owner"} />}</div></td>
     </tr>; })}</tbody></table></div> : <RaffleEmpty title="Nenhuma campanha neste filtro" description="Busque por outro nome ou comece uma nova campanha pelo rascunho." href={profile.role !== "viewer" ? "/admin/rifa/nova" : undefined} action="Criar campanha" />}
     {summary && !summary.complete && <p className="rf-caption">Há um volume grande de registros. Os indicadores não foram exibidos para evitar valores parciais.</p>}
     <RafflePagination page={page} more={page * 12 < (count ?? 0)} count={count ?? 0} href={p => href(status, p)} />
