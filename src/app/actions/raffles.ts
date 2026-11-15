@@ -115,6 +115,23 @@ export async function duplicateRaffle(source: string, request: string): Promise<
   } catch (error) { return failure(error); }
 }
 
+export async function editRaffleCampaign(id: string, input: unknown, expected: unknown): Promise<ActionResult> {
+  try {
+    await staff();
+    const parsed = raffleSchema.safeParse(input), previous = raffleSchema.safeParse(expected);
+    if (!z.uuid().safeParse(id).success || !previous.success) return { ok: false, error: "Campanha inválida. Atualize a página." };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+    const tiers = validateRafflePriceTiers((expected as { price_tiers?: unknown }).price_tiers ?? [], parsed.data.unit_price, parsed.data.max_quantity);
+    const { error } = await (await createClient()).rpc("edit_raffle_campaign", { p_campaign: id, p_data: parsed.data, p_expected: { ...previous.data, price_tiers: tiers } });
+    if (error?.code === "PGRST202") return { ok: false, error: "Execute a atualização 0090 no banco para habilitar a edição." };
+    if (error) throw error;
+    invalidate(); return { ok: true, data: null };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Informe quantidades")) return { ok: false, error: "As promoções atuais não são compatíveis com o novo preço ou limite. Revise a aba Promoções primeiro." };
+    return failure(error);
+  }
+}
+
 export async function saveRafflePromotions(id:string,tiers:unknown,expected:unknown):Promise<ActionResult> {
   try {
     await staff();
