@@ -130,11 +130,11 @@ export function LotsView({
   const hasCancelled = Object.values(reportSelection).some(item => item.status === "cancelled");
   const recoverSelected = () => {
     if (!allCancelled || reportCustomers.size !== 1 || pending) return;
-    if (!window.confirm(`Recuperar os ${reportIds.length} lotes selecionados de ${reportCustomer.name}? Todos voltarão para Aguardando pagamento com novo prazo de 24 horas. Advertências e bloqueios existentes não serão removidos. Nenhum Pix antigo será reutilizado.`)) return;
+    if (!window.confirm(`Recuperar os ${reportIds.length} lotes selecionados de ${reportCustomer.name}? Todos voltarão para Aguardando pagamento com o prazo original reiniciado (12h no primeiro leilão de novos clientes, 24h nos demais). Advertências e bloqueios existentes não serão removidos. Nenhum Pix antigo será reutilizado.`)) return;
     startTransition(async () => {
       const result = await recoverCancelledLotsAction(reportIds);
       if (!result.ok) { toast.error(result.error); return; }
-      toast.success(`${result.data.count} lote(s) recuperado(s). Novo prazo de 24 horas.`);
+      toast.success(`${result.data.count} lote(s) recuperado(s). Prazo de pagamento reiniciado.`);
       setReportSelection({}); router.refresh();
     });
   };
@@ -226,11 +226,11 @@ export function LotsView({
   };
 
   const recoverLot = (lot: Lot) => {
-    if (!window.confirm("Recuperar este lote? Ele voltará para o cliente com um novo prazo de 24 horas para pagamento. O Pix anterior não será reutilizado.")) return;
+    if (!window.confirm("Recuperar este lote? Ele voltará para o cliente com um novo prazo conforme a regra do lote (12h ou 24h). O Pix anterior não será reutilizado.")) return;
     startTransition(async () => {
       const result = await recoverExpiredLotAction(lot.id);
       if (!result.ok) { toast.error(result.error); return; }
-      toast.success("Lote recuperado. O cliente tem um novo prazo de 24 horas para pagar.");
+      toast.success("Lote recuperado. O prazo original de pagamento foi reiniciado.");
       router.refresh();
     });
   };
@@ -468,7 +468,7 @@ export function LotsView({
                 </TableCell>
                 <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
                   <LotStatusBadge status={lot.status} size="sm" />
-                  {lot.payment_expired_at && <span className="mt-1 block text-[10px] text-muted-foreground">Prazo de 24h encerrado</span>}
+                  {lot.payment_expired_at && <span className="mt-1 block text-[10px] text-muted-foreground">Prazo de {lot.payment_term_hours ?? 24}h encerrado</span>}
                 </TableCell>
                 <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                   {formatDateBR(lot.shipping_date)}

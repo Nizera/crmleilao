@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {PGlite} from '@electric-sql/pglite';
-const sql=name=>readFile('supabase/migrations/'+name,'utf8');
+const sql=name=>readFile('supabase/migrations/'+name,'utf8').then(value=>value.replace(/\r\n/g,'\n'));
 test('movimentação real: sem estoque, baixa única, permissões e rollback de seleção inválida',async()=>{
  const db=new PGlite();const id=()=>crypto.randomUUID();const a=id(),b=id(),c=id(),sku=id(),player=id();
  const scalar=async(q,args=[])=>Object.values((await db.query(q,args)).rows[0])[0];

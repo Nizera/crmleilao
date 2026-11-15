@@ -7,7 +7,7 @@ import { Eye, LoaderCircle } from "lucide-react";
 import { getLotDetailAction } from "@/app/actions/lots";
 import { ImageLightbox } from "@/components/client/image-lightbox";
 
-import { getSeparationReportAction, moveLotsToCustomerBoxesAction } from "@/app/actions/reports";
+import { getSeparationReportAction, moveReportItemsToBoxesAction } from "@/app/actions/reports";
 import { handleStoreOrderAction } from "@/app/actions/store";
 import { boxRaffleAward } from "@/app/actions/raffles";
 import { handleLogisticsPendingAction } from "@/app/actions/logistics-pending";
@@ -128,7 +128,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
   const customers = filterReportCustomers(movementCustomers,search);
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
-  const visibleIds = new Set(customers.flatMap((customer) => customer.lots.map((lot) => lot.id)));
+  const visibleIds = new Set(customers.flatMap(customer => [...customer.lots.filter(lot => lot.status === "paid" && !lot.movedAt).map(lot => lot.id), ...(customer.logisticsPending ?? []).filter(issue => !issue.moved_at).map(issue => `issue:${issue.id}`)]));
   const selectedVisibleIds = selectedIds.filter((id) => visibleIds.has(id));
 
   const changeDate = (value: string) => {
@@ -150,12 +150,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
     const ids = [...selectedVisibleIds];
     if (!ids.length) return;
     startTransition(async () => {
-      const result = await moveLotsToCustomerBoxesAction(ids);
+      const result = await moveReportItemsToBoxesAction({ lotIds: ids.filter(id => !id.startsWith("issue:")), issueIds: ids.filter(id => id.startsWith("issue:")).map(id => id.slice(6)) });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success(`${result.data.moved} lote(s) movimentado(s) para a caixa do cliente.`);
+      toast.success(`${result.data.moved} item(ns) movimentado(s) para a caixa do cliente.`);
       setSelectedIds([]);
       const refreshed = await getSeparationReportAction(date);
       if (refreshed.ok) setReport(refreshed.data);
@@ -246,9 +246,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
             Arremates de {report.totals.excludedCustomers} cliente(s) ocultos por pagamento pendente. Reposições gratuitas continuam disponíveis para conferência.
           </p>
         )}
+        {visibleIds.size > 0 && <Button type="button" variant="outline" disabled={isPending} className="mb-1" onClick={() => { setSelectedIds([...visibleIds].slice(0,100)); if (visibleIds.size > 100) toast.info("Selecionados os primeiros 100 itens visíveis. Movimente este grupo antes dos demais."); }}>Selecionar itens visíveis</Button>}
+        {selectedVisibleIds.length > 0 && <Button type="button" variant="ghost" disabled={isPending} className="mb-1" onClick={() => setSelectedIds([])}>Limpar seleção</Button>}
+        {selectedVisibleIds.length > 100 && <p role="alert" className="text-xs text-destructive">Selecione no máximo 100 itens por movimentação.</p>}
         {selectedVisibleIds.length > 0 && (
-          <Button type="button" onClick={moveSelected} disabled={isPending} className="mb-1">
-            Movimentar {selectedVisibleIds.length} lote(s)
+          <Button type="button" onClick={moveSelected} disabled={isPending || selectedVisibleIds.length > 100} className="mb-1">
+            Movimentar {selectedVisibleIds.length} item(ns)
           </Button>
         )}
 
@@ -319,14 +322,13 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   })}>{order.fulfillment_status==='awaiting'?'Iniciar separação':'Colocar na caixa do cliente'}</Button>}
                 </div>)}
                 {customer.logisticsPending.map(issue => <div key={issue.id} className="mb-3 rounded-md border border-amber-500/40 p-3 break-inside-avoid">
-                  <p className="text-sm font-semibold">{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
+                  <p className="flex items-center gap-2 text-sm font-semibold">{!issue.moved_at && <input type="checkbox" aria-label={`Selecionar ${issue.source_kind === "raffle" ? "prêmio" : "pendência"} ${issue.code} para movimentação`} checked={selectedIds.includes(`issue:${issue.id}`)} disabled={isPending} onChange={event => setSelectedIds(current => event.target.checked ? [...new Set([...current, `issue:${issue.id}`])] : current.filter(id => id !== `issue:${issue.id}`))} className="size-4 shrink-0 print:hidden" />}{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
                   {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(issue.shippingDate)}</p>}
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
                   <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
-                  {issue.source_kind === "raffle" && !issue.moved_at && !issue.shipmentCode && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado do prêmio (R$, opcional)<input type="number" min="0" max="100000" step="0.01" value={storeDeclared[issue.id]??''} onChange={e=>setStoreDeclared(values=>({...values,[issue.id]:e.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2" /></label>}
                   {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
-                    const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(storeDeclared[issue.id] ?? issue.shipping_declared_value)) : await handleLogisticsPendingAction(issue.id, "box");
+                    const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(issue.shipping_declared_value ?? 0)) : await handleLogisticsPendingAction(issue.id, "box");
                     if (!result.ok) { toast.error(result.error); return; }
                     const refreshed = await getSeparationReportAction(date);
                     if (refreshed.ok) setReport(refreshed.data); else toast.error(refreshed.error);

@@ -1,0 +1,42 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {PGlite} from '@electric-sql/pglite';
+const sql=name=>readFile('supabase/migrations/'+name,'utf8');
+test('relatório movimenta lotes, prêmios e reposições atomicamente sem pedir valor nem modificar etiqueta',async()=>{
+ const db=new PGlite();const id=()=>crypto.randomUUID();const c=id(),a=id(),b=id(),sku=id(),player=id(),p=id(),p2=id(),rep=id(),order=id(),shipment=id();
+ const scalar=async(q,args=[])=>Object.values((await db.query(q,args)).rows[0])[0];
+ try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$select '11111111-1111-4111-8111-111111111111'::uuid$$;
+ create function has_staff_write() returns boolean language sql stable as $$select coalesce(current_setting('test.staff',true),'false')='true'$$;
+ create type public.stock_move_kind as enum('lot_pick','lot_return','manual_adjust');
+ create table lots(id uuid primary key,customer_id uuid,status text,shipping_date date);
+ create table stock_items(id uuid primary key,player_id uuid,color text,qty_on_hand int);
+ create table lot_items(lot_id uuid,stock_item_id uuid,player_id uuid,color text,qty int,applied boolean,primary key(lot_id,stock_item_id));
+ create table stock_movements(id serial primary key,stock_item_id uuid,delta int,kind public.stock_move_kind,lot_id uuid,created_by uuid);
+ create table shipments(id uuid primary key,customer_id uuid,status text,content_snapshot jsonb);
+ create table logistics_pending(id uuid primary key,customer_id uuid,source_kind text,shipment_id uuid,cancelled_at timestamptz,cancelled_by uuid,moved_at timestamptz,moved_by uuid,shipping_date date,shipping_declared_value numeric);
+ create table raffle_orders(id uuid primary key,status text);create table raffle_awards(logistics_id uuid,order_id uuid);
+ grant usage on schema public,auth to authenticated;grant all on all tables in schema public to authenticated;grant usage,select on all sequences in schema public to authenticated;`);
+ await db.exec(await sql('0021_lot_movement_workflow.sql'));await db.exec(await sql('0083_lot_movement_stock_type.sql'));await db.exec(await sql('0082_box_linked_logistics.sql'));await db.exec(await sql('0089_batch_report_logistics.sql'));
+ await db.query("insert into lots(id,customer_id,status)values($1,$3,'paid'),($2,$3,'paid')",[a,b,c]);
+ await db.query("insert into stock_items values($1,$2,'dourada',10)",[sku,player]);await db.query("insert into lot_items values($1,$2,$3,'dourada',2,false)",[a,sku,player]);
+ await db.query("insert into shipments values($1,$2,'posted','{\"frozen\":true}')",[shipment,c]);
+ for(const [issue,kind,value,linked]of [[p,'raffle',0,null],[p2,'raffle',15,shipment],[rep,'replacement',0,null]])await db.query('insert into logistics_pending(id,customer_id,source_kind,shipping_declared_value,shipment_id)values($1,$2,$3,$4,$5)',[issue,c,kind,value,linked]);
+ await db.query("insert into raffle_orders values($1,'paid')",[order]);await db.query('insert into raffle_awards values($1,$3),($2,$3)',[p,p2,order]);
+ const move=(lots,issues)=>db.query('select move_report_items_to_boxes($1::uuid[],$2::uuid[]) result',[lots,issues]);
+ await db.exec("set role authenticated;select set_config('test.staff','false',false)");await assert.rejects(move([a],[p]),/Acesso negado/);
+ await db.exec("select set_config('test.staff','true',false)");
+ await assert.rejects(move([a],[p,p]),/diferentes/);await assert.rejects(move([a],[id()]),/não foi encontrado/);
+ await db.exec('reset role');await db.query("update raffle_orders set status='review'");await db.exec('set role authenticated');
+ await assert.rejects(move([a],[p]),/pagamento/);assert.equal(await scalar('select moved_at from lots where id=$1',[a]),null);assert.equal(await scalar('select qty_on_hand from stock_items where id=$1',[sku]),10);
+ await db.exec('reset role');await db.query("update raffle_orders set status='paid'");await db.exec('set role authenticated');
+ assert.deepEqual((await move([a],[p,p2,rep])).rows[0].result,{lots:1,logistics:3,moved:4});
+ assert.equal(await scalar('select qty_on_hand from stock_items where id=$1',[sku]),8);assert.equal(await scalar('select count(*)::int from stock_movements'),1);
+ assert.equal(Number(await scalar('select shipping_declared_value from logistics_pending where id=$1',[p])),0);
+ assert.equal(Number(await scalar('select shipping_declared_value from logistics_pending where id=$1',[p2])),15);
+ assert.deepEqual(await scalar('select content_snapshot from shipments where id=$1',[shipment]),{frozen:true});
+ assert.ok((await db.query('select moved_at from logistics_pending')).rows.every(row=>row.moved_at));
+ assert.equal((await move([],[p,p2,rep])).rows[0].result.moved,0,'não duplica movimento de prêmios');
+ await db.exec('reset role');await db.query("update shipments set status='cancelled'");await db.exec('set role authenticated');await assert.rejects(move([b],[p2]),/situação da etiqueta/);assert.equal(await scalar('select moved_at from lots where id=$1',[b]),null);
+ await db.exec('reset role;set role anon');await assert.rejects(move([],[p]),/permission denied/);
+ }finally{await db.close();}
+});

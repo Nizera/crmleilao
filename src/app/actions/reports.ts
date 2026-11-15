@@ -3,6 +3,7 @@
 import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import {
   getSeparationReport,
   type SeparationReport,
@@ -12,6 +13,21 @@ import { rethrowIfRedirect, type ActionResult } from "@/lib/result";
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function moveReportItemsToBoxesAction(input: unknown): Promise<ActionResult<{ moved: number }>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") return failure("Seu perfil é somente leitura.");
+    const ids = z.array(z.uuid()).max(100).refine(values => values.length === new Set(values).size);
+    const parsed = z.object({ lotIds: ids, issueIds: ids }).refine(value => value.lotIds.length + value.issueIds.length >= 1 && value.lotIds.length + value.issueIds.length <= 100).safeParse(input);
+    if (!parsed.success) return failure("Selecione de 1 a 100 itens diferentes para movimentar.");
+    const { data, error } = await (await createClient()).rpc("move_report_items_to_boxes", { p_lot_ids: parsed.data.lotIds, p_issue_ids: parsed.data.issueIds });
+    if (error?.code === "PGRST202") return failure("A movimentação de prêmios em lote precisa da atualização 0089 no banco.");
+    if (error) return failure(error.code === "P0001" ? error.message : "Não foi possível movimentar a seleção. Nenhum item foi alterado.");
+    for (const path of ["/admin/relatorios", "/admin/estoque", "/admin/lotes", "/admin/pendencias", "/admin/rifa/premios", "/admin/envios", "/painel"]) revalidatePath(path, "layout");
+    return { ok: true, data: { moved: Number(data.moved) } };
+  } catch (error) { rethrowIfRedirect(error); return failure("Não foi possível movimentar a seleção."); }
+}
 
 /** Recarrega o relatório de separação quando a data muda na tela. */
 export async function getSeparationReportAction(

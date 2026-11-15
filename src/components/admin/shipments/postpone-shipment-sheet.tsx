@@ -38,7 +38,7 @@ export function PostponeShipmentSheet({ customerId, name, from, onClose }: {
         <label className="grid gap-2 font-medium">Nova data de envio<Input type="date" value={to} min={minimum} required disabled={busy} onChange={(e) => setTo(e.target.value)} /></label>
         <p className="text-sm text-muted-foreground">Todos os lotes pagos ou aguardando pagamento desta data, ainda sem etiqueta, serão adiados.</p>
         <label className="flex items-start gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" checked={includeLogistics} disabled={busy} onChange={(e) => setIncludeLogistics(e.target.checked)} className="mt-1" /><span>Adiar também os prêmios de rifa e pendências logísticas desta data, ainda sem etiqueta.</span></label>
-        <div className="rounded-lg bg-muted p-3 text-sm">Pagamentos, frete pago e separações realizadas serão preservados. O prazo de 24 horas para pagamento não será renovado. Pedidos da loja não são alterados.</div>
+        <div className="rounded-lg bg-muted p-3 text-sm">Pagamentos, frete pago e separações realizadas serão preservados. O prazo de pagamento dos lotes não será renovado. Pedidos da loja não são alterados.</div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Voltar</Button><Button type="submit" disabled={busy || !to || to < minimum}>{busy ? "Adiando…" : "Confirmar adiamento"}</Button></div>
       </form>

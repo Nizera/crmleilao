@@ -120,7 +120,7 @@ export const isAdminRole = (role: AdminRole, required: AdminRole[]) =>
 /** Colunas sempre presentes de um lote (listagens e detalhe). */
 const LOT_BASE_COLUMNS = [
   "id, code, customer_id, title, arremate_value, discount_amount, status,",
-  "charge_id, payment_due_at, payment_expired_at, pix_paused_at,",
+  "charge_id, payment_due_at, payment_term_hours, payment_expired_at, pix_paused_at,",
   "auction_date, shipping_date, paid_at, shipped_at, created_at, updated_at,",
   "customer:customers(id, name, phone_e164, auth_user_id)",
 ].join(" ");
