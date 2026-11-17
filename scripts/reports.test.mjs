@@ -132,7 +132,7 @@ test('falha ao consultar liberações de prêmios interrompe relatório em vez d
 });
 
 
-test('todas as datas reúne semanas anteriores, preserva movimentação e exclui etiquetas já liberadas',async()=>{
+test('todas as datas mantém o mesmo histórico das datas específicas, inclusive itens enviados',async()=>{
  const old={...lot('old','a'),shipping_date:'2026-10-27',moved_at:'2026-10-28T10:00:00Z'};
  const future={...lot('future','a','pending_payment'),shipping_date:'2026-11-17'};
  const issued=lot('issued','b');
@@ -141,7 +141,7 @@ test('todas as datas reúne semanas anteriores, preserva movimentação e exclui
    freight:[{customer_id:'a',status:'paid'},{customer_id:'b',status:'paid'}],
    links:[{lot_id:'issued',shipment:{batch_date:'2026-11-03',status:'posted'}}]}).load('all');
  assert.equal(report.shippingDate,'all');
- assert.equal(report.customers.length,1);
+ assert.equal(report.customers.length,2);
  assert.equal(report.customers[0].lots.length,1);
  assert.equal(report.customers[0].lots[0].id,'old');
  assert.equal(report.customers[0].lots[0].shippingDate,'2026-10-27');
@@ -172,7 +172,7 @@ test('etiqueta não faz o mesmo item aparecer novamente em outra data',async()=>
  assert.equal((await load('2026-11-03')).customers[0].logisticsPending[0].shipmentCode,'ENV-TESTE');
  assert.equal((await load('2026-11-10')).customers.length,0);
  assert.equal((await load('2026-11-11')).customers.length,0);
- assert.equal((await load('all')).customers.length,0);
+ assert.equal((await load('all')).customers[0].logisticsPending[0].dispatched,true);
 });
 
 
@@ -208,7 +208,7 @@ test('vários clientes e datas: cada ID aparece uma única vez e na respectiva d
    assert.equal(new Set(c.lots.map(l=>l.shippingDate)).size,3);
  }
  assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders.length,1);
- assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders[0].shippingDate,'2026-11-17');
+ assert.equal(report.customers.find(c=>c.customerId==='cleber').storeOrders[0].shippingDate,'2026-11-03');
  assert.equal((await load('2026-11-12')).customers.length,0);
 });
 
@@ -224,8 +224,36 @@ test('Anderson: etiqueta emitida não oculta lote pago não movimentado em 03/11
  }
 });
 
-test('Todas as datas mantém prêmios ligados a etiquetas emitidas, mas exclui postados e entregues',async()=>{
+test('Todas as datas mantém histórico de envio sem confundir etiqueta com movimentação',async()=>{
  const issues=['pending','released','posted','delivered'].map(status=>({id:status,shipping_date:'2026-11-03',customers:customer('a'),cancelled_at:null,shipment_id:`s-${status}`,moved_at:null,shipment:{code:`ENV-${status}`,status,batch_date:'2026-11-03'}}));
  const result=await reportLoader({missing:false,issues}).load('all');
- assert.deepEqual(Array.from(result.customers[0].logisticsPending,item=>item.id),['pending','released']);
+ assert.deepEqual(Array.from(result.customers[0].logisticsPending,item=>item.id),['pending','released','posted','delivered']);
+ assert.deepEqual(Array.from(result.customers[0].logisticsPending,item=>item.dispatched),[false,false,true,true]);
+});
+
+
+test('data específica e Todas as datas produzem os mesmos conjuntos de movimentação, sem repetir itens enviados',async()=>{
+ const helpers={};
+ vm.runInNewContext(ts.transpileModule(readFileSync('src/lib/report-movement.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:helpers});
+ const {filterReportMovement}=helpers;
+ const rows=[{...lot('new','a'),shipping_date:'2026-11-17'}, {...lot('moved','a'),shipping_date:'2026-11-17',moved_at:'2026-11-16T13:00:00Z'}, {...lot('sent','a','shipped'),shipping_date:'2026-11-17',moved_at:null}, {...lot('old','a'),shipping_date:'2026-11-10',moved_at:'2026-11-15T13:00:00Z'}];
+ const issue={id:'prize',source_kind:'raffle',shipping_date:'2026-11-17',moved_at:null,cancelled_at:null,customers:customer('a'),shipment:{status:'posted',batch_date:'2026-11-17',code:'ENV'}};
+ const {load}=reportLoader({missing:false,lots:rows,issues:[issue,issue],freight:[{customer_id:'a',status:'paid'}]});
+ const day=await load('2026-11-17'),all=await load('all');
+ const keys=customers=>Array.from(customers.flatMap(c=>[...c.lots,...c.logisticsPending].map(item=>item.id))).sort();
+ for(const mode of ['unmoved','moved','all']){
+  assert.deepEqual(keys(filterReportMovement(day.customers,'2026-11-17',mode)),keys(filterReportMovement(all.customers,'2026-11-17',mode)));
+ }
+ assert.deepEqual(keys(filterReportMovement(day.customers,'2026-11-17','unmoved')),['new']);
+ assert.deepEqual(keys(filterReportMovement(day.customers,'2026-11-17','moved')),['moved','prize','sent']);
+ assert.equal(all.customers[0].lots.find(l=>l.id==='sent').movedAt,null);
+});
+
+test('pedido da loja mantém data estável pelo cadastro e preserva histórico de entrega',async()=>{
+ const order={id:'order',code:'LOJA',customer_id:'a',payment_status:'paid',fulfillment_status:'fulfilled',shipment_id:'s',shipment:{batch_date:'2026-11-10',status:'delivered'},created_at:'2026-11-01T10:00:00Z',boxed_at:'2026-11-09T12:00:00Z',items:[{name:'Card',delivery_kind:'physical',quantity:1}]};
+ const {load}=reportLoader({missing:false,orders:[order],issues:[{id:'issue',shipping_date:'2026-11-10',customers:customer('a'),cancelled_at:null}],freight:[{customer_id:'a',status:'paid'}]});
+ const report=await load('2026-11-10');
+ assert.equal(report.customers[0].storeOrders[0].id,'order');
+ assert.equal(report.customers[0].storeOrders[0].dispatched,true);
+ assert.equal((await load('2026-11-17')).customers.length,0);
 });

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { nextShippingDate, type LotStatus } from "@/lib/lots";
-import {spToday} from "@/lib/dates";
+import {spToday, spDayOf} from "@/lib/dates";
 import { loadNotes } from "@/lib/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isChargeActive } from "@/lib/charges";
@@ -19,6 +19,7 @@ export type SeparationLot = {
   notes: string | null;
   status: LotStatus;
   movedAt: string | null;
+  dispatched?: boolean;
   movedItems: string[];
   searchItems?: string[];
 };
@@ -34,8 +35,8 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
-  logisticsPending?: { shippingDate?: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
-  storeOrders?: {shippingDate?:string;shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
+  logisticsPending?: { dispatched?: boolean; shippingDate?: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
+  storeOrders?: {dispatched?:boolean;shippingDate?:string;shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
   name: string | null;
   phone_e164: string;
@@ -87,11 +88,18 @@ async function loadReportStoreOrders(): Promise<ReportStoreRow[]> {
   const result:ReportStoreRow[]=[];
   for(let from=0;;from+=REPORT_LOTS_PAGE_SIZE){
     const {data,error}=await admin.from("store_orders")
-      .select("id,code,customer_id,created_at,boxed_at,fulfillment_status,shipping_declared_value,items:store_order_items(name,quantity,delivery_kind)")
-      .eq("payment_status","paid").neq("fulfillment_status","fulfilled").is("shipment_id",null)
+      .select("id,code,customer_id,created_at,boxed_at,fulfillment_status,shipping_declared_value,shipment:shipments(batch_date,status),items:store_order_items(name,quantity,delivery_kind)")
+      .eq("payment_status","paid")
       .order("created_at").order("id").range(from,from+REPORT_LOTS_PAGE_SIZE-1);
     if(error)throw new Error("Não foi possível conferir os pedidos da loja para a separação.");
-    for(const order of data??[])if(order.items?.some(item=>item.delivery_kind==="physical"))result.push({...order,shippingDate:nextShippingDate(spToday())} as ReportStoreRow);
+    for (const order of data ?? []) {
+      if (!order.items?.some(item => item.delivery_kind === "physical")) continue;
+      const shipment = (Array.isArray(order.shipment) ? order.shipment[0] : order.shipment) as {batch_date?: string; status?: string} | null;
+      result.push({...order,
+        shippingDate: shipment?.status !== "cancelled" && shipment?.batch_date || nextShippingDate(spDayOf(order.created_at)),
+        dispatched: order.fulfillment_status === "fulfilled" || ["posted", "delivered"].includes(shipment?.status ?? ""),
+      } as ReportStoreRow);
+    }
     if((data?.length??0)<REPORT_LOTS_PAGE_SIZE)return result;
   }
 }
@@ -108,7 +116,6 @@ function deduplicateCustomers(customers:SeparationCustomer[]):SeparationCustomer
  */
 export async function getSeparationReport(
   shippingDate: string,
-  outstandingOnly = false,
   preloadedStore?: ReportStoreRow[],
 ): Promise<SeparationReport> {
   if (shippingDate === "all") return getAllSeparationReport();
@@ -133,7 +140,7 @@ export async function getSeparationReport(
       throw new Error("Não foi possível conferir as pendências logísticas. Tente novamente antes de separar os envios.");
     }
     const page = (data ?? []) as unknown as PendingRow[];
-    pendingRows.push(...page.filter(row=>!outstandingOnly || !row.shipment || ["pending","released"].includes(row.shipment.status)));
+    pendingRows.push(...page);
     if (page.length < REPORT_LOTS_PAGE_SIZE) break;
   }
 
@@ -214,8 +221,7 @@ export async function getSeparationReport(
   for(const id of candidateIds)if(paymentBlockedCustomers.has(id)||freightBlockedCustomers.has(id))blockedCustomers.add(id);
   const eligibleRows = rows.filter(row => {
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
-    if (outstandingOnly && (dispatchedLotIds.has(row.id) || row.status !== "paid")) return false;
-    if (releasedLotIds.has(row.id)) return true;
+    if (releasedLotIds.has(row.id) || row.moved_at || ["shipped","delivered"].includes(row.status)) return true;
     return !paymentBlockedCustomers.has(row.customers.id)
       && (!freightBlockedCustomers.has(row.customers.id) || releasedPrizeIds.has(row.id));
   });
@@ -251,6 +257,7 @@ export async function getSeparationReport(
       notes: notes.get(row.id) ?? null,
       status: row.status,
       movedAt: row.moved_at,
+      dispatched: dispatchedLotIds.has(row.id) || ["shipped","delivered"].includes(row.status),
       movedItems: itemsByLot.get(row.id) ?? [],
       searchItems: searchableItemsByLot.get(row.id) ?? [],
       createdAt: row.created_at,
@@ -289,16 +296,17 @@ export async function getSeparationReport(
     entry.logisticsPending = [...(entry.logisticsPending ?? []), {
       shippingDate: row.shipping_date, id: row.id, code: row.code, title: row.title, quantity: row.quantity, reason: row.reason, source_kind: row.source_kind, shipping_declared_value: Number(row.shipping_declared_value), moved_at: row.moved_at,
       shipmentCode: row.shipment?.code ?? null,
+      dispatched: ["posted","delivered"].includes(row.shipment?.status ?? ""),
     }];
     byCustomer.set(customer.id, entry);
   }
-  const missingStoreCustomers=[...new Set(physicalStore.filter(o=>!byCustomer.has(o.customer_id)&&!blockedCustomers.has(o.customer_id)).map(o=>o.customer_id))];
+  const missingStoreCustomers=[...new Set(physicalStore.filter(o=>!byCustomer.has(o.customer_id)&&(!blockedCustomers.has(o.customer_id)||o.boxed_at||o.dispatched)).map(o=>o.customer_id))];
   for(let from=0;from<missingStoreCustomers.length;from+=100){
    const {data,error}=await admin.from('customers').select('id,name,phone_e164,address_cep,address_street,address_number,address_complement,address_district,address_city,address_state').in('id',missingStoreCustomers.slice(from,from+100));
    if(error)throw new Error('Não foi possível carregar os destinatários dos pedidos da loja.');
    for(const c of data??[])byCustomer.set(c.id,{customerId:c.id,name:c.name,phone_e164:c.phone_e164,address:{cep:c.address_cep,street:c.address_street,number:c.address_number,complement:c.address_complement,district:c.address_district,city:c.address_city,state:c.address_state},lots:[]});
   }
-  for(const order of physicalStore){if(blockedCustomers.has(order.customer_id))continue;const entry=byCustomer.get(order.customer_id);if(entry)entry.storeOrders=[...(entry.storeOrders??[]),order];}
+  for(const order of physicalStore){if(blockedCustomers.has(order.customer_id)&&!order.boxed_at&&!order.dispatched)continue;const entry=byCustomer.get(order.customer_id);if(entry)entry.storeOrders=[...(entry.storeOrders??[]),order];}
 
   // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.
   const customers = deduplicateCustomers([...byCustomer.values()]).sort((a, b) => {
@@ -323,15 +331,15 @@ export async function getSeparationReport(
   };
 }
 
-/** Visão geral: reutiliza a conferência financeira de cada remessa, sem permitir
- * que débitos de uma remessa futura bloqueiem os itens de uma data anterior. */
+/** All dates is the deduplicated union of the same per-date report.
+ * Movement filtering never changes the underlying historical dataset. */
 async function getAllSeparationReport(): Promise<SeparationReport> {
   const admin = createAdminClient();
   const dates = new Set<string>();
   for (const table of ["lots", "logistics_pending"] as const) {
     for (let from = 0; ; from += REPORT_LOTS_PAGE_SIZE) {
       let query = admin.from(table).select("shipping_date");
-      query = table === "lots" ? query.in("status", ["paid", "pending_payment"]) : query.is("cancelled_at", null);
+      query = table === "lots" ? query.in("status", ["paid", "pending_payment", "shipped", "delivered"]) : query.is("cancelled_at", null);
       const {data,error} = await query.order("shipping_date").order("id").range(from, from + REPORT_LOTS_PAGE_SIZE - 1);
       if (error) throw new Error("Não foi possível carregar todas as datas de separação.");
       for (const row of data ?? []) if (row.shipping_date) dates.add(row.shipping_date);
@@ -346,7 +354,7 @@ async function getAllSeparationReport(): Promise<SeparationReport> {
   const warnings = new Set<string>();
   const excludedIds = new Set<string>();
   for (const day of [...dates].sort()) {
-    const report = await getSeparationReport(day, true, storeOrders);
+    const report = await getSeparationReport(day, storeOrders);
     for (const id of report.excludedCustomerIds ?? []) excludedIds.add(id);
     for (const warning of report.warnings ?? []) warnings.add(warning);
     for (const customer of report.customers) {

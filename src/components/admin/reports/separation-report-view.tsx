@@ -1,7 +1,8 @@
 "use client";
 
 import {filterReportCustomers} from "@/lib/report-search";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import {filterReportMovement, type ReportMovementFilter} from "@/lib/report-movement";
 import { toast } from "sonner";
 import { Eye, LoaderCircle } from "lucide-react";
 import { getLotDetailAction } from "@/app/actions/lots";
@@ -68,6 +69,11 @@ function shippingLabel(day?: string): string {
   return `Envio previsto: ${formatDateBR(day)}${overdue ? " · Data prevista já passou" : ""}`;
 }
 
+function movementLabel(movedAt?: string | null, dispatched = false): string {
+  if (movedAt) return `Movimentado em ${formatDateBR(spDayOf(movedAt))} às ${spTimeOf(movedAt)}${dispatched ? " · Já enviado" : ""}`;
+  return dispatched ? "Já enviado · Sem registro de separação" : "Não movimentado · A separar";
+}
+
 type Props = {
   initialDate: string;
   initialReport: SeparationReport;
@@ -76,15 +82,39 @@ type Props = {
 export function SeparationReportView({ initialDate, initialReport }: Props) {
   const [storeDeclared,setStoreDeclared]=useState<Record<string,string>>({});
   const [date, setDate] = useState(initialDate);
+  const [specificDate, setSpecificDate] = useState(initialDate === ALL ? spDayOf(new Date().toISOString()) : initialDate);
   const [report, setReport] = useState(initialReport);
   const [customerId, setCustomerId] = useState(ALL);
   const [search,setSearch] = useState("");
-  const [movementFilter, setMovementFilter] = useState(UNMOVED);
+  const [movementFilter, setMovementFilter] = useState<ReportMovementFilter>(UNMOVED);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [gallery, setGallery] = useState<{ src: string; alt: string }[]>([]);
   const [imageIndex, setImageIndex] = useState<number | null>(null);
   const [loadingImages, setLoadingImages] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const busy = useRef(false);
+  useEffect(() => { busy.current = isPending; }, [isPending]);
+
+  // A report left open by SAC must reload movements saved by another operator.
+  useEffect(() => {
+    const refresh = () => {
+      if (busy.current || document.visibilityState === "hidden") return;
+      busy.current = true;
+      startTransition(async () => {
+        const result = await getSeparationReportAction(date);
+        if (result.ok) { setReport(result.data); setSelectedIds([]); }
+        else toast.error(result.error);
+      });
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(interval);
+    };
+  }, [date]);
 
   const openImages = async (id: string) => {
     if (loadingImages) return;
@@ -104,36 +134,17 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
     }
   };
 
-  // Se a data nova não trouxe o cliente selecionado, volta para "todos".
-  const selectedId =
-    customerId !== ALL &&
-    report.customers.some((customer) => customer.customerId === customerId)
-      ? customerId
-      : ALL;
-  const baseCustomers =
-    selectedId === ALL
-      ? report.customers
-      : report.customers.filter(
-          (customer) => customer.customerId === selectedId,
-        );
-
-  const movementCustomers = baseCustomers.map((customer) => ({
-    ...customer,
-    logisticsPending: (customer.logisticsPending ?? []).filter(issue => movementFilter === MOVED ? !!issue.moved_at : movementFilter === ALL || !issue.moved_at),
-    storeOrders: (customer.storeOrders ?? []).filter(order => movementFilter === MOVED ? !!order.boxed_at : movementFilter === ALL || !order.boxed_at),
-    lots: customer.lots.filter((lot) =>
-      movementFilter === MOVED ? Boolean(lot.movedAt) : movementFilter === ALL ? true : !lot.movedAt,
-    ),
-  })).filter((customer) => customer.lots.length > 0 || customer.storeOrders.length > 0 || customer.logisticsPending.length > 0);
+  // Empty results must never silently broaden a selected customer to everyone.
+  const selectedId = customerId;
+  const movementCustomers = filterReportMovement(report.customers, date, movementFilter, selectedId);
 
   const customers = filterReportCustomers(movementCustomers,search);
   const lotsCount = customers.reduce((sum, c) => sum + c.lots.length, 0);
-  const visibleIds = new Set(customers.flatMap(customer => [...customer.lots.filter(lot => lot.status === "paid" && !lot.movedAt).map(lot => lot.id), ...(customer.logisticsPending ?? []).filter(issue => !issue.moved_at).map(issue => `issue:${issue.id}`)]));
+  const visibleIds = new Set(customers.flatMap(customer => [...customer.lots.filter(lot => lot.status === "paid" && !lot.movedAt && !lot.dispatched).map(lot => lot.id), ...(customer.logisticsPending ?? []).filter(issue => !issue.moved_at && !issue.dispatched).map(issue => `issue:${issue.id}`)]));
   const selectedVisibleIds = selectedIds.filter((id) => visibleIds.has(id));
 
   const changeDate = (value: string) => {
     if (!value) return;
-    setCustomerId(ALL);
     setSelectedIds([]);
     startTransition(async () => {
       const result = await getSeparationReportAction(value);
@@ -142,7 +153,18 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         return;
       }
       setDate(value);
+      if (value !== ALL) setSpecificDate(value);
       setReport(result.data);
+    });
+  };
+
+  const refreshMovement = (value: ReportMovementFilter = movementFilter) => {
+    setSelectedIds([]);
+    startTransition(async () => {
+      const result = await getSeparationReportAction(date);
+      if (!result.ok) { toast.error(result.error); return; }
+      setReport(result.data);
+      setMovementFilter(value);
     });
   };
 
@@ -153,6 +175,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
       const result = await moveReportItemsToBoxesAction({ lotIds: ids.filter(id => !id.startsWith("issue:")), issueIds: ids.filter(id => id.startsWith("issue:")).map(id => id.slice(6)) });
       if (!result.ok) {
         toast.error(result.error);
+        const refreshed = await getSeparationReportAction(date);
+        if (refreshed.ok) { setReport(refreshed.data); setSelectedIds([]); }
         return;
       }
       toast.success(`${result.data.moved} item(ns) movimentado(s) para a caixa do cliente.`);
@@ -172,7 +196,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
             Separação de arremates, produtos da loja e pendências logísticas por dia de envio.
           </p>
         </div>
-        <PrintButton variant="outline" disabled={customers.length === 0} />
+        <div className="flex gap-2"><Button variant="outline" disabled={isPending} onClick={() => refreshMovement()}>Atualizar relatório</Button><PrintButton variant="outline" disabled={isPending || customers.length === 0} /></div>
       </div>
 
       {(report.warnings ?? []).map(warning => <p key={warning} role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200 print:text-black">{warning}</p>)}
@@ -187,7 +211,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         </Field>
         <Field className="w-full sm:w-48">
           <FieldLabel>Período de envio</FieldLabel>
-          <Select value={date === ALL ? ALL : "date"} onValueChange={value => changeDate(value === ALL ? ALL : initialDate === ALL ? spDayOf(new Date().toISOString()) : initialDate)} disabled={isPending}>
+          <Select value={date === ALL ? ALL : "date"} onValueChange={value => changeDate(value === ALL ? ALL : specificDate)} disabled={isPending}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="date">Uma data específica</SelectItem><SelectItem value={ALL}>Todas as datas</SelectItem></SelectContent>
           </Select>
@@ -207,8 +231,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           <FieldLabel>Cliente</FieldLabel>
           <Select
             value={selectedId}
-            onValueChange={setCustomerId}
-            disabled={isPending || report.customers.length === 0}
+            onValueChange={value => { setCustomerId(value); refreshMovement(); }}
+            disabled={isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Cliente" />
@@ -217,6 +241,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
               <SelectItem value={ALL}>
                 Todos os clientes ({report.customers.length})
               </SelectItem>
+              {customerId !== ALL && !report.customers.some(customer => customer.customerId === customerId) && <SelectItem value={customerId}>Cliente selecionado · Sem itens nesta data</SelectItem>}
               {report.customers.map((customer) => (
                 <SelectItem
                   key={customer.customerId}
@@ -231,7 +256,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
         <Field className="w-48">
           <FieldLabel>Movimentação</FieldLabel>
-          <Select value={movementFilter} onValueChange={(value) => { setMovementFilter(value); setSelectedIds([]); }} disabled={isPending}>
+          <Select value={movementFilter} onValueChange={value => refreshMovement(value as ReportMovementFilter)} disabled={isPending}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={UNMOVED}>Não movimentados</SelectItem>
@@ -270,11 +295,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
               Os Caras das Legends · Separação
             </p>
             <h3 className="text-lg font-semibold">
-              {report.shippingDate === ALL ? "Todas as datas · Itens ainda não enviados" : formatDateBR(report.shippingDate)}
+              {report.shippingDate === ALL ? "Todas as datas" : formatDateBR(report.shippingDate)}
               <span className="ml-2 font-normal text-muted-foreground">
                 {report.shippingDate === ALL ? "" : weekdayOf(report.shippingDate)}
               </span>
             </h3>
+            <p className="text-sm font-medium">{movementFilter === UNMOVED ? "Não movimentados" : movementFilter === MOVED ? "Movimentados / já enviados" : "Todos os estados de movimentação"}</p>
           </div>
           <p className="text-sm text-muted-foreground">
             {customers.length} {customers.length === 1 ? "cliente" : "clientes"}{" "}
@@ -285,8 +311,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
         {customers.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum item encontrado para o período: {" "}
-            {report.shippingDate === ALL ? "Todas as datas · Itens ainda não enviados" : formatDateBR(report.shippingDate)}.
+            Nenhum item encontrado com os filtros selecionados para o período: {" "}
+            {report.shippingDate === ALL ? "Todas as datas" : formatDateBR(report.shippingDate)}.
           </p>
         ) : (
           customers.map((customer) => {
@@ -310,11 +336,11 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                 </div>
 
                 {customer.storeOrders.map(order => <div key={order.id} className="mb-3 rounded-md border border-ouro/40 p-3 break-inside-avoid">
-                  <p className="text-sm font-semibold">Loja · {order.code} {order.boxed_at ? '· Na caixa' : '· A separar'}</p>
+                  <p className="text-sm font-semibold">Loja · {order.code} {"· " + movementLabel(order.boxed_at, order.dispatched)}</p>
                   {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(order.shippingDate)}</p>}
                   <ul className="mt-2 grid gap-1 text-xs">{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><li key={index}>{item.quantity}× {item.name}</li>)}</ul>
-                  {order.fulfillment_status==='processing' && (!order.boxed_at||!order.shipping_declared_value) && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais (obrigatório para produtos em Caracoins)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} placeholder="Em reais, automático; em Caracoins, informe o valor" className="h-9 max-w-sm rounded-md border bg-background px-2"/></label>}
-                  {(!order.boxed_at||!order.shipping_declared_value) && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
+                  {!order.dispatched && order.fulfillment_status==='processing' && !order.boxed_at && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais (obrigatório para produtos em Caracoins)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} placeholder="Em reais, automático; em Caracoins, informe o valor" className="h-9 max-w-sm rounded-md border bg-background px-2"/></label>}
+                  {!order.dispatched && !order.boxed_at && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
                     const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');form.set('declared_value',storeDeclared[order.id]??'');
                     const result=await handleStoreOrderAction(form);
                     if(!result.ok){toast.error(result.error);return;}
@@ -322,12 +348,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   })}>{order.fulfillment_status==='awaiting'?'Iniciar separação':'Colocar na caixa do cliente'}</Button>}
                 </div>)}
                 {customer.logisticsPending.map(issue => <div key={issue.id} className="mb-3 rounded-md border border-amber-500/40 p-3 break-inside-avoid">
-                  <p className="flex items-center gap-2 text-sm font-semibold">{!issue.moved_at && <input type="checkbox" aria-label={`Selecionar ${issue.source_kind === "raffle" ? "prêmio" : "pendência"} ${issue.code} para movimentação`} checked={selectedIds.includes(`issue:${issue.id}`)} disabled={isPending} onChange={event => setSelectedIds(current => event.target.checked ? [...new Set([...current, `issue:${issue.id}`])] : current.filter(id => id !== `issue:${issue.id}`))} className="size-4 shrink-0 print:hidden" />}{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
+                  <p className="flex items-center gap-2 text-sm font-semibold">{!issue.moved_at && !issue.dispatched && <input type="checkbox" aria-label={`Selecionar ${issue.source_kind === "raffle" ? "prêmio" : "pendência"} ${issue.code} para movimentação`} checked={selectedIds.includes(`issue:${issue.id}`)} disabled={isPending} onChange={event => setSelectedIds(current => event.target.checked ? [...new Set([...current, `issue:${issue.id}`])] : current.filter(id => id !== `issue:${issue.id}`))} className="size-4 shrink-0 print:hidden" />}{issue.source_kind === "raffle" ? "Prêmio de rifa" : "Pendência logística — sem cobrança"} · {issue.code}</p>
                   {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(issue.shippingDate)}</p>}
                   <p className="mt-1 break-words text-sm">{issue.quantity} × {issue.title}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs">Motivo: {issue.reason}</p>
-                  <p className="mt-1 text-xs">{issue.shipmentCode ? `Incluída no envio ${issue.shipmentCode}` : issue.moved_at ? "Na caixa do cliente" : "A separar"}</p>
-                  {!issue.moved_at && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
+                  <p className="mt-1 text-xs">{movementLabel(issue.moved_at, issue.dispatched)}{issue.shipmentCode ? ` · Envio ${issue.shipmentCode}` : ""}</p>
+                  {!issue.moved_at && !issue.dispatched && <Button variant="outline" size="sm" className="mt-2 print:hidden" disabled={isPending} onClick={() => startTransition(async () => {
                     const result = issue.source_kind === "raffle" ? await boxRaffleAward(issue.id, Number(issue.shipping_declared_value ?? 0)) : await handleLogisticsPendingAction(issue.id, "box");
                     if (!result.ok) { toast.error(result.error); return; }
                     const refreshed = await getSeparationReportAction(date);
@@ -341,8 +367,8 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-muted/40 px-3 py-1.5 print:bg-transparent">
                       <p className="flex min-w-0 flex-1 items-center gap-2 break-words text-sm">
-                        {lot.movedAt ? (
-                          <span className="rounded border px-1.5 py-0.5 text-[10px] print:hidden">Movimentado</span>
+                        {lot.movedAt || lot.dispatched ? (
+                          <span className="rounded border px-1.5 py-0.5 text-[10px] ">{lot.movedAt ? "Movimentado" : "Já enviado"}</span>
                         ) : (
                           <input type="checkbox" aria-label={`Selecionar lote ${lot.code} para movimentação`} checked={selectedIds.includes(lot.id)} disabled={isPending || lot.status !== "paid"} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, lot.id] : current.filter((id) => id !== lot.id))} className="size-4 shrink-0 print:hidden" />
                         )}
@@ -363,6 +389,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                       </div>
                     </div>
                     {date === ALL && <p className="px-3 py-1 text-xs text-muted-foreground">{shippingLabel(lot.shippingDate)}</p>}
+                    <p className="px-3 py-1 text-xs font-medium">{movementLabel(lot.movedAt, lot.dispatched)}</p>
                     {lot.createdAt && <p className="border-t px-3 py-1.5 text-[11px] leading-relaxed text-muted-foreground print:text-black">{lotRegistrationLabel(lot.createdAt)}</p>}
                     {(lot.movedItems.length > 0 || lot.description?.trim() || lot.notes?.trim()) && (
                       <div className="grid gap-1 px-3 py-2 text-xs print:text-black">
