@@ -9,7 +9,7 @@ const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 const url = code => 'data:text/javascript;base64,' + Buffer.from(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText).toString('base64');
 const real = name => JSON.stringify(import.meta.resolve(name));
 
-test('Prazo de pagamento e valor declarado não alteram recursos nem aceitam prêmio sem valor', async () => {
+test('Prazo de pagamento não altera recursos e declaração opcional segue a regra atual de separação', async () => {
   const { isPaymentExpired } = await import(url(await read('../src/lib/payment-ui.ts')));
   const now = Date.parse('2026-11-01T12:00:00Z');
   for (const value of [null, 'inválido', '2026-11-01T12:01:00Z']) assert.equal(isPaymentExpired(value, now), false);
@@ -17,8 +17,9 @@ test('Prazo de pagamento e valor declarado não alteram recursos nem aceitam pr�
   const { logisticsDeclaredTotal, shipmentContentSnapshot } = await import(url(await read('../src/lib/shipment-content.ts')));
   const prize = { id: 'prize', source_kind: 'raffle', moved_at: '2026-11-01', shipping_declared_value: 50.25 };
   assert.equal(logisticsDeclaredTotal([prize]), 50.25);
-  for (const value of [0, NaN, null]) assert.throws(() => logisticsDeclaredTotal([{ ...prize, shipping_declared_value: value }]), /valor declarado/);
-  assert.throws(() => logisticsDeclaredTotal([{ ...prize, moved_at: null }]), /Separe/);
+  for (const value of [0, null]) assert.equal(logisticsDeclaredTotal([{ ...prize, shipping_declared_value: value }]), 0);
+  for (const value of [-1, NaN, Infinity]) assert.throws(() => logisticsDeclaredTotal([{ ...prize, shipping_declared_value: value }]), /valor declarado/);
+  assert.equal(logisticsDeclaredTotal([{ ...prize, moved_at: null }]), 50.25);
   assert.deepEqual(shipmentContentSnapshot([{ id:'lot', arremate_value:80 }],[{id:'store',shipping_declared_value:30}],[prize]),{ lots:[{id:'lot',value:80}],store:[{id:'store',value:30}],logistics:[{id:'prize',value:50.25}] });
 });
 
