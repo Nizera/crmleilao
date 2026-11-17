@@ -1,0 +1,88 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { PGlite } from '@electric-sql/pglite';
+import { loadCommerceDb, migration } from './fixtures/commerce-db.mjs';
+
+test('maior comprador: encerramento atômico, desempate, entrega, histórico, revisão e permissões', async () => {
+ const db = new PGlite();
+ const actor=crypto.randomUUID(), a=crypto.randomUUID(), b=crypto.randomUUID();
+ const scalar=async(sql,params=[])=>Object.values((await db.query(sql,params)).rows[0])[0];
+ try {
+  await loadCommerceDb(db);
+  await db.exec(`alter table raffle_campaigns add column archived_at timestamptz,add column image_urls text[] not null default '{}',add column price_tiers jsonb not null default '[]';
+   alter table raffle_prizes add column image_urls text[] not null default '{}';
+   create or replace function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;`);
+  await db.query('insert into auth.users values($1)',[actor]);
+  await db.query("insert into admin_profiles values($1,'owner')",[actor]);
+  await db.query("select set_config('test.actor',$1,false),set_config('test.admin','true',false),set_config('test.owner','true',false)",[actor]);
+  await db.query("insert into customers(id,name)values($1,'Ana Teste'),($2,'Bruno Teste')",[a,b]);
+  await db.exec(await migration('0086_duplicate_raffle_campaign.sql'));
+  await db.exec(await migration('0091_raffle_top_buyer.sql'));
+  await db.exec(await migration('0054_raffle_optional_result_link.sql'));
+  const campaign=async(kind='physical')=>{
+   const id=crypto.randomUUID();
+   await db.query("insert into raffle_campaigns(id,title,description,total_numbers,unit_price,selection_mode,draw_method,draw_rules,hide_winning_numbers,min_quantity,max_quantity,status,created_by)values($1,'Campanha bônus','Descrição da campanha',100,10,'both','external','Regras da campanha',true,1,100,'draft',$2)",[id,actor]);
+   await db.query("select set_raffle_buyer_bonus($1,'Prêmio do comprador',$2,$3,0)",[id,kind,kind==='physical'?null:100]);
+   return id;
+  };
+  const order=async(c,customer,numbers,paid,status='paid')=>{
+   const id=crypto.randomUUID();
+   await db.query('insert into raffle_orders(id,campaign_id,customer_id,request_key,amount,numbers,status,paid_at)values($1,$2,$3,gen_random_uuid(),10,$4,$5,$6)',[id,c,customer,numbers,status,paid]);return id;
+  };
+  const close=c=>db.query("update raffle_campaigns set status='closed' where id=$1",[c]);
+  const c=await campaign();
+  await order(c,a,[1],'2026-11-01T10:00:00Z');
+  const anchor=await order(c,a,[2,3],'2026-11-04T10:00:00Z');
+  await order(c,b,[4,5,6],'2026-11-03T10:00:00Z');
+  await db.query("update raffle_campaigns set status='paused' where id=$1",[c]);
+  await assert.rejects(db.query("select set_raffle_buyer_bonus($1,'Outro prêmio','physical',null,1)",[c]),/primeira reserva/);
+  await close(c);
+  assert.equal(await scalar('select customer_id from raffle_buyer_results where campaign_id=$1',[c]),b,'last paid time, not first purchase, decides tie');
+  assert.equal(await scalar("select count(*)::int from raffle_prizes where campaign_id=$1 and kind='buyer'",[c]),1);
+  assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1',[c]),1);
+  await db.query("select confirm_historical_buyer_bonus($1,false,'Conferência repetida idempotente')",[c]);
+  assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1',[c]),1);
+  const ranking=await scalar('select get_public_raffle_buyer_ranking($1)',[c]);
+  assert.equal(ranking[0].name,'Bruno T.');assert.equal(ranking[0].quantity,3);
+  assert.deepEqual(Object.keys(ranking[0]).sort(),['name','position','quantity']);
+  await db.query("update raffle_orders set status='review' where id=$1",[anchor]);
+  assert.equal(await scalar('select status from raffle_buyer_results where campaign_id=$1',[c]),'review');
+  await assert.rejects(db.query('update logistics_pending set moved_at=now() where id=(select logistics_id from raffle_awards where campaign_id=$1)',[c]),/em revisão/);
+  const cash=await campaign('pix');await order(cash,a,[1,2],'2026-11-02T10:00:00Z');
+  const pending=await order(cash,b,[3],null,'pending');
+  await assert.rejects(close(cash),/reservas pendentes/);
+  assert.equal(await scalar('select status from raffle_campaigns where id=$1',[cash]),'draft','failed award rolls back close');
+  await db.query("update raffle_orders set status='cancelled' where id=$1",[pending]);await close(cash);
+  assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1',[cash]),0,'cash never enters shipping');
+  const copy=await scalar('select duplicate_raffle_campaign($1,gen_random_uuid())',[cash]);
+  assert.equal(await scalar('select delivery_kind from raffle_buyer_bonus where campaign_id=$1',[copy]),'pix');
+  assert.equal(await scalar('select count(*)::int from raffle_buyer_results where campaign_id=$1',[copy]),0);
+  await db.query("select fulfill_raffle_buyer_bonus($1,'Pix pago: comprovante 123456')",[cash]);
+  await assert.rejects(db.query("select fulfill_raffle_buyer_bonus($1,'Tentativa repetida de pagamento')",[cash]),/indisponível/);
+  const tied=await campaign();await order(tied,a,[1],'2026-11-02T10:00:00Z');await order(tied,b,[2],'2026-11-02T10:00:00Z');
+  await assert.rejects(close(tied),/Empate exato/);
+  const unknown=await campaign();await order(unknown,a,[1],null);await assert.rejects(close(unknown),/datas de confirmação/);
+  const old=await campaign();await order(old,a,[1],'2026-11-02T10:00:00Z');
+  // Simulate a campaign closed before the migration, without firing the new trigger.
+  await db.exec('alter table raffle_campaigns disable trigger raffle_buyer_on_close');await close(old);await db.exec('alter table raffle_campaigns enable trigger raffle_buyer_on_close');
+  await db.query("select confirm_historical_buyer_bonus($1,true,'Prêmio já entregue, conferido com SAC')",[old]);
+  assert.equal(await scalar('select status from raffle_buyer_results where campaign_id=$1',[old]),'fulfilled');
+  assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1',[old]),0,'previous delivery creates no duplicate logistics');
+  const drawn=await campaign('voucher');const drawOrder=await order(drawn,a,[7],'2026-11-02T10:00:00Z');
+  const main=crypto.randomUUID();
+  await db.query("insert into raffle_prizes(id,campaign_id,title,kind)values($1,$2,'Prêmio principal','main')",[main,drawn]);
+  await db.query('insert into raffle_allocations(campaign_id,number,order_id)values($1,7,$2)',[drawn,drawOrder]);
+  await db.query("update raffle_campaigns set status='paused' where id=$1",[drawn]);
+  await db.query("select record_raffle_winner($1,7,'Resultado principal conferido',null)",[main]);
+  assert.equal(await scalar('select status from raffle_campaigns where id=$1',[drawn]),'closed');
+  assert.equal(await scalar('select customer_id from raffle_buyer_results where campaign_id=$1',[drawn]),a,'last main prize automatically awards buyer bonus in same transaction');
+  await db.exec("set role authenticated;select set_config('test.admin','false',false),set_config('test.owner','false',false)");
+  assert.equal(await scalar('select count(*)::int from raffle_buyer_results'),0);
+  await db.query("select set_config('test.customer',$1,false)",[a]);
+  const own=await scalar('select get_my_raffle_buyer_bonuses()');assert.ok(own.length>=2);
+  assert.ok(own.every(row=>!('snapshot' in row)&&!('customer_id' in row)&&!('fulfillment_note' in row)));
+  await assert.rejects(db.query('select finalize_raffle_buyer_bonus($1)',[cash]),/permission denied/);
+  await assert.rejects(db.query("select fulfill_raffle_buyer_bonus($1,'Não autorizado alterar prêmio')",[cash]),/Acesso negado/);
+  await assert.rejects(db.query('select get_admin_raffle_buyer_ranking($1)',[cash]),/Acesso negado/);
+ } finally { await db.close(); }
+});
