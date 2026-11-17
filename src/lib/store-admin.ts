@@ -31,7 +31,7 @@ export const storeProductSchema = z.object({
   active: z.boolean().default(false), archived: z.boolean().default(false),
 }).superRefine((value,ctx) => {
   if (value.mixed_cash_price !== null || value.mixed_points_cost !== null || (value.points_cost !== null && value.cash_price !== null)) ctx.addIssue({code:"custom",path:["cash_price"],message:"Escolha somente reais ou Caracoins. Descontos serão feitos por voucher."});
-  if (value.active && (value.internal_cost === null || (value.points_cost === null && value.cash_price === null))) ctx.addIssue({code:"custom",path:["active"],message:"Para publicar, informe o custo e um preço em reais ou Caracoins."});
+  if (value.active && value.points_cost === null && value.cash_price === null) ctx.addIssue({code:"custom",path:["active"],message:"Para publicar, informe um preço em reais ou Caracoins."});
   if (value.active && value.archived) ctx.addIssue({code:"custom",path:["active"],message:"Um produto arquivado não pode estar publicado."});
 });
 export type StoreProductInput = z.infer<typeof storeProductSchema>;
