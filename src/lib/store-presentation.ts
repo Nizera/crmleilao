@@ -9,7 +9,9 @@ export const bannerSchema = z.object({
 });
 export type StoreBanner = z.infer<typeof bannerSchema> & { id: boolean; desktop_path: string | null; mobile_path: string | null; updated_at: string };
 export const defaultBanner = { title: 'Sua coleção merece o próximo destaque.', subtitle: 'Explore os colecionáveis e transforme suas Caracoins em novas possibilidades.', button_label: 'Explorar produtos', button_href: '#catalogo-loja', active: true, desktop_path: null, mobile_path: null };
-export const bannerImageUrl = (path: string) => `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/${path}`;
+export const bannerImageUrl = (path: string) => path.startsWith('/store-banners/')
+  ? path
+  : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/${path}`;
 export type CatalogFilters = { q: string; category: string; mode: string; sort: string; min: string; max: string; available: boolean };
 export function catalogFiltersFrom(params: Record<string, string | string[] | undefined>): CatalogFilters {
   const get = (key: string) => { const v = params[key]; return (Array.isArray(v) ? v[0] : v) ?? ''; };
