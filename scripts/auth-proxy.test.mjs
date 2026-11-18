@@ -10,14 +10,14 @@ function loadProxy(user) {
   const cookies = [{ name: 'sb-session', value: '', maxAge: 0 }];
   const response = () => {
     const stored = [...cookies];
-    return { cookies: { getAll: () => stored, set: cookie => stored.push(cookie) } };
+    return { headers:new Headers(), cookies: { getAll: () => stored, set: cookie => stored.push(cookie) } };
   };
   const exports = {};
   const source = ts.transpileModule(readFileSync('src/proxy.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS },
   }).outputText;
   vm.runInNewContext(source, {
-    exports, URL,
+    exports, URL, Headers,
     require: name => name === '@/lib/commerce-access' ? commerce : name === 'next/server'
       ? { NextResponse: { next: response, redirect: url => ({ ...response(), destination: url.pathname, search: url.search }) } }
       : { refreshSession: async () => ({ user }) },

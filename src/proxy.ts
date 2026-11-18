@@ -8,14 +8,17 @@ export async function proxy(request: NextRequest) {
   // Public marketing has no session-dependent rendering or access checks.
   if (request.method === "GET" && (pathname === "/" || pathname === "/api/landing/catalog")) return NextResponse.next({ request });
 
-  const response = NextResponse.next({ request });
-  const { user } = await refreshSession(request, response);
+  const initialResponse = NextResponse.next({ request });
+  const { user, response = initialResponse } = await refreshSession(request, initialResponse);
 
   const authenticated = !!user;
   const redirectWithCookies = (url: URL) => {
     const redirected = NextResponse.redirect(url);
     for (const cookie of response.cookies.getAll()) {
       redirected.cookies.set(cookie);
+    }
+    for (const key of ["cache-control", "expires", "pragma"]) {
+      const value=response.headers.get(key);if(value)redirected.headers.set(key,value);
     }
     return redirected;
   };
