@@ -16,17 +16,18 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
  if(choice===undefined||!pixelId||!isStoreMarketingPath(path))return null;
  async function save(consent:boolean){
   setPending(true);setError('');
-  // Stop immediately on refusal, even if saving the server preference fails.
-  if(!consent){window.fbq?.('consent','revoke');writeMarketingChoice(false);setEditing(true);}
+  // Apply the local privacy choice immediately; network latency must not hold the banner open.
+  if(!consent)window.fbq?.('consent','revoke');
+  writeMarketingChoice(consent);
+  setEditing(false);
+  if(!consent){for(const name of ['_fbp','_fbc']){document.cookie=`${name}=; Max-Age=0; Path=/`;document.cookie=`${name}=; Max-Age=0; Path=/; Domain=.${location.hostname.replace(/^www\./,'')}`;}}
   try{
    await syncMarketingChoice(consent,true);
-   writeMarketingChoice(consent);
-   if(!consent){for(const name of ['_fbp','_fbc']){document.cookie=`${name}=; Max-Age=0; Path=/`;document.cookie=`${name}=; Max-Age=0; Path=/; Domain=.${location.hostname.replace(/^www\./,'')}`;}}
-   setEditing(false);
-  }catch(e){setError(e instanceof Error?e.message:'Não foi possível salvar.');}finally{setPending(false);}
+  }catch{setError('Sua escolha já vale neste navegador. Falta sincronizar com o servidor.');}finally{setPending(false);}
  }
  return <>
   {choice!==null&&!editing&&<button type="button" className="fixed bottom-24 left-2 z-40 rounded-lg border bg-background px-3 py-2 text-xs shadow" onClick={()=>setEditing(true)}>Privacidade da loja</button>}
+  {error&&!editing&&<div role="status" className="fixed bottom-36 left-2 z-40 max-w-xs rounded-lg border bg-background p-3 text-xs shadow">{error} <button type="button" disabled={pending} className="underline" onClick={()=>void save(choice===true)}>Tentar novamente</button></div>}
   {(choice===null||editing)&&<section aria-label="Preferências de publicidade" className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-xl rounded-xl border bg-background p-4 text-foreground shadow-xl">
    <p className="font-semibold">Publicidade e privacidade</p>
    <p className="mt-2 text-sm">Com sua autorização, usamos o Pixel e a API de Conversões da Meta para medir visitas e vendas da loja e melhorar anúncios. Podemos compartilhar identificadores do navegador, dados dos produtos e e-mail e telefone transformados em códigos. A loja funciona mesmo se você recusar.</p>

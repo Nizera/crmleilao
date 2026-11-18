@@ -39,6 +39,7 @@ export async function syncMarketingChoice(consent:boolean,explicit=false) {
  const click=params.get('fbclid');
  const fbc=click&&/^[A-Za-z0-9_-]{1,400}$/.test(click)?`fb.1.${Date.now()}.${click}`:cookie('_fbc');
  const response=await fetch('/api/store/marketing',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',
+  signal:AbortSignal.timeout(5000),
   body:JSON.stringify({consent,refresh:!explicit,source_path:location.pathname,attribution,fbp:consent?cookie('_fbp'):null,fbc:consent?fbc:null})});
  const result=await response.json();if(!response.ok||!result.ok)throw new Error('Não foi possível salvar sua preferência. Tente novamente.');
 }
