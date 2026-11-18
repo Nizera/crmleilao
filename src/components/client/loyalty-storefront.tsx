@@ -1,4 +1,5 @@
 "use client";
+import {prepareStoreMarketing,trackStoreEvent,trackStoreProduct} from '@/lib/meta-browser';
 
 import Image from "next/image";
 import { PUBLIC_CART_KEY } from "@/lib/commerce-access";
@@ -32,7 +33,7 @@ export function ProductCard({ product, onAdd, purchasesEnabled }: { purchasesEna
   const price = options.find((option) => option.mode === mode) ?? options[0];
   const imageUrl = product.image_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/${product.image_path}` : null;
   return <article className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card transition-shadow hover:shadow-lg">
-    <button type="button" aria-label={`Ver fotos e detalhes de ${product.name}`} onClick={()=>setDetails(true)} className="relative block aspect-square w-full bg-white">
+    <button type="button" aria-label={`Ver fotos e detalhes de ${product.name}`} onClick={()=>{trackStoreProduct('ViewContent',product);setDetails(true);}} className="relative block aspect-square w-full bg-white">
       {imageUrl ? <Image src={imageUrl} alt={product.name} fill sizes="(max-width: 640px) 45vw, (max-width:1024px) 30vw, 280px" className="object-contain p-3 transition-transform duration-500 group-hover:scale-105 sm:p-5" /> : <Gift className="absolute inset-0 m-auto size-12 text-amber-600" />}
       {product.stock !== 0 && <span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-medium text-emerald-800">Em estoque</span>}{product.stock === 0 && <span className="absolute left-2 top-2 rounded-full bg-black/80 px-2 py-1 text-xs text-white">Esgotado</span>}
       {product.stock !== null && product.stock > 0 && product.stock <= 5 && <span className="absolute bottom-2 left-2 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-900">Últimas unidades</span>}
@@ -128,6 +129,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     if (!existing && cart.items.length >= 50) { toast.error("O carrinho aceita até 50 combinações de produtos."); return; }
     update(existing ? cart.items.map((item) => item === existing ? { ...item, quantity: item.quantity + 1 } : item) : [...cart.items, { reward_id: product.id, mode, quantity: 1, expected_cash: price.cash, expected_coins: price.coins }]);
     toast.success("Adicionado ao carrinho", { action: { label: "Ver carrinho", onClick: () => openCart() } });
+    trackStoreProduct('AddToCart',product);
   };
   const totals = cartTotals(cart.items);
   const selected = vouchers.find(v=>v.id===selectedVoucher);
@@ -156,6 +158,8 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     submitting.current = true;
     startTransition(async () => {
       try {
+        await prepareStoreMarketing();
+        if(totals.cash>discount)trackStoreEvent('InitiateCheckout',{currency:'BRL',value:(totals.cash-discount)/100,content_type:'product',content_ids:cart.items.map(i=>i.reward_id),num_items:totals.quantity});
         const result = await checkoutStoreAction({...cart,voucherId:selectedVoucher||null,expectedFreight:freight});
         if (!result.ok) { toast.error(result.error); setFreightRevision(n=>n+1);router.refresh(); return; }
         dispatch(emptyCart);setSelectedVoucher("");

@@ -67,6 +67,8 @@ test('Loja: falha após criar não perde ID e QR é atualizado sem outro POST',a
  source=source.replace('import "server-only";','')
   .replace('import { createAdminClient } from "@/lib/supabase/admin";','const createAdminClient=()=>globalThis.__storeAudit.db;')
   .replace('import { createClient } from "@/lib/supabase/server";','const createClient=async()=>globalThis.__storeAudit.db;')
+  .replace("import {after} from 'next/server';",'const after=()=>{};')
+  .replace("import {flushMetaConversions} from '@/lib/meta-conversions-server';",'const flushMetaConversions=async()=>({sent:0});')
   .replace('import { createPixOrder, getOrder, qrFrom, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";','const {createPixOrder,getOrder}=globalThis.__storeAudit;const qrFrom=raw=>({qrCode:raw.transactions.payments[0].payment_method.qr_code});const targetChargeStatus=()=>null;')
   .replace('import { isStoreOrderOpen, type StoreOrder } from "@/lib/store";','const isStoreOrderOpen=o=>["creating","pending"].includes(o.payment_status);');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;

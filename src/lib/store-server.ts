@@ -1,4 +1,6 @@
 import "server-only";
+import {after} from 'next/server';
+import {flushMetaConversions} from '@/lib/meta-conversions-server';
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { createPixOrder, getOrder, qrFrom, targetChargeStatus, type MpOrder } from "@/lib/mercadopago";
@@ -53,6 +55,8 @@ export async function settleStoreMpOrder(payment: MpOrder) {
     p_amount: payment.amount, p_status: status, p_paid_at: payment.dateApproved,
   });
   if (error) throw error;
+  // Queue is transactional in PostgreSQL; Meta delivery happens after the response.
+  after(async()=>{await flushMetaConversions(3).catch(()=>{});});
   return { ok: true };
 }
 export async function syncStoreOrder(order: StoreOrder, signal?: AbortSignal) {

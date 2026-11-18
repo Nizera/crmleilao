@@ -18,13 +18,13 @@ const supabaseOrigin = (() => {
 const csp = [
   "default-src 'self'",
   // React/Next usam eval para depuração local; produção permanece sem ele.
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' https://connect.facebook.net${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
+  `img-src 'self' data: blob: https://www.facebook.com${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
   `font-src 'self' data:`,
   // `connect-src` precisa do ViaCEP: o formulário de endereço busca o CEP do
   // cliente no navegador. Sem a origem o lookup falha em silêncio.
-  `connect-src 'self' https://viacep.com.br${supabaseUrl ? ` ${supabaseUrl}` : ""}`,
+  `connect-src 'self' https://viacep.com.br https://www.facebook.com https://connect.facebook.net${supabaseUrl ? ` ${supabaseUrl}` : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

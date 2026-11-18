@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { StoreMarketing } from "@/components/client/store-marketing";
 import { Geist_Mono, Inter } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { ThemeScope } from "@/components/theme-scope";
@@ -46,6 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <ThemeScope />
+          <Suspense fallback={null}><StoreMarketing pixelId={process.env.VERCEL_ENV === 'production' && process.env.META_TRACKING_DISABLED !== 'true' ? process.env.META_PIXEL_ID ?? null : null} /></Suspense>
           {children}
         </ThemeProvider>
         <Toaster richColors position="top-right" />

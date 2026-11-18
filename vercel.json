@@ -1,3 +1,3 @@
 {
-  "crons": [{ "path": "/api/cron/store-reconciliation", "schedule": "0 9 * * *" }]
+  "crons": [{ "path": "/api/cron/store-reconciliation", "schedule": "0 9 * * *" },{ "path": "/api/cron/meta-conversions", "schedule": "30 9 * * *" }]
 }

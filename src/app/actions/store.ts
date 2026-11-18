@@ -1,4 +1,6 @@
 "use server";
+import {after} from 'next/server';
+import {attachStoreMarketing,flushMetaConversions} from '@/lib/meta-conversions-server';
 
 import {isLocalStorePilot,storePurchasesEnabled} from "@/lib/store-settings-server";
 
@@ -52,6 +54,9 @@ export async function checkoutStoreAction(input: unknown): Promise<ActionResult<
     }
     let order = await getOwnStoreOrder(String(id), customer.id);
     if (!order) throw new Error("Pedido não encontrado após checkout.");
+    // Marketing never blocks a saved order or payment creation.
+    await attachStoreMarketing(order.id,customer.id).catch(()=>console.warn('[store] marketing_attribution_unavailable'));
+    after(async()=>{await flushMetaConversions(3).catch(()=>{});});
     // A reserva já está salva. Falha de rede no MP não desfaz nem duplica o pedido.
     try { await ensureStorePix(order); } catch (error) { console.error("[store] Pix pendente de retomada:", error instanceof Error ? error.message : "erro"); }
     order = await getOwnStoreOrder(order.id, customer.id);
