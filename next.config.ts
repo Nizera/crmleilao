@@ -24,7 +24,7 @@ const csp = [
   `font-src 'self' data:`,
   // `connect-src` precisa do ViaCEP: o formulário de endereço busca o CEP do
   // cliente no navegador. Sem a origem o lookup falha em silêncio.
-  `connect-src 'self' https://viacep.com.br https://www.facebook.com https://connect.facebook.net${supabaseUrl ? ` ${supabaseUrl}` : ""}`,
+  `connect-src 'self' https://viacep.com.br https://www.facebook.com https://connect.facebook.net${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseOrigin.replace("https://", "wss://")}` : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -106,8 +106,10 @@ export function ChargesView({
   // Status e prazo mudam pelo webhook sem ninguém clicar: a tela se atualiza
   // sozinha (mesmo intervalo de 20 s do Pix ativo no painel do cliente).
   useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 20_000);
-    return () => clearInterval(timer);
+    const refresh=()=>{if(document.visibilityState==='visible')router.refresh();};
+    const timer=setInterval(refresh,20_000);
+    document.addEventListener('visibilitychange',refresh);
+    return ()=>{clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};
   }, [router]);
 
   const [query, setQuery] = useState(q);

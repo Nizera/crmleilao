@@ -70,6 +70,10 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   const db = createAdminClient();
   const today = spToday();
   const now = new Date();
+  // These reads do not depend on lot IDs: start them before loading history.
+  let receiptError=false;
+  const receiptPromise=loadFreightReceipts(db,period).catch(()=>{receiptError=true;return {charges:[],store:[]};});
+  const scheduledPromise=fetchScheduledShipments(db,period.from.slice(0,10),spDayOf(Date.parse(period.endUtc)-1));
   const allLots: ScopeLot[] = [];
   let lotsError: { message: string } | null = null;
   for (let offset = 0; ; offset += 500) {
@@ -90,14 +94,13 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
     fetchScopeRows<ScopeShipment>(db, "shipment_lots", "lot_id", lotIds, "lot_id, shipment_id, shipment:shipments(id, status)", ["shipment_id", "lot_id"]),
     fetchScopeRows<ScopeFreightUsage>(db, "shipment_freight_usage", "customer_id", customerIds, "charge_id, shipment_id, shipment:shipments(status)", ["charge_id"]),
     fetchScopeRows<ScopeFreightItem>(db, "charge_freight_items", "customer_id", customerIds, "charge_id, first_lot_id, freight_period, freight_amount", ["charge_id", "freight_period"]),
-    fetchScheduledShipments(db,period.from.slice(0,10),spDayOf(Date.parse(period.endUtc)-1)),
+    scheduledPromise,
   ]);
   for (const result of [chargesRes, linksRes, usageRes, freightRes]) if (result.error) console.error("[dashboard] falha na consulta do período:", result.error.message);
   if (scheduledRes.error) console.error("[dashboard] falha nas etiquetas por data prevista:",scheduledRes.error.message);
   if (lotsError) console.error("[dashboard] falha nos lotes:", lotsError.message);
   const paid = sales.filter(lot => REVENUE_STATUSES.has(lot.status) && lot.paid_at);
-  let receiptError=false;
-  const receiptFreight=await loadFreightReceipts(db,period).catch(()=>{receiptError=true;return {charges:[],store:[]};});
+  const receiptFreight=await receiptPromise;
   const receipts=computePeriodReceipts(allLots,receiptFreight.charges,receiptFreight.store,period);
   const pending = sales.filter(lot => lot.status === "pending_payment");
   const sum = (lots: ScopeLot[]) => lots.reduce((value, lot) => value + Number(lot.arremate_value), 0);

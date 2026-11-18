@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 // Link do grupo de leilão (mesmo da landing). O botão do meio da bottom nav
 // leva direto para lá — sem página própria dentro do painel.
-const GROUP_URL = "https://chat.whatsapp.com/EYD5CmJ0Oer4aeM0zQ9mqu";
+import { COMMUNITY_GROUP_URL as GROUP_URL } from "@/lib/community";
 
 type Tab = {
   href: string;

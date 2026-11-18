@@ -15,7 +15,7 @@ export function LandingMobileMenu() {
   return <details className={s.mobileMenu} onClick={event => {
     if ((event.target as HTMLElement).closest("a")) event.currentTarget.open = false;
   }}><summary aria-label="Abrir menu de navegação"><Menu size={24} aria-hidden="true" /></summary><nav aria-label="Navegação mobile">
-    <a href="#arremates">Arremates</a><a href="#como-funciona">Como funciona</a><a href="#o-app">Conheça o app</a><a href="#duvidas">Dúvidas frequentes</a>
+    <a href="#arremates">Arremates</a><a href="#como-funciona">Como funciona</a><a href="#o-app">Conheça o app</a><a href="#loja">Loja</a><a href="#duvidas">Dúvidas frequentes</a>
     <Link href="/painel/login">Entrar no painel</Link>
   </nav></details>;
 }

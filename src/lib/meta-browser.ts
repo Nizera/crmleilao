@@ -18,8 +18,8 @@ let initializedPixel='';
 let lastPageView:string|null=null;
 const sentEvents=new Set<string>();
 export function leaveStoreMarketing(){lastPageView=null;window.fbq?.('consent','revoke');}
-export function enableStorePixel(pixel:string) {
- if(!/^\d{5,30}$/.test(pixel)||!isStoreMarketingPath(location.pathname)||readMarketingChoice()!==true)return;
+export function enableStorePixel(pixel:string,landing=false) {
+ if(!/^\d{5,30}$/.test(pixel)||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||readMarketingChoice()!==true)return;
  if(!window.fbq){
   const q:MetaQueue=(...args)=>{if(q.callMethod)q.callMethod(...args);else(q.queue??=[]).push(args);};
   q.push=q;q.loaded=true;q.version='2.0';q.queue=[];q.disablePushState=true;window.fbq=q;window._fbq=q;
@@ -29,8 +29,8 @@ export function enableStorePixel(pixel:string) {
  if(initializedPixel!==pixel){window.fbq('set','autoConfig',false,pixel);window.fbq('init',pixel);initializedPixel=pixel;}
  window.fbq('consent','grant');
 }
-export function trackStoreEvent(name:'PageView'|'ViewContent'|'AddToCart'|'InitiateCheckout'|'Search',data:Record<string,unknown>={},eventId?:string) {
- if(readMarketingChoice()!==true||!isStoreMarketingPath(location.pathname)||!initializedPixel||!window.fbq)return;
+export function trackStoreEvent(name:'PageView'|'ViewContent'|'AddToCart'|'InitiateCheckout'|'Search'|'Lead',data:Record<string,unknown>={},eventId?:string,landing=false) {
+ if(readMarketingChoice()!==true||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!initializedPixel||!window.fbq)return;
  const page=initializedPixel+':'+location.pathname;
  if(name==='PageView'&&lastPageView===page)return;
  const id=eventId??crypto.randomUUID(),key=initializedPixel+':'+name+':'+id;
@@ -54,3 +54,11 @@ export async function syncMarketingChoice(consent:boolean,explicit=false) {
  const result=await response.json();if(!response.ok||!result.ok)throw new Error('Não foi possível salvar sua preferência. Tente novamente.');
 }
 export async function prepareStoreMarketing(){if(readMarketingChoice()===true)await syncMarketingChoice(true).catch(()=>{});}
+
+/** A Lead is an outbound group click, never a confirmed WhatsApp membership. */
+export function trackLandingLead(placement:string) {
+ if(location.pathname!=='/')return;
+ let id:string;
+ try{const key='ocdl-landing-lead-session';id=sessionStorage.getItem(key)??crypto.randomUUID();sessionStorage.setItem(key,id);}catch{id='landing-visit';}
+ trackStoreEvent('Lead',{content_name:'Grupo de leilões Legends',content_category:'Figurinhas Legends',lead_source:'landing_whatsapp',placement},id,true);
+}

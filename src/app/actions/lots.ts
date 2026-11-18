@@ -24,6 +24,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { prepareLotFinancialChange } from "@/lib/lot-payment-guard";
 import { lotPricing } from "@/lib/lot-pricing";
+import { notifyLandingChanged } from "@/lib/landing-live-server";
+import { after } from "next/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
@@ -336,6 +338,7 @@ export async function saveLot(
     revalidatePath("/painel", "layout");
     revalidatePath(`/painel/lotes/${code}`);
 
+    after(async () => { await notifyLandingChanged().catch(() => {}); });
     return { ok: true, data: { id: lotId, code, inviteUrl } };
   } catch (error) {
     rethrowIfRedirect(error);

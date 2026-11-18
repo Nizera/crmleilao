@@ -1,5 +1,5 @@
 /** Seleção editorial local. Não consulta nem expõe a tabela de clientes/lotes. */
-export const LANDING_GROUP_URL = "https://chat.whatsapp.com/EYD5CmJ0Oer4aeM0zQ9mqu";
+export { COMMUNITY_GROUP_URL as LANDING_GROUP_URL } from "@/lib/community";
 export const LANDING_INSTAGRAM_URL = "https://www.instagram.com/oscarasdaslegends/";
 
 export const LANDING_SHOWCASE = [

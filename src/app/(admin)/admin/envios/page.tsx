@@ -51,25 +51,11 @@ export default async function EnviosPage({
   let migrationReady = true;
   let migrationFile = "0006_shipments.sql";
   try {
-    if (useQueue) {
-      const result = await listShipmentQueue({
-        periodFrom: date,
-        periodTo: date,
-        q,
-      });
-      queue = result.rows;
-      queueTruncated = result.truncated;
-    }
-    {
-      data = await listShipments({
-        q,
-        priceChanges: "all",
-        status: "all",
-        page: 1,
-        pageSize: 50,
-        batchDate: useQueue || ISO.test(rawDate) ? date : undefined,
-      });
-    }
+    const [queueResult,firstLabels]=await Promise.all([
+      listShipmentQueue({periodFrom:date,periodTo:date,q}),
+      listShipments({q,priceChanges:"all",status:"all",page:1,pageSize:50,batchDate:date}),
+    ]);
+    queue=queueResult.rows;queueTruncated=queueResult.truncated;data=firstLabels;
     const labelRows = [...data.rows];
     for (let labelPage = 2; labelRows.length < data.total; labelPage++) {
       const next = await listShipments({q, status: "all", page: labelPage, pageSize: 50, batchDate: useQueue || ISO.test(rawDate) ? date : undefined});
@@ -91,7 +77,7 @@ export default async function EnviosPage({
   }
 
   const [originReady, webhookActive] = migrationReady
-    ? [(await getOrigin()) !== null, (await getWebhookSecret()) !== null]
+    ? await Promise.all([getOrigin().then(value=>value!==null),getWebhookSecret().then(value=>value!==null)])
     : [false, false];
 
   const itemMatches = migrationReady && itemQuery ? await findShipmentItems(unifiedShipmentRows(queue,data.rows),itemQuery,date) : null;

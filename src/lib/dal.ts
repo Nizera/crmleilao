@@ -70,9 +70,7 @@ export const getAuthUser = cache(async (): Promise<User | null> => {
 export const requireAdmin = cache(async () => {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
 
   if (!user) redirect("/login");
 
@@ -94,9 +92,7 @@ export const requireAdmin = cache(async () => {
 export const requireCustomer = cache(async () => {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
 
   if (!user) redirect("/painel/login");
 
@@ -163,6 +159,8 @@ export const listLots = cache(
   async (
     opts: {
       hideExpired?: boolean;
+      status?: LotStatus;
+      customerId?: string;
       notes?: boolean;
       images?: boolean;
       items?: boolean;
@@ -186,6 +184,8 @@ export const listLots = cache(
       .order("id", { ascending: false })
       .range(from, from + 499);
       if(opts.hideExpired)query=query.is("payment_expired_at",null);
+      if(opts.status)query=query.eq("status",opts.status);
+      if(opts.customerId)query=query.eq("customer_id",opts.customerId);
       const {data,error}=await query;
 
     if (error) throw new Error(`Falha ao listar lotes: ${error.message}`);
@@ -203,6 +203,25 @@ export const listLots = cache(
     return lots.map((lot) => ({ ...lot, notes: notes.get(lot.id) ?? null }));
   },
 );
+
+/** Home: full history for totals, photo/description payload only for visible lots. */
+export const listCustomerHomeLots = cache(async (customerId:string,today:string):Promise<Lot[]> => {
+  const db=await createClient();
+  const previews=async()=>{
+    const rows:Pick<Lot,'id'|'images'|'description'>[]=[];
+    for(let from=0;;from+=500){
+      const {data,error}=await db.from('lots').select('id,images,description')
+        .eq('customer_id',customerId).is('payment_expired_at',null)
+        .or(`auction_date.eq.${today},status.eq.pending_payment`)
+        .order('id',{ascending:true}).range(from,from+499);
+      if(error)throw new Error('Não foi possível carregar as fotos dos lotes.');
+      rows.push(...(data??[]));if((data?.length??0)<500)break;
+    }
+    return new Map(rows.map(row=>[row.id,row]));
+  };
+  const [lots,details]=await Promise.all([listLots({hideExpired:true,customerId}),previews()]);
+  return lots.map(lot=>({...lot,images:details.get(lot.id)?.images??[],description:details.get(lot.id)?.description??null}));
+});
 
 export type LotPage = {
   rows: Lot[];

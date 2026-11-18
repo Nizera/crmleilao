@@ -5,6 +5,9 @@ import { refreshSession } from "@/lib/supabase/proxy";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Public marketing has no session-dependent rendering or access checks.
+  if (request.method === "GET" && (pathname === "/" || pathname === "/api/landing/catalog")) return NextResponse.next({ request });
+
   const response = NextResponse.next({ request });
   const { user } = await refreshSession(request, response);
 

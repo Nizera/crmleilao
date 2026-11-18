@@ -20,16 +20,24 @@ export async function fetchScopeRows<T>(
 ): Promise<{ data: T[]; error: { message: string } | null }> {
   const rows: T[] = [];
   const unique = [...new Set(ids)];
-  for (let index = 0; index < unique.length; index += 100) {
-    for (let offset = 0; ; offset += 500) {
-      let query = db.from(table).select(select).in(column, unique.slice(index, index + 100));
-      for (const key of order) query = query.order(key, { ascending: true });
-      const { data, error } = await query.range(offset, offset + 499);
-      if (error) return { data: [], error };
-      const page = (data ?? []) as unknown as T[];
-      rows.push(...page);
-      if (page.length < 500) break;
-    }
+  // Two disjoint ID groups at a time; paginate each group without truncation.
+  for(let index=0;index<unique.length;index+=200){
+    const groups=[unique.slice(index,index+100),unique.slice(index+100,index+200)].filter(ids=>ids.length);
+    const results=await Promise.all(groups.map(async ids=>{
+      const groupRows:T[]=[];
+      for(let offset=0;;offset+=500){
+        let query=db.from(table).select(select).in(column,ids);
+        for(const key of order)query=query.order(key,{ascending:true});
+        const {data,error}=await query.range(offset,offset+499);
+        if(error)return {data:[] as T[],error};
+        const page=(data??[]) as unknown as T[];groupRows.push(...page);
+        if(page.length<500)break;
+      }
+      return {data:groupRows,error:null};
+    }));
+    const failed=results.find(result=>result.error);
+    if(failed)return {data:[],error:failed.error};
+    for(const result of results)rows.push(...result.data);
   }
   return { data: rows, error: null };
 }

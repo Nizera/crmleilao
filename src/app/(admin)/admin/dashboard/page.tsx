@@ -39,8 +39,7 @@ import {
 } from "@/components/ui/card";
 import { DashboardDatePicker } from "@/components/admin/dashboard/dashboard-date-picker";
 import { FreightPeriodCard } from "@/components/admin/dashboard/freight-week-card";
-import { PipelineChart } from "@/components/admin/dashboard/pipeline-chart";
-import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
+import { PipelineChart, RevenueChart } from "@/components/admin/dashboard/lazy-charts";
 import { ClosingCard } from "@/components/admin/dashboard/closing-card";
 import { resolveAuctionPeriod } from "@/lib/auction-period";
 import { dashboardPendingLinks } from "@/lib/admin-list-filters";

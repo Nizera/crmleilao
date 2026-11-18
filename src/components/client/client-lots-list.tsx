@@ -6,7 +6,7 @@ import {auctionDeadlineLabel} from "@/lib/auction-deadlines";
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { CalendarDays, ImageIcon, Search } from "lucide-react";
 
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
@@ -27,6 +27,16 @@ export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Prop
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
+  const {rows,flat}=useMemo(()=>{
+    let cursor=0;
+    const rows:{lot:Lot;images:string[];startIndex:number}[]=[];
+    for(const lot of lots){
+      const images=lot.images.map(path=>lotImageUrl(path)).filter((url):url is string=>Boolean(url));
+      rows.push({lot,images,startIndex:cursor});cursor+=images.length;
+    }
+    return {rows,flat:rows.flatMap(({lot,images})=>images.map(src=>({src,alt:lot.title})))};
+  },[lots]);
+  const deferredSearch=useDeferredValue(search);
   if (lots.length === 0) {
     return (
       <section className="flex flex-col gap-2">
@@ -49,23 +59,7 @@ export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Prop
     );
   }
 
-  const rows: { lot: Lot; images: string[]; startIndex: number }[] = [];
-  {
-    let cursor = 0;
-    for (const lot of lots) {
-      const images = lot.images
-        .map((path) => lotImageUrl(path))
-        .filter((url): url is string => Boolean(url));
-      rows.push({ lot, images, startIndex: cursor });
-      cursor += images.length;
-    }
-  }
-
-  const flat = rows.flatMap(({ lot, images }) =>
-    images.map((src) => ({ src, alt: lot.title })),
-  );
-
-  const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
+  const normalizedSearch = deferredSearch.trim().toLocaleLowerCase("pt-BR");
   const visibleRows = rows.filter(({ lot }) => {
     const textMatches = !normalizedSearch || `${lot.code} ${lot.title} ${lot.description ?? ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
     return textMatches;

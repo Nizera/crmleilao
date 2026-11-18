@@ -6,7 +6,7 @@ import {
   getCustomerFreightState,
   listCustomerCharges,
   listCustomerShipments,
-  listLots,
+  listCustomerHomeLots,
   requireCustomer,
 } from "@/lib/dal";
 import { ClientChargesCard } from "@/components/client/charges-card";
@@ -82,10 +82,11 @@ export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
   // Listas ficam capadas; os contadores são head-count para o badge não
   // mostrar o teto do fetch como se fosse o total.
+  const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
   const [lots, charges, freight, shipments, shipmentsTotal, rankPoints] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
-      listLots({ hideExpired: true, images: true, description: true }),
+      listCustomerHomeLots(customer.id,today),
       listCustomerCharges(customer.id),
       getCustomerFreightState(customer.id),
       listCustomerShipments(customer.id),
@@ -93,7 +94,7 @@ export default async function ClientHomePage() {
       getCustomerRankPoints(customer.id),
     ]);
 
-  const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
+
   const recentLots = selectHomeLots(lots,today);
   const olderLotsCount = lots.length - recentLots.length;
   const nextBatchDate = shipments
@@ -198,7 +199,7 @@ export default async function ClientHomePage() {
         </div>
       </section>
 
-      <ClientChargesCard lots={lots} charges={homeCharges} freight={freight} showFreightStatus={false} />
+      <ClientChargesCard lots={pendingLots} charges={homeCharges} freight={freight} showFreightStatus={false} />
 
       <ClientLotsList showDeadlineNotice={false}
         lots={recentLots}
