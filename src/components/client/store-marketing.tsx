@@ -26,6 +26,12 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
   document.addEventListener('click',click);
   return()=>document.removeEventListener('click',click);
  },[path,pixelId,choice]);
+ useEffect(()=>{
+  if(!pixelId||(path!=='/'&&!isStoreMarketingPath(path)))return;
+  const open=(event:Event)=>{event.preventDefault();setEditing(true);};
+  window.addEventListener('ocdl-open-marketing',open);
+  return()=>window.removeEventListener('ocdl-open-marketing',open);
+ },[path,pixelId]);
  if(choice===undefined||!pixelId||(path!=='/'&&!isStoreMarketingPath(path)))return null;
  async function save(consent:boolean){
   setPending(true);setError('');
@@ -39,12 +45,11 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
   }catch{setError('Sua escolha já vale neste navegador. Falta sincronizar com o servidor.');}finally{setPending(false);}
  }
  return <>
-  {choice!==null&&!editing&&<button type="button" className="fixed bottom-24 left-2 z-40 rounded-lg border bg-background px-3 py-2 text-xs shadow" onClick={()=>setEditing(true)}>Preferências de publicidade</button>}
   {error&&!editing&&<div role="status" className="fixed bottom-36 left-2 z-40 max-w-xs rounded-lg border bg-background p-3 text-xs shadow">{error} <button type="button" disabled={pending} className="underline" onClick={()=>void save(choice===true)}>Tentar novamente</button></div>}
   {(choice===null||editing)&&<section aria-label="Preferências de publicidade" className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-xl rounded-xl border bg-background p-4 text-foreground shadow-xl">
    <p className="font-semibold">Publicidade e privacidade</p>
    <p className="mt-2 text-sm">Com sua autorização, usamos o Pixel e a API de Conversões da Meta para medir visitas, cliques para o grupo e vendas da loja e melhorar anúncios. Podemos compartilhar identificadores do navegador, dados dos produtos e e-mail e telefone transformados em códigos. A loja funciona mesmo se você recusar.</p>
-   <p className="mt-2 text-xs text-muted-foreground">Sua escolha vale por até 180 dias e pode ser alterada em “Privacidade da loja”. Cookies de login e carrinho continuam necessários. <a href="/privacidade-loja" className="underline">Saiba mais</a>.</p>
+   <p className="mt-2 text-xs text-muted-foreground">Sua escolha vale por até 180 dias e pode ser alterada no rodapé, em “Privacidade e cookies”. Cookies de login e carrinho continuam necessários. <a href="/privacidade-loja" className="underline">Saiba mais</a>.</p>
    <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={pending} onClick={()=>void save(false)} className="rounded-lg border px-4 py-2 text-sm">Recusar publicidade</button><button type="button" disabled={pending} onClick={()=>void save(true)} className="rounded-lg border bg-amarelo px-4 py-2 text-sm text-black">Aceitar publicidade</button>{choice!==null&&<button type="button" disabled={pending} className="px-3 text-sm underline" onClick={()=>setEditing(false)}>Fechar</button>}</div>
    {error&&<p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
   </section>}

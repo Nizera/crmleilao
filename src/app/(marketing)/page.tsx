@@ -1,3 +1,4 @@
+import {MarketingPreferencesLink} from "@/components/client/marketing-preferences-link";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -73,7 +74,7 @@ export default function LandingPage() {
         <div className={s.finalActions}><a className={s.button} href={LANDING_GROUP_URL} target="_blank" rel="noopener noreferrer" data-primary-group-cta="footer"><WhatsAppGlyph />Entrar no grupo<ArrowRight aria-hidden="true" /></a><Link href="/painel/login" className={s.quietLink}>Já sou cliente. Acessar meu painel.</Link></div>
       </div></section>
     </main>
-    <footer className={s.footer}><div className={s.container}><div className={s.footerInner}><Link href="/" className={s.footerBrand}><Image src="/brand/logo-horizontal-v2.webp" alt="Os Caras das Legends" width={280} height={140} sizes="145px" /></Link><nav aria-label="Links do rodapé"><a href="#como-funciona">Como funciona</a><Link href="/painel/login">Área do cliente</Link><a href={LANDING_INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2"><AtSign size={15} aria-hidden="true" />Instagram</a><Link href="/login">Painel interno</Link></nav></div><small>Os Caras das Legends · Leilão diário de colecionáveis</small></div></footer>
+    <footer className={s.footer}><div className={s.container}><div className={s.footerInner}><Link href="/" className={s.footerBrand}><Image src="/brand/logo-horizontal-v2.webp" alt="Os Caras das Legends" width={280} height={140} sizes="145px" /></Link><nav aria-label="Links do rodapé"><a href="#como-funciona">Como funciona</a><Link href="/painel/login">Área do cliente</Link><a href={LANDING_INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2"><AtSign size={15} aria-hidden="true" />Instagram</a><Link href="/login">Painel interno</Link><MarketingPreferencesLink/></nav></div><small>Os Caras das Legends · Leilão diário de colecionáveis</small></div></footer>
     <StickyGroupCta />
   </div>;
 }

@@ -1,3 +1,4 @@
+import {MarketingPreferencesLink} from "@/components/client/marketing-preferences-link";
 import { connection } from "next/server";
 import {
   countCustomerUnreadNotifications,
@@ -39,7 +40,7 @@ export default async function ClientLayout({
         {children}
         <footer className="mt-10 border-t border-ouro/20 pt-4 text-center text-xs text-muted-foreground">
           Os Caras das Legends · Leilão diário de colecionáveis
-        </footer>
+        <div className="mt-3"><MarketingPreferencesLink/></div></footer>
       </main>
       <ClientBottomNav />
     </div>
