@@ -40,7 +40,8 @@ Atribuição é vinculada somente ao pedido do cliente autenticado e recém-cria
 Pagamento confirmado, reconciliação e compras já pagas no checkout utilizam a mesma fila.
 Envio pós-resposta em lotes pequenos; erro da Meta não desfaz compras ou estoque.
 Tentativas preservam o identificador e o horário original; lease evita processamentos simultâneos.
-Máximo de dez tentativas e seis dias, sem alterar a data para aparentar evento recente.
+Máximo de dez tentativas e 36 horas, mantendo os reenvios dentro da janela de deduplicação
+da Meta com margem de segurança, sem alterar o identificador ou a data do evento.
 Entrega imediata pelo webhook; novas tentativas por visitas consentidas, operação manual e
 cron diário separado às 09:30 UTC (compatível com o cron diário já utilizado).
 Para maior volume ou garantia de recuperação em minutos, configurar agendador mais frequente

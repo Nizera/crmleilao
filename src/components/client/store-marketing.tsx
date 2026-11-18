@@ -2,13 +2,14 @@
 import {useEffect,useState,useSyncExternalStore} from 'react';
 import {usePathname} from 'next/navigation';
 import {isStoreMarketingPath} from '@/lib/meta-commerce';
-import {enableStorePixel,readMarketingChoice,subscribeMarketingChoice,syncMarketingChoice,trackStoreEvent,writeMarketingChoice} from '@/lib/meta-browser';
+import {enableStorePixel,leaveStoreMarketing,readMarketingChoice,subscribeMarketingChoice,syncMarketingChoice,trackStoreEvent,writeMarketingChoice} from '@/lib/meta-browser';
 
 export function StoreMarketing({pixelId}:{pixelId:string|null}) {
  const path=usePathname();const choice=useSyncExternalStore(subscribeMarketingChoice,readMarketingChoice,()=>undefined);
  const [editing,setEditing]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState('');
  useEffect(()=>{
-  if(!pixelId||!isStoreMarketingPath(path)||choice!==true){window.fbq?.('consent','revoke');return;}
+  if(!isStoreMarketingPath(path)){leaveStoreMarketing();return;}
+  if(!pixelId||choice!==true){window.fbq?.('consent','revoke');return;}
   enableStorePixel(pixelId);trackStoreEvent('PageView');
   void syncMarketingChoice(true).catch(()=>{});
   return()=>{window.fbq?.('consent','revoke');};

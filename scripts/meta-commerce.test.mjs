@@ -28,8 +28,18 @@ test('browser: no pixel before consent, store scope, refusal and no synthetic pu
   browser=browser.replace(/from ['"]@\/lib\/meta-commerce['"]/,`from 'data:text/javascript;base64,${Buffer.from(rulesCode).toString('base64')}'`);
   const m=await moduleOf(browser);m.enableStorePixel('1074294225103386');assert.equal(scripts.length,0);
   m.writeMarketingChoice(true);m.enableStorePixel('1074294225103386');assert.equal(scripts.length,1);
+  assert.equal(window.fbq.disablePushState,true);
   window.fbq.callMethod=(...args)=>calls.push(args);
   m.trackStoreProduct('AddToCart',{id:'product',cash_price:45,points_cost:null});assert.equal(calls.at(-1)[2],'AddToCart');assert.equal(calls.at(-1)[3].value,45);
+  m.trackStoreEvent('PageView');m.trackStoreEvent('PageView');
+  m.enableStorePixel('1074294225103386');m.trackStoreEvent('PageView');
+  assert.equal(calls.filter(x=>x[2]==='PageView').length,1);
+  location.pathname='/rifas';m.leaveStoreMarketing();location.pathname='/loja';m.enableStorePixel('1074294225103386');m.trackStoreEvent('PageView');
+  assert.equal(calls.filter(x=>x[2]==='PageView').length,2); // A real return to the store is a new visit.
+  m.trackStoreEvent('InitiateCheckout',{value:45},'checkout-one');m.trackStoreEvent('InitiateCheckout',{value:45},'checkout-one');
+  assert.equal(calls.filter(x=>x[2]==='InitiateCheckout').length,1);
+  m.trackStoreEvent('InitiateCheckout',{value:50},'checkout-two');
+  assert.equal(calls.filter(x=>x[2]==='InitiateCheckout').length,2);
   const n=calls.length;location.pathname='/painel/rifas';m.trackStoreEvent('PageView');assert.equal(calls.length,n);
   location.pathname='/loja';m.writeMarketingChoice(false);m.trackStoreEvent('PageView');assert.equal(calls.length,n);
   assert.ok(!calls.some(x=>x.includes('Purchase')));
@@ -43,6 +53,7 @@ test('PostgreSQL: paid-only queue, discount, consent, replay, leases and private
    create table store_orders(id uuid primary key,customer_id uuid not null,created_at timestamptz default now(),paid_at timestamptz,payment_status text default 'pending',cash_total numeric,freight_amount numeric default 0,coins_total numeric default 0);
    create table store_order_items(id uuid primary key default gen_random_uuid(),order_id uuid,reward_id uuid,quantity int,unit_cash numeric);`);
   await db.exec(await readFile(new URL('../supabase/migrations/0095_store_meta_conversions.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/0096_meta_retry_dedup_window.sql',import.meta.url),'utf8'));
   const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];
   const customer=crypto.randomUUID(),session=crypto.randomUUID();
   await db.query("insert into store_marketing_sessions(id,consent,consent_version) values($1,true,'test')",[session]);
@@ -74,6 +85,11 @@ test('PostgreSQL: paid-only queue, discount, consent, replay, leases and private
   assert.equal(await scalar('select count(*)::int from store_meta_events'),2);
   await db.query("update store_orders set payment_status='refunded' where id=$1",[freePaid]);
   assert.equal((await db.query('select * from claim_store_meta_events(5)')).rows.length,0);
+  const aged=await order({paid:true});
+  await db.query("update store_meta_events set event_time=now()-interval '37 hours' where order_id=$1",[aged]);
+  assert.equal((await db.query('select * from claim_store_meta_events(5)')).rows.length,0);
+  assert.equal(await scalar('select status from store_meta_events where order_id=$1',[aged]),'failed');
+  assert.equal(await scalar('select event_id from store_meta_events where order_id=$1',[aged]),'store_purchase_'+aged);
   await db.exec('set role authenticated');
   await assert.rejects(db.exec('select * from store_marketing_sessions'),/permission denied/);
   await assert.rejects(db.query('select enqueue_store_meta_purchase($1)',[id]),/permission denied/);

@@ -159,7 +159,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     startTransition(async () => {
       try {
         await prepareStoreMarketing();
-        if(totals.cash>discount)trackStoreEvent('InitiateCheckout',{currency:'BRL',value:(totals.cash-discount)/100,content_type:'product',content_ids:cart.items.map(i=>i.reward_id),num_items:totals.quantity});
+        if(totals.cash>discount)trackStoreEvent('InitiateCheckout',{currency:'BRL',value:(totals.cash-discount)/100,content_type:'product',content_ids:cart.items.map(i=>i.reward_id),num_items:totals.quantity},`store_checkout_${cart.requestKey}`);
         const result = await checkoutStoreAction({...cart,voucherId:selectedVoucher||null,expectedFreight:freight});
         if (!result.ok) { toast.error(result.error); setFreightRevision(n=>n+1);router.refresh(); return; }
         dispatch(emptyCart);setSelectedVoucher("");
