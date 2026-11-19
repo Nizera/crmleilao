@@ -46,12 +46,10 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
  }
  return <>
   {error&&!editing&&<div role="status" className="fixed bottom-36 left-2 z-40 max-w-xs rounded-lg border bg-background p-3 text-xs shadow">{error} <button type="button" disabled={pending} className="underline" onClick={()=>void save(choice===true)}>Tentar novamente</button></div>}
-  {(choice===null||editing)&&<section aria-label="Preferências de publicidade" className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-xl rounded-xl border bg-background p-4 text-foreground shadow-xl">
-   <p className="font-semibold">Publicidade e privacidade</p>
-   <p className="mt-2 text-sm">Com sua autorização, usamos o Pixel e a API de Conversões da Meta para medir visitas, cliques para o grupo e vendas da loja e melhorar anúncios. Podemos compartilhar identificadores do navegador, dados dos produtos e e-mail e telefone transformados em códigos. A loja funciona mesmo se você recusar.</p>
-   <p className="mt-2 text-xs text-muted-foreground">Sua escolha vale por até 180 dias e pode ser alterada no rodapé, em “Privacidade e cookies”. Cookies de login e carrinho continuam necessários. <a href="/privacidade-loja" className="underline">Saiba mais</a>.</p>
-   <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={pending} onClick={()=>void save(false)} className="rounded-lg border px-4 py-2 text-sm">Recusar publicidade</button><button type="button" disabled={pending} onClick={()=>void save(true)} className="rounded-lg border bg-amarelo px-4 py-2 text-sm text-black">Aceitar publicidade</button>{choice!==null&&<button type="button" disabled={pending} className="px-3 text-sm underline" onClick={()=>setEditing(false)}>Fechar</button>}</div>
-   {error&&<p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
+  {(choice===null||editing)&&<section aria-label="Preferências de publicidade" className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-xl rounded-xl border bg-background p-3 text-foreground shadow-lg sm:inset-x-auto sm:right-4 sm:bottom-4 sm:max-w-sm">
+   <p className="text-xs leading-relaxed">Podemos usar cookies e tecnologias da Meta para medir visitas, cliques e compras e melhorar anúncios? Você pode continuar sem aceitar. <a href="/privacidade-loja" className="font-medium underline">Saiba mais</a></p>
+   <div className="mt-2 flex flex-wrap gap-2"><button type="button" disabled={pending} onClick={()=>void save(false)} className="min-h-11 flex-1 rounded-lg border px-3 py-2 text-xs font-medium">Recusar publicidade</button><button type="button" disabled={pending} onClick={()=>void save(true)} className="min-h-11 flex-1 rounded-lg border bg-amarelo px-3 py-2 text-xs font-medium text-black">Aceitar publicidade</button>{choice!==null&&<button type="button" disabled={pending} className="min-h-11 px-3 py-2 text-xs underline" onClick={()=>setEditing(false)}>Fechar</button>}</div>
+   {error&&<p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
   </section>}
  </>;
 }
