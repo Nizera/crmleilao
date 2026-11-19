@@ -14,6 +14,21 @@ export const CHARGE_STATUSES = [
 
 export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
 
+/** A pending provider status is informational, never proof of payment or failure. */
+export function chargeSyncReasonLabel(reason:string):string {
+  const labels:Record<string,string>={
+    mp_action_required:"Pix ainda pendente no Mercado Pago",
+    mp_created:"Pix criado, aguardando processamento",
+    mp_processing:"Pagamento em processamento no Mercado Pago",
+    retry_later:"Aguarde alguns segundos para conferir novamente",
+    no_order:"Pix em preparação; confira novamente em instantes",
+    order_not_found:"Não foi possível localizar a ordem; confira no Mercado Pago",
+    reference_mismatch:"Referência divergente; confira a cobrança antes de confirmar",
+    amount_mismatch:"Valor divergente; confira o pagamento antes de confirmar",
+  };
+  return labels[reason] ?? "Não foi possível confirmar uma alteração; tente novamente ou confira no Mercado Pago";
+}
+
 export const CHARGE_STATUS_LABELS: Record<ChargeStatus, string> = {
   pending: "Aguardando pagamento",
   in_process: "Em processamento",

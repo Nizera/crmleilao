@@ -57,6 +57,7 @@ import {
   CHARGE_STATUS_LABELS,
   isChargeActive,
   isChargeOpen,
+  chargeSyncReasonLabel,
   type Charge,
 } from "@/lib/charges";
 import { formatBRL, formatDateBR } from "@/lib/lots";
@@ -199,18 +200,17 @@ export function ChargesView({
         return acc;
       }, {});
       const detail = Object.entries(reasons)
-        .map(([reason, count]) => `${count}× ${reason.replace(/_/g, " ")}`)
+          .map(([reason, count]) => `${count}× ${chargeSyncReasonLabel(reason)}`)
         .join(" · ");
 
       if (applied > 0) {
         toast.success(
           `${applied} ${applied === 1 ? "cobrança atualizada" : "cobranças atualizadas"} no Mercado Pago ` +
-            `(${checked} conferida${checked === 1 ? "" : "s"}).`,
+              `(${checked} conferida${checked === 1 ? "" : "s"}).`, {description:detail||undefined},
         );
       } else {
-        toast.info(`Nada mudou: ${checked} cobrança${checked === 1 ? "" : "s"} conferida(s).`);
+          toast.info(`${checked} cobrança${checked === 1 ? "" : "s"} conferida${checked === 1 ? "" : "s"}. Nenhuma alteração confirmada.`, {description:detail||undefined});
       }
-      if (detail) toast.message(`Não aplicado — ${detail}.`);
     });
   };
 
