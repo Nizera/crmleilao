@@ -126,7 +126,8 @@ export async function saveLot(
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
     const values = parsed.data;
-    const price = lotPricing(values.arremate_value, values.discount_amount);
+    const price = lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount);
+    if ((price.voucher > 0) !== Boolean(values.auction_voucher_id)) return failure("Selecione o voucher e informe quanto usar.");
     const items = parseLotItems(formData.get("items"));
 
     const customer = await resolveCustomerId(values);
@@ -137,7 +138,7 @@ export async function saveLot(
     const previous = values.id
       ? await supabase
           .from("lots")
-          .select("id, images, moved_at, status, paid_at, charge_id, customer_id, arremate_value, discount_amount")
+          .select("id, images, moved_at, status, paid_at, charge_id, customer_id, arremate_value, discount_amount, auction_voucher_id, voucher_amount")
           .eq("id", values.id)
           .maybeSingle()
       : null;
@@ -146,6 +147,9 @@ export async function saveLot(
 
     const financialChange = previous?.data && (
       Number(previous.data.arremate_value) !== price.total ||
+      Number(previous.data.voucher_amount) !== price.voucher ||
+      Number(previous.data.discount_amount) !== price.discount ||
+      previous.data.auction_voucher_id !== (values.auction_voucher_id || null) ||
       previous.data.customer_id !== customer_id ||
       (previous.data.status !== values.status && (previous.data.status === "pending_payment" || ["cancelled", "pending_payment"].includes(values.status)))
     );
@@ -192,6 +196,8 @@ export async function saveLot(
       description: values.description || null,
       arremate_value: price.total,
       discount_amount: price.discount,
+      auction_voucher_id: values.auction_voucher_id || null,
+      voucher_amount: price.voucher,
       status: values.status,
       auction_date: values.auction_date,
       shipping_date:
@@ -210,7 +216,9 @@ export async function saveLot(
         .eq("status", previous!.data!.status)
         .eq("arremate_value", previous!.data!.arremate_value)
         .eq("discount_amount", previous!.data!.discount_amount)
+        .eq("voucher_amount", previous!.data!.voucher_amount)
         .eq("customer_id", previous!.data!.customer_id);
+      update = previous!.data!.auction_voucher_id ? update.eq("auction_voucher_id",previous!.data!.auction_voucher_id) : update.is("auction_voucher_id",null);
       if (financialChange && previous?.data) {
         // Se outra requisição cobrar ou pagar o lote durante a edição,
         // a atualização falha em vez de sobrescrever o novo estado.
@@ -363,7 +371,7 @@ export async function setLotStatus(
     const supabase = await createClient();
     const { data: lot } = await supabase
       .from("lots")
-      .select("id, code, paid_at, shipped_at, status, charge_id, payment_expired_at")
+      .select("id, code, paid_at, shipped_at, status, charge_id, payment_expired_at, arremate_value, voucher_amount, moved_at")
       .eq("id", id)
       .maybeSingle();
 
@@ -408,7 +416,7 @@ export async function setLotStatus(
     }
 
     const patch: Record<string, unknown> = { status: parsedStatus.data };
-    if (status === "paid" && !lot.paid_at) patch.paid_at = new Date().toISOString();
+    if (status === "paid" && !lot.paid_at && !(Number(lot.arremate_value) === 0 && Number(lot.voucher_amount) > 0)) patch.paid_at = new Date().toISOString();
     if (status === "shipped" && !lot.shipped_at)
       patch.shipped_at = new Date().toISOString();
     if (status === "pending_payment") {
@@ -428,7 +436,7 @@ export async function setLotStatus(
     let update = supabase.from("lots").update(patch).eq("id", id).eq("status", lot.status);
     if (financialChange) update = update.eq("status", lot.status).is("charge_id", null).is("paid_at", null);
     if (recoverExpiredOnly) update = update.eq("payment_expired_at", lot.payment_expired_at).is("shipped_at", null);
-    const { data: updated, error } = await update.select("id");
+    const { data: updated, error } = await update.select("id,status");
     if (error) return failure(`Falha ao atualizar status: ${error.message}`);
     if (!updated?.length) return failure("O lote mudou durante a operação. Atualize a tela e tente novamente.");
 
@@ -438,7 +446,7 @@ export async function setLotStatus(
     revalidatePath("/painel", "layout");
     revalidatePath(`/painel/lotes/${lot.code}`);
 
-    return { ok: true, data: { status } };
+    return { ok: true, data: { status: updated[0].status ?? status } };
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");

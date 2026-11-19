@@ -250,6 +250,7 @@ export default async function DashboardPage({
       </div>
 
       {/* KPIs de operação */}
+      {s.ready.lots && <section aria-label="Descontos dos arremates" className="rounded-xl border bg-muted/30 p-4 text-sm"><p className="mb-2 font-semibold">Arremates e descontos do período</p><FinancialValue><div className="grid gap-2 sm:grid-cols-4"><p>Valor original<br/><strong>{formatBRL(s.revenue.gross)}</strong></p><p>Vouchers aplicados<br/><strong>−{formatBRL(s.revenue.vouchers)}</strong></p><p>Outros descontos<br/><strong>−{formatBRL(s.revenue.otherDiscounts)}</strong></p><p>Após descontos, sem frete<br/><strong>{formatBRL(s.revenue.day)}</strong></p></div></FinancialValue><p className="mt-2 text-xs text-muted-foreground">Vouchers não são recebimentos em dinheiro. Os pagamentos confirmados e o frete continuam separados nos indicadores financeiros.</p></section>}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Conversão Pix"

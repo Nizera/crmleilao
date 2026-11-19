@@ -5,10 +5,14 @@ export type LotPaymentSnapshot = {
   status: string;
   paid_at: string | null;
   charge_id: string | null;
+  arremate_value?:number;
+  voucher_amount?:number;
+  moved_at?:string|null;
 };
 
 /** Chamado apenas depois do requireAdmin, antes de qualquer alteração financeira. */
 export async function prepareLotFinancialChange(lot: LotPaymentSnapshot): Promise<void> {
+  if (lot.status === "paid" && Number(lot.arremate_value) === 0 && Number(lot.voucher_amount) > 0 && !lot.paid_at && !lot.charge_id && !lot.moved_at) return;
   if (lot.paid_at || ["paid", "shipped", "delivered"].includes(lot.status)) {
     throw new Error("Este lote já foi pago. Alterar valor, trocar cliente ou cancelar exige tratar o ajuste/reembolso primeiro. O histórico foi preservado.");
   }

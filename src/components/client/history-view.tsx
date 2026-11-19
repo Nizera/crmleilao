@@ -80,7 +80,7 @@ function LotRow({ lot }: { lot: Lot }) {
         <span className="truncate font-medium">
           {lot.code} · {lot.title}
         </span>
-        <span className="text-xs text-muted-foreground">{<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}</span>
+        <span className="text-xs text-muted-foreground">{<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} />}</span>
       </span>
       <LotStatusBadge status={lot.status} />
     </Link>

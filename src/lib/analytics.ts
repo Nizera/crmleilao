@@ -13,7 +13,7 @@ import { loadFreightReceipts } from "@/lib/period-receipts-server";
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const REVENUE_STATUSES = new Set<LotStatus>(["paid", "shipped", "delivered"]);
 const PIPELINE_ORDER: LotStatus[] = ["pending_payment", "paid", "shipped", "delivered", "cancelled"];
-const LOT_SELECT = "id, code, title, status, arremate_value, created_at, paid_at, shipping_date, customer_id, charge_id, customer:customers(id, name, email, created_at)";
+const LOT_SELECT = "id, code, title, status, arremate_value, discount_amount, voucher_amount, created_at, paid_at, shipping_date, customer_id, charge_id, customer:customers(id, name, email, created_at)";
 
 export type DashboardStats = {
   ready: {
@@ -28,6 +28,7 @@ export type DashboardStats = {
     /** Vendas com valor positivo cadastradas no intervalo (SP), sem cancelados. */
     day: number;
     dayLots: number;
+    gross:number; vouchers:number; otherDiscounts:number;
     month: number;
     prevMonth: number;
     deltaPct: number | null;
@@ -86,7 +87,7 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   const scoped = allLots.filter(lot => isInAuctionPeriod(lot.created_at, period));
   const active = scoped.filter(lot => lot.status !== "cancelled");
   // Prêmios externos são lotes operacionais, mas não são vendas.
-  const sales = active.filter(lot => Number(lot.arremate_value) > 0);
+  const sales = active.filter(lot => Number(lot.arremate_value) > 0 || Number(lot.voucher_amount) > 0);
   const customerIds = [...new Set(active.map(lot => lot.customer_id))];
   const lotIds = active.map(lot => lot.id);
   const [chargesRes, linksRes, usageRes, freightRes, scheduledRes] = await Promise.all([
@@ -143,6 +144,9 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
     ready: { lots: !lotsError, charges: !lotsError && !chargesRes.error, customers: !lotsError, shipments: !scheduledRes.error, closing: !lotsError, freight: !receiptError && !lotsError && !chargesRes.error && !linksRes.error && !usageRes.error && !freightRes.error },
     revenue: {
       day: sum(sales), dayLots: sales.length, month: monthRevenue, prevMonth: previousRevenue,
+      gross:sales.reduce((n,l)=>n+Number(l.arremate_value)+Number(l.discount_amount??0),0),
+      vouchers:sales.reduce((n,l)=>n+Number(l.voucher_amount??0),0),
+      otherDiscounts:sales.reduce((n,l)=>n+Number(l.discount_amount??0)-Number(l.voucher_amount??0),0),
       deltaPct: previousRevenue > 0 ? Math.round((monthRevenue - previousRevenue) / previousRevenue * 100) : null,
       total: sum(allPaid), paidLots: allPaid.length, ticket: paid.length ? sum(paid) / paid.length : 0, months,
     },
@@ -172,4 +176,4 @@ async function computeDashboardStats(asOf: string, from?: string, to?: string): 
   };
 }
 
-export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-shipping-date-v6"], { tags: ["dashboard"], revalidate: 30 });
+export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-auction-vouchers-v7"], { tags: ["dashboard"], revalidate: 30 });
