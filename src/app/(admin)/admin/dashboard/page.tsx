@@ -1,6 +1,4 @@
 import { FinancialPrivacy, FinancialValue } from "@/components/admin/financial-privacy";
-import {Suspense} from "react";
-import {AuctionVouchersCard} from "@/components/admin/dashboard/auction-vouchers-card";
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -193,10 +191,6 @@ export default async function DashboardPage({
       <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Fechamento e frete usam a data e hora do pagamento. Envios usam a data prevista de envio nos dias abrangidos pelo filtro. Os demais indicadores e listas consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
 
       {/* KPIs financeiros */}
-      <div className={`grid items-stretch gap-4 ${s.ready.lots ? "xl:grid-cols-2" : ""}`}>
-      <Suspense fallback={<div className="h-36 animate-pulse rounded-xl border bg-muted/30" aria-label="Carregando vouchers do leilão"/>}><AuctionVouchersCard/></Suspense>
-      {s.ready.lots && <section aria-label="Descontos dos arremates" className="h-full rounded-xl border bg-muted/30 p-4 text-sm"><p className="mb-2 font-semibold">Arremates e descontos do período</p><FinancialValue><div className="grid gap-2 grid-cols-2"><p>Valor original<br/><strong>{formatBRL(s.revenue.gross)}</strong></p><p>Vouchers aplicados<br/><strong>−{formatBRL(s.revenue.vouchers)}</strong></p><p>Outros descontos<br/><strong>−{formatBRL(s.revenue.otherDiscounts)}</strong></p><p>Após descontos, sem frete<br/><strong>{formatBRL(s.revenue.day)}</strong></p></div></FinancialValue><p className="mt-2 text-xs text-muted-foreground">Vouchers não são recebimentos em dinheiro. Os pagamentos confirmados e o frete continuam separados nos indicadores financeiros.</p></section>}
-      </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Faturamento do mês"
