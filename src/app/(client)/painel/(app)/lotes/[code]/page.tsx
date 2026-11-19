@@ -103,7 +103,7 @@ export default async function CustomerLotPage({
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Detail
             label="Valor"
-            value={<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
+            value={<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} />}
             className="text-ouro-ink"
           />
           <Detail label="Data do leilão" value={formatDateBR(lot.auction_date)} />

@@ -58,6 +58,12 @@ const lot = (value, overrides = {}) => ({ id: 'lot-' + nextLotId++, charge_id: n
   created_at: '2026-10-27T15:00:00Z', shipping_date: null,
   customer_id: 'customer', customer: { id: 'customer', name: 'Teste' }, ...overrides });
 
+test('vouchers reduzem receita sem virar recebimento e arremate totalmente coberto preserva valor original',async()=>{
+ const result=await statsFor([lot(90,{discount_amount:60,voucher_amount:50}),lot(0,{discount_amount:40,voucher_amount:40,paid_at:null})]);
+ assert.equal(result.revenue.gross,190);assert.equal(result.revenue.vouchers,90);assert.equal(result.revenue.otherDiscounts,10);
+ assert.equal(result.revenue.day,90);assert.equal(result.revenue.dayLots,2);assert.equal(result.closing.receivedOn,90);
+});
+
 test('mensal usa cadastro dos lotes pagos; fechamento e frete continuam pela data de pagamento', async () => {
   const result=await statsFor([
     lot(100,{created_at:'2026-09-30T20:00:00-03:00',paid_at:'2026-10-27T15:00:00Z'}),

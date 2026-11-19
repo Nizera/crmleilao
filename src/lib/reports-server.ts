@@ -64,6 +64,7 @@ type LotRow = {
   moved_at: string | null;
   auction_date: string;
   arremate_value: number | string;
+    voucher_amount?: number;
   charge_id: string | null;
   status: LotStatus;
   created_at: string;
@@ -149,7 +150,7 @@ export async function getSeparationReport(
     const { data, error } = await admin
       .from("lots")
       .select(
-        `id, code, title, description, status, created_at, moved_at, auction_date, arremate_value, charge_id,
+        `id, code, title, description, status, created_at, moved_at, auction_date, arremate_value, voucher_amount, charge_id,
          customers(id, name, phone_e164, address_cep, address_street, address_number, address_complement, address_district, address_city, address_state)`,
       )
       .eq("shipping_date", shippingDate)
@@ -215,7 +216,7 @@ export async function getSeparationReport(
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
     if (releasedLotIds.has(row.id) || row.moved_at || ["shipped","delivered"].includes(row.status)) return true;
     return !paymentBlockedCustomers.has(row.customers.id)
-      && (!freightBlockedCustomers.has(row.customers.id) || Number(row.arremate_value) === 0);
+      && (!freightBlockedCustomers.has(row.customers.id) || (Number(row.arremate_value) === 0 && !Number(row.voucher_amount)));
   });
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();

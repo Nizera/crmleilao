@@ -34,6 +34,9 @@ export type LotRow = {
   images: string[];
   arremate_value: number;
   discount_amount?: number;
+  auction_voucher_id?: string | null;
+  voucher_amount?: number;
+  moved_at?:string|null;
   status: LotStatus;
   /** Cobrança que está cobrando este lote (nula quando elegível para nova cobrança). */
   charge_id: string | null;
@@ -138,6 +141,8 @@ export function buildLotMessage(lot: Lot, template?: string): string {
 }
 
 export const lotSchema = z.object({
+  auction_voucher_id: z.uuid().optional().or(z.literal("")),
+  voucher_amount: z.string().trim().regex(/^\d{1,9}([.,]\d{1,2})?$/, "Valor de voucher inválido").optional().or(z.literal("")),
   id: z.string().optional(),
   customer_id: z.string().optional(),
   phone: z.string().trim().optional(),
@@ -164,7 +169,7 @@ export const lotSchema = z.object({
     .or(z.literal("")),
   status: z.enum(LOT_STATUSES),
   notes: z.string().trim().max(4000).optional(),
-}).refine(values => Number((values.discount_amount || "0").replace(",", ".")) <= Number(values.arremate_value.replace(",", ".")), {message:"O desconto não pode ser maior que o valor do lote.",path:["discount_amount"]});
+}).refine(values => Number((values.discount_amount || "0").replace(",", ".")) + Number((values.voucher_amount || "0").replace(",", ".")) <= Number(values.arremate_value.replace(",", ".")), {message:"Os descontos não podem superar o valor do lote.",path:["discount_amount"]});
 
 export type LotFormValues = z.input<typeof lotSchema>;
 

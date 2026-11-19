@@ -210,6 +210,7 @@ export async function listEligibleShipmentLots(
 /* -------------------------------------------------------------------------- */
 
 export type ShipmentQueueLot = {
+  voucher_amount?: number;
   id: string;
   code: string;
   title: string;
@@ -288,7 +289,7 @@ export async function listShipmentQueue(params: {
   let query = admin
     .from("lots")
     .select(
-      "id, code, title, arremate_value, status, shipping_date, auction_date, customer_id, customers(id, name, phone_e164)",
+      "id, code, title, arremate_value, voucher_amount, status, shipping_date, auction_date, customer_id, customers(id, name, phone_e164)",
     )
     .in("status", ["paid", "pending_payment"])
     .order("shipping_date", { ascending: true })
@@ -306,6 +307,7 @@ export async function listShipmentQueue(params: {
     code: string;
     title: string;
     arremate_value: number;
+    voucher_amount?: number;
     status: ShipmentQueueLot["status"];
     shipping_date: string | null;
     auction_date: string;
@@ -429,6 +431,7 @@ export async function listShipmentQueue(params: {
       code: row.code,
       title: row.title,
       arremate_value: Number(row.arremate_value),
+      voucher_amount: Number(row.voucher_amount ?? 0),
       status: row.status,
       shipping_date: row.shipping_date,
       auction_date: row.auction_date,
@@ -468,7 +471,7 @@ export async function listShipmentQueue(params: {
       hasActiveCharge: customersWithOpenCharges.has(customerId),
       storeOrderCount:storeCustomers.filter(o=>o.customer_id===customerId).length,
       raffleAwardCount:prizeCustomers.filter(o=>o.customer_id===customerId).length,
-      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&(entry.lots.length>0||prizeCustomers.some(p=>p.customer_id===customerId))&&entry.lots.every(l=>l.arremate_value===0),
+      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&(entry.lots.length>0||prizeCustomers.some(p=>p.customer_id===customerId))&&entry.lots.every(l=>l.arremate_value===0&&!Number(l.voucher_amount)),
     });
   }
 

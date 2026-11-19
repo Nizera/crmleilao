@@ -10,7 +10,9 @@ const pricing=load('src/lib/lot-pricing.ts');
 const lots=load('src/lib/lots.ts',{'zod':{z},'@/lib/dates':{spToday:()=> '2026-11-10'},'@/lib/settings':{DEFAULT_SETTINGS:{},renderTemplate:()=>''}});
 const form=(extra={})=>({customer_id:'customer',title:'Lote de teste',arremate_value:'100',discount_amount:'15',status:'pending_payment',auction_date:'2026-11-10',shipping_date:'2026-11-17',...extra});
 test('desconto em centavos, formato brasileiro e limites são validados no servidor',()=>{
- assert.deepEqual(JSON.parse(JSON.stringify(pricing.lotPricing('100','15'))),{original:100,discount:15,total:85});
+ assert.deepEqual(JSON.parse(JSON.stringify(pricing.lotPricing('100','15'))),{original:100,discount:15,voucher:0,total:85});
+ assert.deepEqual(JSON.parse(JSON.stringify(pricing.lotPricing('150','10','50'))),{original:150,discount:60,voucher:50,total:90});
+ assert.throws(()=>pricing.lotPricing('30','0','31'),/desconto/);
  assert.equal(pricing.lotPricing('0,30','0,10').total,0.2);
  assert.equal(pricing.lotPricing('45').total,45);
  assert.equal(pricing.lotPricing('45','45').total,0);
@@ -20,7 +22,7 @@ test('desconto em centavos, formato brasileiro e limites são validados no servi
 test('cadastro persiste somente o líquido na cobrança; edição paga passa pela proteção existente',async()=>{
  let saved,guarded=0;
  const db={from(table){return {select(){return this;},eq(){return this;},is(){return this;},insert(row){saved=row;return this;},update(){return this;},single:async()=>({data:{id:'lot',code:'TEST'},error:null}),maybeSingle:async()=>({data:table==='customers'?{id:'customer',name:'Cliente Teste'}:{id:'lot',arremate_value:100,discount_amount:0,customer_id:'customer',status:'paid',paid_at:'2026-11-10',images:[]},error:null}),then(r){return Promise.resolve({data:[],error:null}).then(r);}};},rpc:async()=>({error:null})};
- const {saveLot}=load('src/app/actions/lots.ts',{'zod':{z},'next/cache':{revalidatePath(){},updateTag(){}},'@/lib/dal':{requireAdmin:async()=>({profile:{id:'admin',role:'owner'}}),getAppSettings:async()=>({settings:{shipping_weekday:2}})},'@/lib/phone':{toE164:()=>null},'@/lib/invites-server':{},'@/lib/notes':{saveNote:async()=>{}},'@/lib/result':{rethrowIfRedirect(){}},'@/lib/stock':{parseLotItems:()=>[]},'@/lib/lots':lots,'@/lib/lot-pricing':pricing,'@/lib/supabase/server':{createClient:async()=>db},'@/lib/lot-payment-guard':{prepareLotFinancialChange:async()=>{guarded++;throw Error('Lote já pago: protegido');}}});
+ const {saveLot}=load('src/app/actions/lots.ts',{'@/lib/landing-live-server':{notifyLandingChanged:async()=>{}},'next/server':{after(){}},'zod':{z},'next/cache':{revalidatePath(){},updateTag(){}},'@/lib/dal':{requireAdmin:async()=>({profile:{id:'admin',role:'owner'}}),getAppSettings:async()=>({settings:{shipping_weekday:2}})},'@/lib/phone':{toE164:()=>null},'@/lib/invites-server':{},'@/lib/notes':{saveNote:async()=>{}},'@/lib/result':{rethrowIfRedirect(){}},'@/lib/stock':{parseLotItems:()=>[]},'@/lib/lots':lots,'@/lib/lot-pricing':pricing,'@/lib/supabase/server':{createClient:async()=>db},'@/lib/lot-payment-guard':{prepareLotFinancialChange:async()=>{guarded++;throw Error('Lote já pago: protegido');}}});
  const data=o=>{const f=new FormData();for(const[k,v]of Object.entries(o))f.set(k,v);return f;};
  assert.equal((await saveLot(data(form()))).ok,true);assert.equal(saved.arremate_value,85);assert.equal(saved.discount_amount,15);
  const edit=await saveLot(data(form({id:'lot',status:'paid'})));assert.equal(edit.ok,false);assert.equal(guarded,1);assert.match(edit.error,/protegido/);

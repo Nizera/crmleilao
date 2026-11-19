@@ -4,6 +4,7 @@ import { spWeekdayKey, type FreightDayKey } from "@/lib/freight";
 export type ScopeLot = {
   id: string; code: string; title: string; status: LotStatus;
   arremate_value: number | string; paid_at: string | null; created_at: string;
+  discount_amount?:number; voucher_amount?:number;
   shipping_date: string | null; customer_id: string; charge_id: string | null;
   customer: { id: string; name: string | null; email?: string | null; created_at?: string } | null;
 };

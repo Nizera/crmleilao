@@ -148,7 +148,7 @@ export function ClientLotsList({ lots, subtitle, showDeadlineNotice=true }: Prop
                       pending ? "text-ouro-ink" : "text-foreground",
                     )}
                   >
-                    {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} />}
+                    {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} />}
                   </span>
                   <span className="text-xs text-muted-foreground">•</span>
                   <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
