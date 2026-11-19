@@ -18,5 +18,5 @@ test('website and panel share the requested direct WhatsApp destination',async()
  assert.equal(group.COMMUNITY_GROUP_URL,'https://chat.whatsapp.com/BHlJhz6YAF6Aw0l0kx5pwM?s=sh&p=a&iam=2');
  const panel=await readFile('src/components/client/client-bottom-nav.tsx','utf8');assert.match(panel,/COMMUNITY_GROUP_URL as GROUP_URL/);assert.match(panel,/href={GROUP_URL}/);
  const site=await readFile('src/lib/landing-content.ts','utf8');assert.match(site,/COMMUNITY_GROUP_URL as LANDING_GROUP_URL/);
- const tracking=await readFile('src/components/client/store-marketing.tsx','utf8');assert.ok(!tracking.includes('preventDefault'));assert.ok(tracking.includes('new URL(LANDING_GROUP_URL)'));
+ const tracking=await readFile('src/components/client/store-marketing.tsx','utf8');const clickHandler=tracking.slice(tracking.indexOf('const click='),tracking.indexOf("document.addEventListener('click'"));assert.ok(!clickHandler.includes('preventDefault'));assert.ok(!clickHandler.includes('await '));assert.ok(tracking.includes('new URL(LANDING_GROUP_URL)'));
 });

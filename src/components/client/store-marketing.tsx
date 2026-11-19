@@ -12,7 +12,7 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
   if(path!=='/'&&!isStoreMarketingPath(path)){leaveStoreMarketing();return;}
   if(!pixelId||choice!==true){window.fbq?.('consent','revoke');return;}
   enableStorePixel(pixelId,path==='/');trackStoreEvent('PageView',{},undefined,path==='/');
-  if(path!=='/')void syncMarketingChoice(true).catch(()=>{});
+  void syncMarketingChoice(true).catch(()=>{});
   return()=>{window.fbq?.('consent','revoke');};
  },[path,pixelId,choice]);
  useEffect(()=>{
@@ -41,7 +41,7 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
   setEditing(false);
   if(!consent){for(const name of ['_fbp','_fbc']){document.cookie=`${name}=; Max-Age=0; Path=/`;document.cookie=`${name}=; Max-Age=0; Path=/; Domain=.${location.hostname.replace(/^www\./,'')}`;}}
   try{
-   if(path!=='/')await syncMarketingChoice(consent,true);
+   await syncMarketingChoice(consent,true);
   }catch{setError('Sua escolha já vale neste navegador. Falta sincronizar com o servidor.');}finally{setPending(false);}
  }
  return <>

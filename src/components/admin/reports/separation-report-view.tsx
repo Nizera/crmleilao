@@ -97,19 +97,30 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
 
   // A report left open by SAC must reload movements saved by another operator.
   useEffect(() => {
+    let disposed = false;
+    let refreshing = false;
     const refresh = () => {
-      if (busy.current || document.visibilityState === "hidden") return;
-      busy.current = true;
+      if (disposed || refreshing || busy.current || document.visibilityState === "hidden" || !navigator.onLine) return;
+      refreshing = true;
       startTransition(async () => {
-        const result = await getSeparationReportAction(date);
-        if (result.ok) { setReport(result.data); setSelectedIds([]); }
-        else toast.error(result.error);
+        try {
+          const result = await getSeparationReportAction(date);
+          if (disposed) return;
+          if (result.ok) { setReport(result.data); setSelectedIds([]); }
+          else toast.error(result.error);
+        } catch {
+          // A suspended phone, failed request or old deployment must not unmount the report.
+          // Keep current data and let the next focus/interval retry this read-only operation.
+        } finally {
+          refreshing = false;
+        }
       });
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     const interval = window.setInterval(refresh, 60_000);
     return () => {
+      disposed = true;
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(interval);

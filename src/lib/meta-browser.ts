@@ -30,14 +30,15 @@ export function enableStorePixel(pixel:string,landing=false) {
  window.fbq('consent','grant');
 }
 export function trackStoreEvent(name:'PageView'|'ViewContent'|'AddToCart'|'InitiateCheckout'|'Search'|'Lead',data:Record<string,unknown>={},eventId?:string,landing=false) {
- if(readMarketingChoice()!==true||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!initializedPixel||!window.fbq)return;
+ if(readMarketingChoice()!==true||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!initializedPixel||!window.fbq)return false;
  const page=initializedPixel+':'+location.pathname;
- if(name==='PageView'&&lastPageView===page)return;
+ if(name==='PageView'&&lastPageView===page)return false;
  const id=eventId??crypto.randomUUID(),key=initializedPixel+':'+name+':'+id;
- if(sentEvents.has(key))return;
+ if(sentEvents.has(key))return false;
  window.fbq('trackSingle',initializedPixel,name,data,{eventID:id});
  if(name==='PageView')lastPageView=page;
  sentEvents.add(key);if(sentEvents.size>500)sentEvents.delete(sentEvents.values().next().value!);
+ return true;
 }
 export function trackStoreProduct(name:'ViewContent'|'AddToCart',product:StoreProduct) {
  if(!(Number(product.cash_price)>0)||Number(product.points_cost)>0)return;
@@ -55,10 +56,18 @@ export async function syncMarketingChoice(consent:boolean,explicit=false) {
 }
 export async function prepareStoreMarketing(){if(readMarketingChoice()===true)await syncMarketingChoice(true).catch(()=>{});}
 
-/** A Lead is an outbound group click, never a confirmed WhatsApp membership. */
+let landingVisitId='';
+let landingLeadSent=false;
+/** One outbound group click per tab session; never a confirmed WhatsApp membership. */
 export function trackLandingLead(placement:string) {
- if(location.pathname!=='/')return;
- let id:string;
- try{const key='ocdl-landing-lead-session';id=sessionStorage.getItem(key)??crypto.randomUUID();sessionStorage.setItem(key,id);}catch{id='landing-visit';}
- trackStoreEvent('Lead',{content_name:'Grupo de leilões Legends',content_category:'Figurinhas Legends',lead_source:'landing_whatsapp',placement},id,true);
+ if(location.pathname!=='/'||readMarketingChoice()!==true||!initializedPixel||!window.fbq||landingLeadSent)return;
+ let id=landingVisitId||(landingVisitId=crypto.randomUUID());
+ const sentKey='ocdl-landing-lead-sent:'+initializedPixel;
+ try{
+  if(sessionStorage.getItem(sentKey))return;
+  id=sessionStorage.getItem('ocdl-landing-lead-session')??id;
+  sessionStorage.setItem('ocdl-landing-lead-session',id);
+ }catch{/* A unique in-memory ID still avoids shared fallback IDs between visitors. */}
+ const sent=trackStoreEvent('Lead',{content_name:'Grupo de leilões Legends',content_category:'Figurinhas Legends',lead_source:'landing_whatsapp',placement},id,true);
+ if(sent){landingLeadSent=true;try{sessionStorage.setItem(sentKey,id);}catch{/* Memory applies for this page visit. */}}
 }
