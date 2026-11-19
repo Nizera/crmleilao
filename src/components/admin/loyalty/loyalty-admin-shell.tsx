@@ -12,6 +12,7 @@ const tabs = [
   ["recompensas", "/admin/fidelidade/recompensas", "Produtos", Gift],
   ["banners", "/admin/fidelidade/banners", "Banners", Gift],
   ["vouchers", "/admin/fidelidade/vouchers", "Vouchers", Gift],
+  ["ranking", "/admin/fidelidade/ranking", "Ranking geral de elos", Gift],
   ["resgates", "/admin/fidelidade/resgates", "Pedidos", PackageCheck],
   ["extrato", "/admin/fidelidade/extrato", "Caracoins", History],
   ["configuracao", "/admin/fidelidade/configuracao", "Configurações", Settings2],

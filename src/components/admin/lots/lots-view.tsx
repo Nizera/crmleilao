@@ -91,6 +91,7 @@ export function LotsView({
   filterError = "",
   shippingDate = "",
   sort = "newest",
+  withVoucher = false,
 }: {
   lots: Lot[];
   total: number;
@@ -107,6 +108,7 @@ export function LotsView({
   filterError?: string;
   shippingDate?: string;
   sort?: LotSort;
+  withVoucher?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
@@ -169,6 +171,7 @@ export function LotsView({
     if (range.to) params.set("to", range.to);
     if (shippingDate) params.set("shipping", shippingDate);
     if (nextSort !== "newest") params.set("sort", nextSort);
+    if (withVoucher) params.set("voucher", "1");
     const search = params.toString();
     return `/admin/lotes${search ? `?${search}` : ""}`;
   };
@@ -329,6 +332,8 @@ export function LotsView({
           )}
         </form>
 
+        <Button variant={withVoucher?"default":"outline"} aria-pressed={withVoucher} onClick={()=>{const href=new URL(buildHref(query,status,1),window.location.origin);if(withVoucher)href.searchParams.delete("voucher");else href.searchParams.set("voucher","1");router.replace(href.pathname+href.search);}}>Com voucher{withVoucher?" · ativo":""}</Button>
+        <Link href="/admin/vouchers-leilao" className="px-2 py-2 text-sm font-semibold underline">Controle de vouchers</Link>
         <Select value={status} onValueChange={changeFilter}>
           <SelectTrigger className="w-full shrink-0 sm:w-56">
             <SelectValue placeholder="Status" />

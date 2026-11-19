@@ -33,12 +33,13 @@ export default async function LotesPage({
   const rawShipping = first(params.shipping);
   const shippingDate = isIsoDay(rawShipping) ? rawShipping : "";
   const sort = normalizeLotSort(first(params.sort));
+  const withVoucher = first(params.voucher) === "1";
 
   const [{ settings }, lotsPage, players, stock] = await Promise.all([
     getAppSettings(),
     // Lista magra paginada: itens/fotos/descrição ficam no detalhe
     // (getLotDetailAction); qtyByLot cobre só as linhas da página.
-    range.error ? Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }) : listLotsPage({ q, status: status as LotStatus | "all", page, notes: true, startUtc: range.startUtc, endUtc: range.endUtc, shippingDate, sort }),
+    range.error ? Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }) : listLotsPage({ q, status: status as LotStatus | "all", page, notes: true, startUtc: range.startUtc, endUtc: range.endUtc, shippingDate, sort, withVoucher }),
     listPlayers(),
     listStock(),
   ]);
@@ -46,7 +47,8 @@ export default async function LotesPage({
 
   return (
     <LotsView
-      key={`${q}/${status}/${range.from}/${range.to}/${range.error}/${shippingDate}/${sort}`}
+      key={`${q}/${status}/${range.from}/${range.to}/${range.error}/${shippingDate}/${sort}/${withVoucher}`}
+      withVoucher={withVoucher}
       lots={lotsPage.rows}
       total={lotsPage.total}
       page={lotsPage.page}

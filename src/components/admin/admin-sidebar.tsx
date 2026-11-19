@@ -51,6 +51,7 @@ const auctionGroups = [
     items: [
       { title: "Clientes", url: "/admin/clientes", icon: Users },
       { title: "Cobranças", url: "/admin/cobrancas", icon: Coins },
+      { title: "Vouchers do leilão", url: "/admin/vouchers-leilao", icon: Ticket },
     ],
   },
   {
@@ -71,7 +72,8 @@ const storeGroups = [{
     { title: "Visão geral", url: "/admin/fidelidade", icon: LayoutDashboard, exact: true },
     { title: "Produtos", url: "/admin/fidelidade/recompensas", icon: Gift },
     { title: "Banners", url: "/admin/fidelidade/banners", icon: Gift },
-      { title: "Vouchers", url: "/admin/fidelidade/vouchers", icon: Gift },
+      { title: "Vouchers da loja", url: "/admin/fidelidade/vouchers", icon: Gift },
+    { title: "Ranking geral", url: "/admin/fidelidade/ranking", icon: Award },
     { title: "Pedidos", url: "/admin/fidelidade/resgates", icon: ShoppingCart },
     { title: "Caracoins", url: "/admin/fidelidade/extrato", icon: History },
     { title: "Configurações", url: "/admin/fidelidade/configuracao", icon: Award },

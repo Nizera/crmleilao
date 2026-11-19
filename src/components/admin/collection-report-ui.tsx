@@ -1,0 +1,17 @@
+import Link from "next/link";
+import {Ticket} from "lucide-react";
+import {formatBRL} from "@/lib/lots";
+import {adminListHref} from "@/lib/admin-list-filters";
+import type {AuctionVoucherSummary} from "@/lib/admin-collection-reports";
+import {FinancialValue} from "@/components/admin/financial-privacy";
+export const reportNumber=(value:number)=>new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2}).format(Number(value));
+export const reportDate=(value:string)=>new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(new Date(value));
+export function CollectionReportError({href}:{href:string}){return <div role="alert" className="rounded-xl border p-5 text-sm">Não foi possível carregar este controle. <Link href={href} className="font-semibold underline">Tentar novamente</Link></div>;}
+export function ReportPagination({path,page,total,filters}:{path:string;page:number;total:number;filters:Record<string,string>}){
+ const pages=Math.max(1,Math.ceil(total/25));
+ return <nav aria-label="Paginação do relatório" className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>{reportNumber(total)} registro(s) · Página {page} de {pages}</span><div className="flex gap-3">{page>1&&<Link className="rounded-lg border px-3 py-2" href={adminListHref(path,{...filters,p:page-1})}>Anterior</Link>}{page<pages&&<Link className="rounded-lg border px-3 py-2" href={adminListHref(path,{...filters,p:page+1})}>Próxima</Link>}</div></nav>;
+}
+export function VoucherSummary({data,compact=false}:{data:AuctionVoucherSummary;compact?:boolean}){
+ const cards=[{label:"Saldo disponível",value:formatBRL(data.available),status:"available"},{label:"Em lotes pendentes",value:formatBRL(data.reserved),status:"reserved"},{label:"Em lotes quitados",value:formatBRL(data.used),status:"used"},{label:"Clientes com saldo",value:reportNumber(data.clients),status:"available"}];
+ return <section aria-label="Vouchers do leilão" className="grid gap-4 rounded-xl border border-yellow-500/40 bg-yellow-50/40 p-4 dark:bg-yellow-950/10"><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="flex items-center gap-2 font-semibold"><Ticket className="size-5 text-ouro-ink"/>Vouchers do leilão</h2><p className="mt-1 text-xs text-muted-foreground">Saldo geral, independente do período do dashboard. Vouchers da loja ficam em outro controle.</p></div><Link href="/admin/vouchers-leilao" className="text-sm font-semibold underline">Ver vouchers e histórico →</Link></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{cards.map(c=><Link key={c.label} href={adminListHref("/admin/vouchers-leilao",{status:c.status})} className="rounded-lg border bg-background p-3"><p className="text-xs text-muted-foreground">{c.label}</p><p className="mt-1 text-xl font-bold tabular-nums"><FinancialValue>{c.value}</FinancialValue></p></Link>)}</div>{!compact&&<p className="text-xs text-muted-foreground"><FinancialValue>Créditos emitidos: {formatBRL(data.issued)} · Saldo bloqueado em revisão: {formatBRL(data.review)} · {reportNumber(data.vouchers)} voucher(s).</FinancialValue> Os valores aplicados não são receita em dinheiro.</p>}{compact&&Number(data.review)>0&&<Link href="/admin/vouchers-leilao?status=review" className="text-sm font-semibold text-amber-700 dark:text-amber-300">Há saldo em revisão: <FinancialValue>{formatBRL(data.review)}</FinancialValue></Link>}</section>;
+}

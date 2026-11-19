@@ -237,6 +237,7 @@ export type LotPage = {
  * A home e o histórico continuam em `listLots`.
  */
 export async function listLotsPage(params: {
+  withVoucher?: boolean;
   q?: string;
   status?: LotStatus | "all";
   page?: number;
@@ -252,6 +253,7 @@ export async function listLotsPage(params: {
   const page = Math.max(1, params.page ?? 1);
 
   let query = supabase.from("lots").select(lotColumns(), { count: "exact" });
+    if (params.withVoucher) query = query.gt("voucher_amount", 0);
   if (params.startUtc) query = query.gte("created_at", params.startUtc);
   if (params.endUtc) query = query.lt("created_at", params.endUtc);
   if (params.shippingDate) query = query.eq("shipping_date", params.shippingDate);

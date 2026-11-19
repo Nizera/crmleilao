@@ -1,4 +1,6 @@
 import { FinancialPrivacy, FinancialValue } from "@/components/admin/financial-privacy";
+import {Suspense} from "react";
+import {AuctionVouchersCard} from "@/components/admin/dashboard/auction-vouchers-card";
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -191,6 +193,7 @@ export default async function DashboardPage({
       <p className="-mt-3 text-xs text-muted-foreground">Período selecionado: {period.label}. Fechamento e frete usam a data e hora do pagamento. Envios usam a data prevista de envio nos dias abrangidos pelo filtro. Os demais indicadores e listas consideram os lotes cadastrados nesse intervalo. Somente faturamento do mês e acumulado são gerais, sem o corte do filtro.</p>
 
       {/* KPIs financeiros */}
+      <Suspense fallback={<div className="h-36 animate-pulse rounded-xl border bg-muted/30" aria-label="Carregando vouchers do leilão"/>}><AuctionVouchersCard/></Suspense>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Faturamento do mês"
