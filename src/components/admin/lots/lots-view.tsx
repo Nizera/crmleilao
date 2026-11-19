@@ -422,7 +422,7 @@ export function LotsView({
         </div>
       </div>
       <div className="min-w-0 rounded-md border">
-        <Table className="min-w-[940px] table-fixed">
+        <Table className="min-w-[1100px] table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="w-9"><span className="sr-only">Selecionar lote</span></TableHead>
@@ -433,7 +433,7 @@ export function LotsView({
               <TableHead className="hidden w-20 text-right text-xs md:table-cell">
                 Figurinhas
               </TableHead>
-              <TableHead className="w-[88px] text-right">Arremate</TableHead>
+              <TableHead className="w-[160px] text-right">Arremate</TableHead>
               <TableHead className="w-[152px]">Status</TableHead>
               <TableHead className="hidden w-24 md:table-cell">Envio</TableHead>
               <TableHead className="w-12" />
@@ -469,7 +469,7 @@ export function LotsView({
                   {formatQty(qtyByLot.get(lot.id))}
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
-                  {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} />}
+                  {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} stacked />}
                 </TableCell>
                 <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
                   <LotStatusBadge status={lot.status} size="sm" />
