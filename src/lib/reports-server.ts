@@ -169,25 +169,17 @@ export async function getSeparationReport(
   // não podem retirar seu conteúdo da separação nem do histórico impresso.
   const releasedLotIds = new Set<string>();
   const dispatchedLotIds = new Set<string>();
-  const releasedPrizeIds = new Set<string>();
   for (let from = 0; from < rows.length; from += 200) {
     const ids = rows.slice(from, from + 200).map(row => row.id);
-    const [links, prizes] = await Promise.all([
-      admin.from("shipment_lots")
+    const links = await admin.from("shipment_lots")
         .select("lot_id,shipment:shipments!inner(batch_date,status)")
         .in("lot_id", ids).eq("shipment.batch_date", shippingDate)
-        .in("shipment.status", ["released", "posted", "delivered"]),
-      admin.from("external_prize_freight_releases").select("lot_id,customer_id").in("lot_id", ids),
-    ]);
-    if (links.error || prizes.error) throw new Error("Não foi possível conferir os pacotes e as liberações de frete dos prêmios.");
+        .in("shipment.status", ["released", "posted", "delivered"]);
+    if (links.error) throw new Error("Não foi possível conferir os pacotes da separação.");
     for (const link of links.data ?? []) {
       releasedLotIds.add(link.lot_id);
       const shipment = Array.isArray(link.shipment) ? link.shipment[0] : link.shipment;
       if (shipment && ["posted","delivered"].includes(shipment.status)) dispatchedLotIds.add(link.lot_id);
-    }
-    for (const prize of prizes.data ?? []) {
-      const row = rows.slice(from, from + 200).find(lot => lot.id === prize.lot_id);
-      if (row && row.customers?.id === prize.customer_id && Number(row.arremate_value) === 0) releasedPrizeIds.add(prize.lot_id);
     }
   }
 
@@ -223,7 +215,7 @@ export async function getSeparationReport(
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
     if (releasedLotIds.has(row.id) || row.moved_at || ["shipped","delivered"].includes(row.status)) return true;
     return !paymentBlockedCustomers.has(row.customers.id)
-      && (!freightBlockedCustomers.has(row.customers.id) || releasedPrizeIds.has(row.id));
+      && (!freightBlockedCustomers.has(row.customers.id) || Number(row.arremate_value) === 0);
   });
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();

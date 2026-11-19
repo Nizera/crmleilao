@@ -98,7 +98,7 @@ test('envio ainda sem etiqueta considera somente pendências até a data selecio
   assert.equal(report.customers[0].lots[0].id,'paid');
 });
 
-test('liberar frete inclui só os prêmios zerados autorizados, sem exigir Pix ou paid_at',async()=>{
+test('zerados entram automaticamente sem liberação manual; lote com valor mantém bloqueio de frete',async()=>{
   const prize={...lot('prize','a'),arremate_value:0,paid_at:null};
   const ordinary=lot('ordinary','a');
   const noRelease={...lot('no-release','b'),arremate_value:0};
@@ -106,10 +106,8 @@ test('liberar frete inclui só os prêmios zerados autorizados, sem exigir Pix o
   const report=await reportLoader({lots:[prize,ordinary,noRelease,wrongCustomer],
     releases:[{lot_id:'prize',customer_id:'a'},{lot_id:'ordinary',customer_id:'a'},{lot_id:'wrong-customer',customer_id:'a'}],
     freight:['a','b','c'].map(customer_id=>({customer_id,status:'none'}))}).load();
-  assert.equal(report.customers.length,1);
-  assert.equal(report.customers[0].lots.length,1);
-  assert.equal(report.customers[0].lots[0].id,'prize');
-  assert.equal(report.totals.excludedCustomers,2);
+  assert.equal(report.customers.length,3);
+  assert.deepEqual(Array.from(report.customers.flatMap(c=>c.lots.map(l=>l.id))).sort(),['no-release','prize','wrong-customer']);
 });
 
 test('liberação de outro pacote ou cancelamento não contorna a conferência dos lotes selecionados',async()=>{
@@ -127,8 +125,10 @@ test('cobrança aberta vinculada ao lote selecionado continua bloqueando pacote 
   assert.equal(report.totals.excludedCustomers,1);
 });
 
-test('falha ao consultar liberações de prêmios interrompe relatório em vez de esconder itens',async()=>{
-  await assert.rejects(reportLoader({lots:[lot('paid','a')],releaseError:true}).load(),/liberações de frete/);
+test('relatório de zerados não depende mais da consulta de liberações manuais',async()=>{
+  const loader=reportLoader({lots:[{...lot('zero','a'),arremate_value:0}],releaseError:true});
+  assert.equal((await loader.load()).customers[0].lots[0].id,'zero');
+  assert.ok(!loader.calls.some(c=>c.table==='external_prize_freight_releases'));
 });
 
 

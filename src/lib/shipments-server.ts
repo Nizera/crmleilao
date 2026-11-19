@@ -360,12 +360,6 @@ export async function listShipmentQueue(params: {
   }
 
   const lotIds = rows.map((row) => row.id);
-  const releasedPrizeLots=new Set<string>();
-  for(const piece of chunk(lotIds,200)){
-    const {data,error}=await admin.from('external_prize_freight_releases').select('lot_id').in('lot_id',piece);
-    if(error)throw new Error('Não foi possível conferir liberações de frete. Aplique a migration 0050.');
-    for(const release of data??[])releasedPrizeLots.add(release.lot_id);
-  }
   const links: { lot_id: string; shipment_id: string }[] = [];
   for (const lotChunk of chunk(lotIds, 200)) {
     const { data, error: linksError } = await admin
@@ -474,7 +468,7 @@ export async function listShipmentQueue(params: {
       hasActiveCharge: customersWithOpenCharges.has(customerId),
       storeOrderCount:storeCustomers.filter(o=>o.customer_id===customerId).length,
       raffleAwardCount:prizeCustomers.filter(o=>o.customer_id===customerId).length,
-      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&(entry.lots.length>0||prizeCustomers.some(p=>p.customer_id===customerId))&&entry.lots.every(l=>l.arremate_value===0&&releasedPrizeLots.has(l.id)),
+      companyFreight:!storeCustomers.some(o=>o.customer_id===customerId)&&(entry.lots.length>0||prizeCustomers.some(p=>p.customer_id===customerId))&&entry.lots.every(l=>l.arremate_value===0),
     });
   }
 
