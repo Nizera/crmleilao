@@ -468,7 +468,7 @@ export function LotsView({
                 <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
                   {formatQty(qtyByLot.get(lot.id))}
                 </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
+                <TableCell className="overflow-hidden whitespace-normal text-right font-medium tabular-nums">
                   {<LotPrice value={lot.arremate_value} discount={lot.discount_amount} voucher={lot.voucher_amount} stacked />}
                 </TableCell>
                 <TableCell className="whitespace-normal [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:text-center">
