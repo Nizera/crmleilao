@@ -1,6 +1,7 @@
 "use client";
 import { LotPrice } from "@/components/shared/lot-price";
 
+import { paymentReadWithTimeout } from "@/lib/payment-request";
 import { readSelfPaymentStates } from "@/app/actions/payment-status";
 
 import {AuctionPaymentNotice} from "@/components/client/auction-payment-notice";
@@ -95,7 +96,7 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       if(checking || document.visibilityState !== "visible")return;
       checking=true;
       try{
-        const result=await readSelfPaymentStates("auction",[activeId]);
+        const result=await paymentReadWithTimeout(readSelfPaymentStates("auction",[activeId]));
         if(!disposed && result.ok){
           const current=result.data[0];
           if(!current || current.status!==active?.status || (current.hasQr&&Boolean(active?.pix_issue_since)) || current.expiresAt!==active?.expires_at)router.refresh();
@@ -103,9 +104,13 @@ export function ClientChargesCard({ lots, charges, freight, showFreightStatus = 
       }catch{ /* Mantém o Pix e repete a leitura; o webhook segue ativo. */ }
       finally{checking=false;}
     };
+    void check();
     const timer=setInterval(()=>void check(),30000);
     document.addEventListener("visibilitychange",check);
-    return()=>{disposed=true;clearInterval(timer);document.removeEventListener("visibilitychange",check);};
+    window.addEventListener("pageshow",check);
+    window.addEventListener("focus",check);
+    window.addEventListener("online",check);
+    return()=>{disposed=true;clearInterval(timer);document.removeEventListener("visibilitychange",check);window.removeEventListener("pageshow",check);window.removeEventListener("focus",check);window.removeEventListener("online",check);};
   },[activeId,active?.status,active?.pix_issue_since,active?.expires_at,router]);
 
   const activeChargeIds = useMemo(

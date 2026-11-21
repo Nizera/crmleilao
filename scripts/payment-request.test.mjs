@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const api={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/payment-request.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:api,setTimeout,clearTimeout,Error});
+test('successful read is preserved',async()=>assert.equal(await api.paymentReadWithTimeout(Promise.resolve('paid'),50),'paid'));
+test('failed read is preserved',async()=>{const error=new Error('offline');await assert.rejects(api.paymentReadWithTimeout(Promise.reject(error),50),e=>e===error);});
+test('suspended read stops waiting and a later read succeeds',async()=>{await assert.rejects(api.paymentReadWithTimeout(new Promise(()=>{}),5),/demorou/);assert.equal(await api.paymentReadWithTimeout(Promise.resolve('approved'),50),'approved');});
+test('late response cannot overwrite the timed out result',async()=>{let complete;const read=new Promise(resolve=>{complete=resolve;});let writes=0;await api.paymentReadWithTimeout(read,5).then(()=>writes++,()=>{});complete('late');await new Promise(resolve=>setTimeout(resolve,5));assert.equal(writes,0);});

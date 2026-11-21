@@ -7,7 +7,7 @@ export function collectionReportFilters(params:Record<string,string|string[]|und
   tier:LOYALTY_TIERS.some(t=>t.key===first("elo"))?first("elo"):"all"};
 }
 export type AuctionVoucherSummary={issued:number;available:number;reserved:number;used:number;review:number;clients:number;vouchers:number};
-export type AdminAuctionVoucher={id:string;customer_id:string;customer_name:string|null;phone_e164:string;title:string;campaign_title:string;campaign_id:string;amount:number;remaining:number;reserved:number;used:number;status:string;created_at:string};
+export type AdminAuctionVoucher={id:string;customer_id:string;customer_name:string|null;phone_e164:string;title:string;campaign_title:string;campaign_id:string|null;amount:number;remaining:number;reserved:number;used:number;status:string;created_at:string};
 export type AdminVoucherReport={summary:AuctionVoucherSummary;total:number;page:number;items:AdminAuctionVoucher[]};
 export type AdminVoucherDetail={voucher:AdminAuctionVoucher;page:number;total:number;movements_total:number;lots_total:number;
  movements:{id:string;lot_id:string;delta:number;created_at:string;lot_code:string|null}[];

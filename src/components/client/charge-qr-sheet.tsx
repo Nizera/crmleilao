@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { paymentReadWithTimeout } from "@/lib/payment-request";
 import { getSelfChargeQrAction } from "@/app/actions/charges";
 import { Button } from "@/components/ui/button";
 import { DateBR } from "@/components/ui/date-br";
@@ -47,12 +48,14 @@ type QrState = {
  */
 export function useChargeQr() {
   const [state, setState] = useState<QrState | null>(null);
+  const requestVersion = useRef(0);
+  useEffect(() => () => { requestVersion.current++; }, []);
   const waitingId=state?.data&&!state.loading&&!state.data.needs_attention&&!state.data.qr_code&&!state.data.ticket_url?state.id:null;
   useEffect(()=>{
     if(!waitingId)return;let disposed=false,checking=false,attempts=0;
     const timer=setInterval(async()=>{
       if(document.visibilityState!=="visible"||checking||attempts>=8)return;checking=true;attempts++;
-      try{const result=await getSelfChargeQrAction(waitingId);if(!disposed)setState(previous=>previous?.id!==waitingId?previous:{...previous,loading:false,data:result.ok?result.data:previous.data,error:result.ok?null:result.error});}
+      try{const result=await paymentReadWithTimeout(getSelfChargeQrAction(waitingId));if(!disposed)setState(previous=>previous?.id!==waitingId?previous:{...previous,loading:false,data:result.ok?result.data:previous.data,error:result.ok?null:result.error});}
       catch{ /* Mantém o mesmo Pix, disponível para tentar novamente. */ }
       finally{checking=false;if(attempts>=8)clearInterval(timer);}
     },3000);
@@ -61,8 +64,10 @@ export function useChargeQr() {
 
 
   const open = (chargeId: string) => {
+    const version = ++requestVersion.current;
     setState({ id: chargeId, data: null, error: null, loading: true });
-    void getSelfChargeQrAction(chargeId).then((result) => {
+    void paymentReadWithTimeout(getSelfChargeQrAction(chargeId)).then((result) => {
+      if (version !== requestVersion.current) return;
       setState((prev) => {
         if (!prev || prev.id !== chargeId) return prev;
         return {
@@ -72,10 +77,13 @@ export function useChargeQr() {
           error: result.ok ? null : result.error,
         };
       });
-    }).catch(()=>setState(previous=>previous?.id===chargeId?{...previous,loading:false,error:"A conexão falhou. Tente carregar este mesmo Pix novamente."}:previous));
+    }).catch(()=>{
+      if (version !== requestVersion.current) return;
+      setState(previous=>previous?.id===chargeId?{...previous,loading:false,error:"A conexão falhou ou demorou. Tente carregar este mesmo Pix novamente."}:previous);
+    });
   };
 
-  const close = () => setState(null);
+  const close = () => { requestVersion.current++; setState(null); };
 
   const sheet = state ? (
     <Sheet open onOpenChange={(openNow) => (!openNow ? close() : undefined)}>
