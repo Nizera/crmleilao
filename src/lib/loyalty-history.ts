@@ -1,5 +1,5 @@
 import type { StoreOrder,StoreProduct } from './store';
-export const coinKinds={earned:'Caracoins por lote pago',spent:'Compra ou resgate',reversal:'Estorno de lote',adjustment:'Ajuste ou devolução'} as const;
+export const coinKinds={earned:'Caracoins por compras pagas',spent:'Compra ou resgate',reversal:'Estorno de compra',adjustment:'Ajuste ou devolução'} as const;
 export type HistoryFilters={q:string;kind:string;from:string;to:string;page:number;size:number};
 export type CoinHistory={total:number;credits:number;debits:number;page:number;pages:number;size:number;items:{id:string;points:number;kind:keyof typeof coinKinds;note:string|null;created_at:string;lot_value:number|null;earn_rate:number|null;customer_name:string|null;customer_phone:string|null}[]};
 export type CustomerOrder=StoreOrder & {source:'store'|'legacy';legacy_status:string|null};
