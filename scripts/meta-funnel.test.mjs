@@ -22,6 +22,7 @@ function marketing(choice,path='/'){
 function find(node,text){if(!node)return null;if(Array.isArray(node)){for(const n of node){const result=find(n,text);if(result)return result;}return null;}if(node.props?.children===text)return node;return find(node.props?.children,text);}
 test('landing accept/refuse synchronize server consent; accepted visits preserve attribution',()=>{
  const accepted=marketing(true);accepted.effects[0]();assert.equal(accepted.sync[0][0],true);
+ const automatic=marketing(null);automatic.effects[0]();assert.equal(automatic.sync.length,0);
  for(const [label,value] of [['Aceitar publicidade',true],['Recusar publicidade',false]]){const instance=marketing(null,'/loja');const button=find(instance.tree,label);assert.ok(button);button.props.onClick();assert.deepEqual(instance.sync,[[value,true]]);}
 });
 test('landing nao abre aviso automaticamente e loja preserva escolha explicita',()=>{
@@ -38,11 +39,15 @@ test('lead survives reload deduplication and never replaces store events or gene
  const rules=url(compile('src/lib/meta-commerce.ts',ts.ModuleKind.ESNext));
  const source=compile('src/lib/meta-browser.ts',ts.ModuleKind.ESNext).replace(/from ['"]@\/lib\/meta-commerce['"]/, 'from '+JSON.stringify(rules));
  try{
-  const first=await import(url(source+'\n//first-visit'));first.writeMarketingChoice(true);first.enableStorePixel('1074294225103386',true);window.fbq.callMethod=(...x)=>calls.push(x);
+  const first=await import(url(source+'\n//first-visit'));assert.equal(first.readMarketingChoice(),null);first.enableStorePixel('1074294225103386',true);assert.ok(window.fbq);window.fbq.callMethod=(...x)=>calls.push(x);
+  first.trackStoreEvent('PageView',{},undefined,true);first.trackStoreEvent('PageView',{},undefined,true);assert.equal(calls.filter(x=>x[2]==='PageView').length,1);
   first.trackLandingLead('hero');first.trackLandingLead('footer');assert.equal(calls.filter(x=>x[2]==='Lead').length,1);
   const reload=await import(url(source+'\n//reload'));reload.enableStorePixel('1074294225103386',true);reload.trackLandingLead('hero');assert.equal(calls.filter(x=>x[2]==='Lead').length,1);
-  location.pathname='/loja';reload.enableStorePixel('1074294225103386');reload.trackStoreEvent('PageView');reload.trackStoreProduct('ViewContent',{id:'product',cash_price:45});reload.trackStoreProduct('AddToCart',{id:'product',cash_price:45});reload.trackStoreEvent('InitiateCheckout',{currency:'BRL',value:45},'checkout');
+  location.pathname='/loja';assert.equal(reload.trackStoreEvent('PageView'),false);assert.equal(reload.readMarketingChoice(),null);calls.length=0;
+  reload.writeMarketingChoice(true);reload.enableStorePixel('1074294225103386');reload.trackStoreEvent('PageView');reload.trackStoreProduct('ViewContent',{id:'product',cash_price:45});reload.trackStoreProduct('AddToCart',{id:'product',cash_price:45});reload.trackStoreEvent('InitiateCheckout',{currency:'BRL',value:45},'checkout');
   for(const name of ['PageView','ViewContent','AddToCart','InitiateCheckout'])assert.equal(calls.filter(x=>x[2]===name).length,1);
   assert.ok(!calls.some(x=>x[2]==='Purchase'));assert.ok(calls.filter(x=>x[0]==='trackSingle').every(x=>x[1]==='1074294225103386'));
+  reload.writeMarketingChoice(false);location.pathname='/';assert.equal(reload.trackStoreEvent('PageView',{},undefined,true),false);
+  const refused=await import(url(source+'\n//refused'));refused.enableStorePixel('1074294225103386',true);calls.length=0;refused.trackLandingLead('hero');assert.equal(calls.length,0);
  }finally{for(const [k,v] of Object.entries(saved)){if(v===undefined)delete globalThis[k];else globalThis[k]=v;}}
 });

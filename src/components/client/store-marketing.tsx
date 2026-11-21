@@ -10,13 +10,14 @@ export function StoreMarketing({pixelId}:{pixelId:string|null}) {
  const [editing,setEditing]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState('');
  useEffect(()=>{
   if(path!=='/'&&!isStoreMarketingPath(path)){leaveStoreMarketing();return;}
-  if(!pixelId||choice!==true){window.fbq?.('consent','revoke');return;}
+  if(!pixelId||choice===undefined||choice===false||(path!=='/'&&choice!==true)){window.fbq?.('consent','revoke');return;}
   enableStorePixel(pixelId,path==='/');trackStoreEvent('PageView',{},undefined,path==='/');
-  void syncMarketingChoice(true).catch(()=>{});
+  // Automatic landing measurement must not manufacture store consent.
+  if(choice===true)void syncMarketingChoice(true).catch(()=>{});
   return()=>{window.fbq?.('consent','revoke');};
  },[path,pixelId,choice]);
  useEffect(()=>{
-  if(path!=='/'||!pixelId||choice!==true)return;
+  if(path!=='/'||!pixelId||choice===undefined||choice===false)return;
   const click=(event:MouseEvent)=>{
    if(event.defaultPrevented||event.button!==0||!(event.target instanceof Element))return;
    const link=event.target.closest<HTMLAnchorElement>('a[href]');

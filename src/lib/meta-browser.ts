@@ -15,11 +15,13 @@ export function readMarketingChoice():boolean|null {
  try{const v=JSON.parse(memoryChoice??localStorage.getItem(CONSENT_KEY)??'null');return v?.version===CONSENT_VERSION&&Date.now()-v.at<CONSENT_DAYS*86400000&&typeof v.consent==='boolean'?v.consent:null;}catch{return null;}
 }
 let initializedPixel='';
+// Landing measurement is independent of store consent; saved refusals still apply.
+function canMeasure(landing:boolean){const choice=readMarketingChoice();return landing&&location.pathname==='/'?choice!==false:choice===true;}
 let lastPageView:string|null=null;
 const sentEvents=new Set<string>();
 export function leaveStoreMarketing(){lastPageView=null;window.fbq?.('consent','revoke');}
 export function enableStorePixel(pixel:string,landing=false) {
- if(!/^\d{5,30}$/.test(pixel)||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||readMarketingChoice()!==true)return;
+ if(!/^\d{5,30}$/.test(pixel)||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!canMeasure(landing))return;
  if(!window.fbq){
   const q:MetaQueue=(...args)=>{if(q.callMethod)q.callMethod(...args);else(q.queue??=[]).push(args);};
   q.push=q;q.loaded=true;q.version='2.0';q.queue=[];q.disablePushState=true;window.fbq=q;window._fbq=q;
@@ -30,7 +32,7 @@ export function enableStorePixel(pixel:string,landing=false) {
  window.fbq('consent','grant');
 }
 export function trackStoreEvent(name:'PageView'|'ViewContent'|'AddToCart'|'InitiateCheckout'|'Search'|'Lead',data:Record<string,unknown>={},eventId?:string,landing=false) {
- if(readMarketingChoice()!==true||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!initializedPixel||!window.fbq)return false;
+ if(!canMeasure(landing)||!(isStoreMarketingPath(location.pathname)||(landing&&location.pathname==='/'))||!initializedPixel||!window.fbq)return false;
  const page=initializedPixel+':'+location.pathname;
  if(name==='PageView'&&lastPageView===page)return false;
  const id=eventId??crypto.randomUUID(),key=initializedPixel+':'+name+':'+id;
@@ -60,7 +62,7 @@ let landingVisitId='';
 let landingLeadSent=false;
 /** One outbound group click per tab session; never a confirmed WhatsApp membership. */
 export function trackLandingLead(placement:string) {
- if(location.pathname!=='/'||readMarketingChoice()!==true||!initializedPixel||!window.fbq||landingLeadSent)return;
+ if(location.pathname!=='/'||!canMeasure(true)||!initializedPixel||!window.fbq||landingLeadSent)return;
  let id=landingVisitId||(landingVisitId=crypto.randomUUID());
  const sentKey='ocdl-landing-lead-sent:'+initializedPixel;
  try{
