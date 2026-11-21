@@ -19,11 +19,13 @@ import {
   Images,
   RotateCcw,
   Download,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { inviteLinkForCustomer } from "@/app/actions/invites";
-import { getLotDetailAction, logWaMessage, setLotStatus, recoverExpiredLotAction, recoverCancelledLotsAction } from "@/app/actions/lots";
+import { getLotDetailAction, logWaMessage, setLotStatus, recoverExpiredLotAction, recoverCancelledLotsAction, deleteLotAction } from "@/app/actions/lots";
+import { lotDeletionBlock } from "@/lib/lot-deletion";
 import { LotStatusBadge } from "@/components/admin/lots/lot-status-badge";
 import { LotFormSheet } from "@/components/admin/lots/lot-form";
 import { ImageLightbox } from "@/components/client/image-lightbox";
@@ -161,6 +163,21 @@ export function LotsView({
   };
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  const removeLot = (lot: Lot) => {
+    const blocked = lotDeletionBlock(lot);
+    if (blocked) { toast.error(blocked); return; }
+    if (!window.confirm(`Excluir definitivamente o lote ${lot.code}?\n${lot.title}\nCliente: ${lot.customer?.name || "Cliente cadastrado"}\n\nO lote sairá do painel e seus itens serão devolvidos ao estoque. Esta ação não pode ser desfeita pela tela.`)) return;
+    startTransition(async () => {
+      const result = await deleteLotAction(lot.id, lot.updated_at);
+      if (!result.ok) { toast.error(result.error); return; }
+      setReportSelection(previous => { const next = { ...previous }; delete next[lot.id]; return next; });
+      if (editing?.id === lot.id) setEditing(null);
+      toast.success(`Lote ${result.data.code} excluído.`);
+      if (lots.length === 1 && page > 1) router.replace(buildHref(q, status, page - 1));
+      router.refresh();
+    });
+  };
 
   const buildHref = (nextQuery: string, nextStatus: string, nextPage: number, range = { from: dateFrom, to: dateTo }, nextSort = sort) => {
     const params = new URLSearchParams();
@@ -536,6 +553,11 @@ export function LotsView({
                           {LOT_STATUS_LABELS[item]}
                         </DropdownMenuItem>
                       ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" disabled={pending || Boolean(lotDeletionBlock(lot))} title={lotDeletionBlock(lot) ?? undefined} onSelect={() => removeLot(lot)}>
+                        <Trash2 />
+                        Excluir lote
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

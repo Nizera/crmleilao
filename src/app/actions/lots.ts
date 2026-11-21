@@ -29,6 +29,24 @@ import { after } from "next/server";
 
 const failure = (error: string): ActionResult<never> => ({ ok: false, error });
 
+export async function deleteLotAction(id: string, expected: string): Promise<ActionResult<{ code: string }>> {
+  try {
+    const { profile } = await requireAdmin();
+    if (profile.role === "viewer") return failure("Seu perfil é somente leitura.");
+    if (!z.uuid().safeParse(id).success || !z.iso.datetime({ offset: true }).safeParse(expected).success) return failure("Atualize o lote antes de excluir.");
+    const { data, error } = await (await createClient()).rpc("delete_unpaid_lot", { p_lot: id, p_expected: expected });
+    if (error) return failure(error.code === "P0001" ? error.message : error.code === "23503" ? "O lote possui histórico vinculado e não pode ser excluído." : "A exclusão precisa da atualização do banco. Nenhum lote foi removido; confira com o administrador.");
+    updateTag("dashboard");
+    for (const path of ["/admin/lotes", "/admin/estoque", "/admin/clientes", "/admin/relatorios", "/admin/cobrancas"]) revalidatePath(path);
+    revalidatePath("/painel", "layout");
+    after(async () => { await notifyLandingChanged().catch(() => {}); });
+    return { ok: true, data: { code: String(data) } };
+  } catch (error) {
+    rethrowIfRedirect(error);
+    return failure("Não foi possível excluir. Atualize a página e tente novamente.");
+  }
+}
+
 async function resolveCustomerId(input: {
   customer_id?: string;
   phone?: string;
