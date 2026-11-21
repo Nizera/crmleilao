@@ -17,6 +17,14 @@ export async function RaffleBuyerBonusPanel({ campaign, status }: { campaign: st
   return <RaffleBuyerBonusAdmin key={JSON.stringify([bonus.data, row])} campaign={campaign} status={status} owner={profile.role === "owner"} readonly={profile.role === "viewer"} bonus={bonus.data as BuyerBonus | null} result={row ? { ...row, winner: customer?.name ?? "Cliente cadastrado" } : null} buyers={buyers.data ?? []} />;
 }
 
+export async function RaffleBuyerBonusSummary({ campaign }: { campaign: string }) {
+  await requireAdmin();
+  const { data, error } = await (await createClient()).from("raffle_buyer_bonus")
+    .select("title,amount").eq("campaign_id", campaign).maybeSingle();
+  if (error) return <span>Não foi possível consultar o prêmio do maior comprador.</span>;
+  return <span><strong>Maior comprador:</strong> {data ? <>{data.title}{data.amount ? ` · ${raffleMoney(Number(data.amount))}` : ""}</> : "Prêmio não configurado"}</span>;
+}
+
 export async function RaffleBuyerBonusNotice({ campaign }: { campaign: string }) {
   const { data, error } = await (await createClient()).rpc("get_raffle_buyer_bonus", { p_campaign: campaign });
   if (error) return <p role="alert" className="rf-panel text-sm">Não foi possível conferir o bônus de maior comprador agora. Confira o regulamento antes de participar.</p>;
