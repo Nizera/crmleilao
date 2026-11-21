@@ -35,6 +35,7 @@ export type SeparationAddress = {
 };
 
 export type SeparationCustomer = {
+  hasPendingPayment?: boolean;
   logisticsPending?: { dispatched?: boolean; shippingDate?: string; id: string; code: string; title: string; quantity: number; reason: string; source_kind: string; shipping_declared_value: number; moved_at: string | null; shipmentCode?: string | null }[];
   storeOrders?: {dispatched?:boolean;shippingDate?:string;shipping_declared_value?:number|null;id:string;code:string;boxed_at:string|null;fulfillment_status:string;items:{name:string;quantity:number;delivery_kind:string}[]}[];
   customerId: string;
@@ -215,8 +216,9 @@ export async function getSeparationReport(
   const eligibleRows = rows.filter(row => {
     if (!row.customers || !["paid", "shipped", "delivered"].includes(row.status)) return false;
     if (releasedLotIds.has(row.id) || row.moved_at || ["shipped","delivered"].includes(row.status)) return true;
-    return !paymentBlockedCustomers.has(row.customers.id)
-      && (!freightBlockedCustomers.has(row.customers.id) || (Number(row.arremate_value) === 0 && !Number(row.voucher_amount)));
+    // Separar lotes pagos nao exige quitar os demais lotes do cliente.
+    // A conferencia de frete e os bloqueios de emissao da etiqueta continuam.
+    return !freightBlockedCustomers.has(row.customers.id) || (Number(row.arremate_value) === 0 && !Number(row.voucher_amount));
   });
   const itemIds = eligibleRows.map((row) => row.id);
   const itemsByLot = new Map<string, string[]>();
@@ -301,6 +303,8 @@ export async function getSeparationReport(
   }
   for(const order of physicalStore){if(blockedCustomers.has(order.customer_id)&&!order.boxed_at&&!order.dispatched)continue;const entry=byCustomer.get(order.customer_id);if(entry)entry.storeOrders=[...(entry.storeOrders??[]),order];}
 
+  for (const customer of byCustomer.values()) customer.hasPendingPayment = paymentBlockedCustomers.has(customer.customerId);
+
   // Alfabético: no papel lê-se cliente por cliente; sem nome vai para o fim.
   const customers = deduplicateCustomers([...byCustomer.values()]).sort((a, b) => {
     const left = a.name?.trim() || null;
@@ -353,6 +357,7 @@ async function getAllSeparationReport(): Promise<SeparationReport> {
     for (const customer of report.customers) {
       const previous = customers.get(customer.customerId);
       if (!previous) { customers.set(customer.customerId, customer); continue; }
+      previous.hasPendingPayment = previous.hasPendingPayment || customer.hasPendingPayment;
       previous.lots = [...new Map([...previous.lots,...customer.lots].map(item => [item.id,item])).values()];
       previous.logisticsPending = [...new Map([...(previous.logisticsPending??[]),...(customer.logisticsPending??[])].map(item=>[item.id,item])).values()];
       previous.storeOrders = [...new Map([...(previous.storeOrders??[]),...(customer.storeOrders??[])].map(item=>[item.id,item])).values()];

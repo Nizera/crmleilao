@@ -55,12 +55,15 @@ test('Migration ausente não derruba relatório vazio e retorna aviso também pa
   assert.equal(calls.filter(call => call.table === 'logistics_pending').length,1);
 });
 
-test('Sem migration, lotes pagos continuam no relatório e clientes com pendências financeiras ficam bloqueados', async () => {
+test('lotes pagos aparecem mesmo com outros pendentes; pendentes ficam fora e cliente recebe aviso', async () => {
   const { load } = reportLoader({ lots: [lot('paid','a'),lot('blocked','b'),lot('unpaid','b','pending_payment')], freight: [{ customer_id: 'a', status: 'paid' },{ customer_id: 'b', status: 'paid' }] });
   const report = await load();
-  assert.equal(report.customers.length,1);
-  assert.equal(report.customers[0].customerId,'a');
-  assert.equal(report.totals.excludedCustomers,1);
+  assert.equal(report.customers.length,2);
+  assert.equal(report.customers.find(c=>c.customerId==='a').hasPendingPayment,false);
+  const withPending=report.customers.find(c=>c.customerId==='b');
+  assert.equal(withPending.hasPendingPayment,true);
+  assert.deepEqual(Array.from(withPending.lots,l=>l.id),['blocked']);
+  assert.equal(report.totals.excludedCustomers,0);
   assert.equal(report.warnings.length,1);
 });
 
@@ -96,6 +99,7 @@ test('envio ainda sem etiqueta considera somente pendências até a data selecio
   const report=await reportLoader({lots:[paid,future],charges:[{id:'future-charge',customer_id:'a',status:'pending'}],freight:[{customer_id:'a',status:'paid'}]}).load();
   assert.equal(report.customers.length,1);
   assert.equal(report.customers[0].lots[0].id,'paid');
+  assert.equal(report.customers[0].hasPendingPayment,false);
 });
 
 test('zerados entram automaticamente sem liberação manual; lote com valor mantém bloqueio de frete',async()=>{
@@ -118,11 +122,13 @@ test('liberação de outro pacote ou cancelamento não contorna a conferência d
   assert.equal(report.customers[0].lots.map(l=>l.id).join(','),'released,posted,delivered');
 });
 
-test('cobrança aberta vinculada ao lote selecionado continua bloqueando pacote não liberado',async()=>{
+test('lote marcado pago permanece para separacao com cobranca aberta, sinalizando conferencia',async()=>{
   const report=await reportLoader({lots:[{...lot('paid','a'),charge_id:'charge'}],
     charges:[{id:'charge',customer_id:'a',status:'pending'}],freight:[{customer_id:'a',status:'paid'}]}).load();
-  assert.equal(report.customers.length,0);
-  assert.equal(report.totals.excludedCustomers,1);
+  assert.equal(report.customers.length,1);
+  assert.equal(report.customers[0].hasPendingPayment,true);
+  assert.deepEqual(Array.from(report.customers[0].lots,l=>l.id),['paid']);
+  assert.equal(report.totals.excludedCustomers,0);
 });
 
 test('relatório de zerados não depende mais da consulta de liberações manuais',async()=>{
@@ -256,4 +262,24 @@ test('pedido da loja mantém data estável pelo cadastro e preserva histórico d
  assert.equal(report.customers[0].storeOrders[0].id,'order');
  assert.equal(report.customers[0].storeOrders[0].dispatched,true);
  assert.equal((await load('2026-11-17')).customers.length,0);
+});
+
+test('frete devido ainda bloqueia arremate pago, mesmo liberando separacao parcial por pagamento',async()=>{
+ const report=await reportLoader({missing:false,lots:[lot('paid','a'),lot('unpaid','a','pending_payment')],freight:[{customer_id:'a',status:'due'}]}).load();
+ assert.equal(report.customers.length,0);assert.equal(report.totals.excludedCustomers,1);
+});
+test('aviso de pagamentos pendentes persiste em Todas as datas e nos filtros de movimentacao',async()=>{
+ const rows=[{...lot('old-paid','a'),shipping_date:'2026-10-27',moved_at:'2026-10-28T12:00:00Z'},lot('paid','a'),lot('unpaid','a','pending_payment')];
+ const {load}=reportLoader({missing:false,lots:rows,freight:[{customer_id:'a',status:'paid'}]});
+ const all=await load('all');assert.equal(all.customers[0].hasPendingPayment,true);
+ assert.deepEqual(Array.from(all.customers[0].lots,l=>l.id).sort(),['old-paid','paid']);
+ const helpers={};vm.runInNewContext(ts.transpileModule(readFileSync('src/lib/report-movement.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:helpers});
+ const filtered=helpers.filterReportMovement(all.customers,'2026-11-03','unmoved');
+ assert.equal(filtered[0].hasPendingPayment,true);assert.deepEqual(Array.from(filtered[0].lots,l=>l.id),['paid']);
+});
+test('arremate integralmente coberto por voucher continua dependendo do frete',async()=>{
+ const item={...lot('voucher','a'),arremate_value:0,voucher_amount:50};
+ const blocked=await reportLoader({missing:false,lots:[item],freight:[{customer_id:'a',status:'due'}]}).load();assert.equal(blocked.customers.length,0);
+ const ready=await reportLoader({missing:false,lots:[item,lot('pending','a','pending_payment')],freight:[{customer_id:'a',status:'paid'}]}).load();
+ assert.equal(ready.customers[0].lots[0].id,'voucher');assert.equal(ready.customers[0].hasPendingPayment,true);
 });

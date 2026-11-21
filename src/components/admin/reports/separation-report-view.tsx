@@ -277,9 +277,12 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
           </Select>
         </Field>
 
+        <p className="pb-2 text-sm text-muted-foreground">
+          Lotes pagos aparecem para separação mesmo quando o cliente tem outros pagamentos pendentes. Os lotes pendentes não aparecem nesta lista. Confira os pagamentos e o frete antes de emitir o envio.
+        </p>
         {report.totals.excludedCustomers > 0 && (
           <p className="pb-2 text-sm text-amber-700 dark:text-amber-300">
-            Arremates de {report.totals.excludedCustomers} cliente(s) ocultos por pagamento pendente. Reposições gratuitas continuam disponíveis para conferência.
+            {report.totals.excludedCustomers} cliente(s) sem itens elegíveis nesta data por pagamento ou frete pendente. Reposições gratuitas continuam disponíveis para conferência.
           </p>
         )}
         {visibleIds.size > 0 && <Button type="button" variant="outline" disabled={isPending} className="mb-1" onClick={() => { setSelectedIds([...visibleIds].slice(0,100)); if (visibleIds.size > 100) toast.info("Selecionados os primeiros 100 itens visíveis. Movimente este grupo antes dos demais."); }}>Selecionar itens visíveis</Button>}
@@ -346,6 +349,7 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   )}
                 </div>
 
+                {customer.hasPendingPayment && <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-50 p-3 text-xs font-medium text-amber-950 dark:bg-amber-950/20 dark:text-amber-200 print:bg-transparent print:text-black">Cliente com pagamentos pendentes para este envio. Os lotes pagos continuam visíveis para separação; os pendentes não estão nesta lista. Confira antes de enviar.</p>}
                 {customer.storeOrders.map(order => <div key={order.id} className="mb-3 rounded-md border border-ouro/40 p-3 break-inside-avoid">
                   <p className="text-sm font-semibold">Loja · {order.code} {"· " + movementLabel(order.boxed_at, order.dispatched)}</p>
                   {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(order.shippingDate)}</p>}
