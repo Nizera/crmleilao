@@ -280,9 +280,9 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
         <p className="pb-2 text-sm text-muted-foreground">
           Lotes pagos aparecem para separação mesmo quando o cliente tem outros pagamentos pendentes. Os lotes pendentes não aparecem nesta lista. Confira os pagamentos e o frete antes de emitir o envio.
         </p>
-        {report.totals.excludedCustomers > 0 && (
+        {selectedId === ALL && !search.trim() && report.totals.excludedCustomers > 0 && (
           <p className="pb-2 text-sm text-amber-700 dark:text-amber-300">
-            {report.totals.excludedCustomers} cliente(s) sem itens elegíveis nesta data por pagamento ou frete pendente. Reposições gratuitas continuam disponíveis para conferência.
+            Resumo geral da data: {report.totals.excludedCustomers} cliente(s) sem itens elegíveis por pagamento ou frete pendente. Reposições gratuitas continuam disponíveis para conferência.
           </p>
         )}
         {visibleIds.size > 0 && <Button type="button" variant="outline" disabled={isPending} className="mb-1" onClick={() => { setSelectedIds([...visibleIds].slice(0,100)); if (visibleIds.size > 100) toast.info("Selecionados os primeiros 100 itens visíveis. Movimente este grupo antes dos demais."); }}>Selecionar itens visíveis</Button>}
