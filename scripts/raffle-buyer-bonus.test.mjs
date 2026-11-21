@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
 import { loadCommerceDb, migration } from './fixtures/commerce-db.mjs';
@@ -18,6 +19,7 @@ test('maior comprador: encerramento atômico, desempate, entrega, histórico, re
   await db.query("insert into customers(id,name)values($1,'Ana Teste'),($2,'Bruno Teste')",[a,b]);
   await db.exec(await migration('0086_duplicate_raffle_campaign.sql'));
   await db.exec(await migration('0091_raffle_top_buyer.sql'));
+  await db.exec(readFileSync('supabase/releases/editable_published_buyer_bonus.sql','utf8'));
   await db.exec(await migration('0054_raffle_optional_result_link.sql'));
   const campaign=async(kind='physical')=>{
    const id=crypto.randomUUID();
@@ -35,8 +37,14 @@ test('maior comprador: encerramento atômico, desempate, entrega, histórico, re
   const anchor=await order(c,a,[2,3],'2026-11-04T10:00:00Z');
   await order(c,b,[4,5,6],'2026-11-03T10:00:00Z');
   await db.query("update raffle_campaigns set status='paused' where id=$1",[c]);
-  await assert.rejects(db.query("select set_raffle_buyer_bonus($1,'Outro prêmio','physical',null,1)",[c]),/primeira reserva/);
+  await db.query("select set_raffle_buyer_bonus($1,'Outro prêmio','physical',null,1)",[c]);
+  assert.equal(await scalar('select version from raffle_buyer_bonus where campaign_id=$1',[c]),2);
+  await assert.rejects(db.query("select set_raffle_buyer_bonus($1,'Versão antiga','voucher',50,1)",[c]),/Atualize/);
+  await db.query("update raffle_campaigns set status='open' where id=$1",[c]);
+  await db.query("select set_raffle_buyer_bonus($1,'Prêmio publicado editado','physical',null,2)",[c]);
+  assert.equal(await scalar('select count(*)::int from raffle_orders where campaign_id=$1',[c]),3);
   await close(c);
+  await assert.rejects(db.query("select set_raffle_buyer_bonus($1,'Não alterar conquistado','voucher',50,3)",[c]),/encerramento/);
   assert.equal(await scalar('select customer_id from raffle_buyer_results where campaign_id=$1',[c]),b,'last paid time, not first purchase, decides tie');
   assert.equal(await scalar("select count(*)::int from raffle_prizes where campaign_id=$1 and kind='buyer'",[c]),1);
   assert.equal(await scalar('select count(*)::int from raffle_awards where campaign_id=$1',[c]),1);
@@ -84,5 +92,6 @@ test('maior comprador: encerramento atômico, desempate, entrega, histórico, re
   await assert.rejects(db.query('select finalize_raffle_buyer_bonus($1)',[cash]),/permission denied/);
   await assert.rejects(db.query("select fulfill_raffle_buyer_bonus($1,'Não autorizado alterar prêmio')",[cash]),/Acesso negado/);
   await assert.rejects(db.query('select get_admin_raffle_buyer_ranking($1)',[cash]),/Acesso negado/);
+  await assert.rejects(db.query("select set_raffle_buyer_bonus($1,'Sem permissão','voucher',50,1)",[cash]),/Acesso negado/);
  } finally { await db.close(); }
 });

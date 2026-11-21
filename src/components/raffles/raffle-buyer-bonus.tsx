@@ -24,10 +24,10 @@ export function RaffleBuyerBonusAdmin({ campaign, status, owner, readonly, bonus
     if (!response.ok) { toast.error(response.error); return; }
     toast.success("Bônus atualizado."); router.refresh();
   });
-  const editable = !readonly && ["draft", "paused"].includes(status) && buyers.length === 0 && !result;
+  const editable = !readonly && ["draft", "paused", "open"].includes(status) && !result;
   return <section className="rf-panel grid gap-4">
     <div><h2 className="rf-panel-title">Prêmio do maior comprador</h2><p className="rf-caption mt-2">Maior quantidade de cotas pagas. Em empate, vence quem atingir o total primeiro com pagamentos confirmados. Empate exato exige conferência.</p></div>
-    {bonus ? <p className="rounded-xl border border-ouro/40 p-3 text-sm font-semibold">{bonus.title}{bonus.amount ? ` · ${raffleMoney(bonus.amount)}` : ""}</p> : <p className="rf-caption">Esta campanha ainda não tem bônus configurado. Configure antes da primeira reserva.</p>}
+    {bonus ? <p className="rounded-xl border border-ouro/40 p-3 text-sm font-semibold">{bonus.title}{bonus.amount ? ` · ${raffleMoney(bonus.amount)}` : ""}</p> : <p className="rf-caption">Esta campanha ainda não tem bônus configurado.</p>}
     {editable && <form className="grid gap-3 sm:grid-cols-2" onSubmit={event => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       run({ action: "save", campaign, title: String(form.get("title")), kind, amount: kind === "physical" ? null : Number(form.get("amount")), version: bonus?.version ?? 0 });
@@ -37,7 +37,7 @@ export function RaffleBuyerBonusAdmin({ campaign, status, owner, readonly, bonus
       {kind !== "physical" && <label className="grid gap-1 text-sm">Valor (R$)<Input name="amount" type="number" min="0.01" max="100000" step="0.01" defaultValue={bonus?.amount ?? ""} required disabled={pending} /></label>}
       <Button type="submit" disabled={pending}>Salvar bônus</Button>
     </form>}
-    {!editable && !result && bonus && status !== "closed" && <p className="rf-caption">O prêmio e a regra ficam preservados após a primeira reserva. A apuração ocorre automaticamente no encerramento.</p>}
+    {editable && <p className="rf-caption">O prêmio pode ser editado mesmo após a publicação e as primeiras reservas, até o encerramento. Alterações ficam no histórico e não modificam pagamentos. A apuração ocorre automaticamente no encerramento.</p>}
     {buyers.length > 0 && <div className="overflow-x-auto"><table className="w-full text-left text-sm"><caption className="mb-2 text-left font-semibold">Ranking de cotas pagas {status !== "closed" && "· Parcial"}</caption><thead><tr><th className="p-2">Cliente</th><th className="p-2">Cotas</th><th className="p-2">Total atingido em</th></tr></thead><tbody>{buyers.map((buyer, index) => <tr key={index} className="border-t"><td className="p-2">{index + 1}. {buyer.name}</td><td className="p-2">{buyer.quantity}</td><td className="p-2">{buyer.missing_time ? "Conferir pagamento sem data" : buyer.reached_at ? new Date(buyer.reached_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</td></tr>)}</tbody></table></div>}
     {result && <div className="grid gap-3 rounded-xl bg-muted p-4"><p className="font-semibold">Ganhador: {result.winner} · {result.quantity} cotas pagas</p><p className="text-sm">{result.status === "review" ? "Em revisão: pagamentos alterados após a apuração. Confira antes de entregar." : result.status === "fulfilled" ? "Entrega/pagamento confirmado" : result.delivery_kind === "physical" ? "Prêmio registrado no painel do cliente e no relatório de separação." : "Aguardando pagamento do Pix ou entrega do voucher pela equipe."}</p>{result.fulfillment_note && <p className="text-sm">{result.fulfillment_note}</p>}
       {!readonly && result.status === "pending" && result.delivery_kind !== "physical" && <form className="grid gap-2" onSubmit={event => { event.preventDefault(); const note = String(new FormData(event.currentTarget).get("note")); if (confirm("Confirmar que o Pix foi pago ou o voucher foi entregue?")) run({ action: "fulfill", campaign, note }); }}><label className="grid gap-1 text-sm">Referência do comprovante ou voucher<Input name="note" required minLength={10} maxLength={500} disabled={pending} /></label><Button disabled={pending}>Confirmar pagamento / entrega</Button></form>}
