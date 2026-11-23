@@ -1,5 +1,6 @@
 import { Bolt, Package, Medal, Truck } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import {
   countCustomerShipments,
@@ -7,6 +8,7 @@ import {
   listCustomerCharges,
   listCustomerShipments,
   listCustomerHomeLots,
+  getCustomerHomeLotTotals,
   requireCustomer,
 } from "@/lib/dal";
 import { ClientChargesCard } from "@/components/client/charges-card";
@@ -16,13 +18,16 @@ import {
   isChargeActive,
   type Charge,
 } from "@/lib/charges";
-import { formatBRL, formatDateBR, type LotStatus } from "@/lib/lots";
+import { formatBRL, formatDateBR } from "@/lib/lots";
 import { cn } from "@/lib/utils";
 import { selectHomeLots } from "@/lib/client-home";
 import { getCustomerRankPoints } from "@/lib/loyalty";
 import { CustomerTierBadge } from "@/components/client/customer-tier-badge";
 
-const PAID_LOT_STATUSES: LotStatus[] = ["paid", "shipped", "delivered"];
+async function CustomerHomeTier({ customerId }: { customerId: string }) {
+  const rankPoints = await getCustomerRankPoints(customerId);
+  return <CustomerTierBadge rankPoints={rankPoints} />;
+}
 
 /** "Expira 2h" / "Expira 3 dias" / "Prazo vencido" — espelho do card de cobrança. */
 function kpiExpiry(charge: Pick<Charge, "status" | "expires_at">) {
@@ -80,10 +85,9 @@ function KpiCard({
 
 export default async function ClientHomePage() {
   const { customer } = await requireCustomer();
-  // Listas ficam capadas; os contadores são head-count para o badge não
-  // mostrar o teto do fetch como se fosse o total.
+  // Só os lotes visíveis viajam para a home; totais incluem todo o histórico.
   const today = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"}).format(new Date());
-  const [lots, charges, freight, shipments, shipmentsTotal, rankPoints] =
+  const [lots, charges, freight, shipments, shipmentsTotal, lotTotals] =
     await Promise.all([
       // Capa do card vem daqui; itens/descrição ficam só no detalhe do lote.
       listCustomerHomeLots(customer.id,today),
@@ -91,12 +95,12 @@ export default async function ClientHomePage() {
       getCustomerFreightState(customer.id),
       listCustomerShipments(customer.id),
       countCustomerShipments(customer.id),
-      getCustomerRankPoints(customer.id),
+      getCustomerHomeLotTotals(customer.id),
     ]);
 
 
   const recentLots = selectHomeLots(lots,today);
-  const olderLotsCount = lots.length - recentLots.length;
+  const olderLotsCount = Math.max(0, lotTotals.total - recentLots.length);
   const nextBatchDate = shipments
     .filter(shipment => shipment.status !== 'cancelled' && shipment.status !== 'delivered')
     .reduce<string | null>((day, shipment) => day === null || shipment.batch_date < day ? shipment.batch_date : day, null);
@@ -114,10 +118,8 @@ export default async function ClientHomePage() {
   }
 
   // KPIs da home usam valores confirmados e estados atuais do cliente.
-  const awaitingShipmentCount = lots.filter((lot) => lot.status === "paid").length;
-  const paidLotsCount = lots.filter((lot) =>
-    PAID_LOT_STATUSES.includes(lot.status),
-  ).length;
+  const awaitingShipmentCount = lotTotals.awaiting_shipment;
+  const paidLotsCount = lotTotals.paid;
   // "A Pagar": vale o Pix aberto; sem Pix, a soma dos lotes aguardando
   // pagamento + frete da semana em aberto (o cliente deve ver o total
   // mesmo antes de gerar o cobrança).
@@ -158,7 +160,9 @@ export default async function ClientHomePage() {
               Acompanhe seus lotes, pagamentos e envios do leilão.
             </p>
           </div>
-          <CustomerTierBadge rankPoints={rankPoints} />
+          <Suspense fallback={<span className="h-8 w-20 animate-pulse rounded-full bg-muted" aria-label="Carregando elo" />}>
+            <CustomerHomeTier customerId={customer.id} />
+          </Suspense>
         </div>
 
         <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -172,7 +176,7 @@ export default async function ClientHomePage() {
           />
           <KpiCard
             label="Lotes"
-            value={String(lots.length).padStart(2, "0")}
+            value={String(lotTotals.total).padStart(2, "0")}
             sub={
               paidLotsCount > 0
                 ? `${paidLotsCount} ${paidLotsCount === 1 ? "pago" : "pagos"}`

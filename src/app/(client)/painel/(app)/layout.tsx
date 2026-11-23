@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import {MarketingPreferencesLink} from "@/components/client/marketing-preferences-link";
 import { connection } from "next/server";
 import {
@@ -19,21 +20,12 @@ export default async function ClientLayout({
   await connection();
   const { customer } = await requireCustomer();
 
-  const [notifications, unreadCount, caracoins] = await Promise.all([
-    listCustomerNotifications(customer.id),
-    countCustomerUnreadNotifications(customer.id),
-    getCustomerCaracoinsBalance(customer.id),
-  ]);
 
   return (
     <div className="flex min-h-svh flex-col">
-      <ClientHeader
-        name={customer.name}
-        phone={customer.phone_e164}
-        notifications={notifications}
-        unreadCount={unreadCount}
-        caracoins={caracoins}
-      />
+      <Suspense fallback={<div role="status" aria-label="Carregando cabeçalho" className="sticky top-0 z-40 h-[calc(4rem+env(safe-area-inset-top,0px))] shrink-0 animate-pulse border-b bg-background" />}>
+        <CustomerPanelHeader customer={customer} />
+      </Suspense>
       <main className="mx-auto w-full max-w-2xl has-[.store-page]:max-w-7xl flex-1 px-4 pb-24 pt-6">
         <ClientModuleNav />
         {(customer.warning_count??0)>0&&<aside role="status" className="mb-4 rounded-xl border border-amber-400/50 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"><strong>Você tem {customer.warning_count} de 3 advertências.</strong><p>Lotes cancelados por falta de pagamento após o prazo de pagamento geram uma advertência por dia de leilão, independentemente da quantidade de lotes. Na terceira, seu acesso será bloqueado até a equipe liberar.</p></aside>}
@@ -45,4 +37,14 @@ export default async function ClientLayout({
       <ClientBottomNav />
     </div>
   );
+}
+
+async function CustomerPanelHeader({ customer }: { customer: { id: string; name: string | null; phone_e164: string } }) {
+  const [notifications, unreadCount, caracoins] = await Promise.all([
+    listCustomerNotifications(customer.id),
+    countCustomerUnreadNotifications(customer.id),
+    getCustomerCaracoinsBalance(customer.id),
+  ]);
+
+  return <ClientHeader name={customer.name} phone={customer.phone_e164} notifications={notifications} unreadCount={unreadCount} caracoins={caracoins} />;
 }

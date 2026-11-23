@@ -204,23 +204,39 @@ export const listLots = cache(
   },
 );
 
-/** Home: full history for totals, photo/description payload only for visible lots. */
-export const listCustomerHomeLots = cache(async (customerId:string,today:string):Promise<Lot[]> => {
-  const db=await createClient();
-  const previews=async()=>{
-    const rows:Pick<Lot,'id'|'images'|'description'>[]=[];
-    for(let from=0;;from+=500){
-      const {data,error}=await db.from('lots').select('id,images,description')
-        .eq('customer_id',customerId).is('payment_expired_at',null)
-        .or(`auction_date.eq.${today},status.eq.pending_payment`)
-        .order('id',{ascending:true}).range(from,from+499);
-      if(error)throw new Error('Não foi possível carregar as fotos dos lotes.');
-      rows.push(...(data??[]));if((data?.length??0)<500)break;
-    }
-    return new Map(rows.map(row=>[row.id,row]));
-  };
-  const [lots,details]=await Promise.all([listLots({hideExpired:true,customerId}),previews()]);
-  return lots.map(lot=>({...lot,images:details.get(lot.id)?.images??[],description:details.get(lot.id)?.description??null}));
+/** Home: only visible lots travel to the page; historical totals use one aggregate. */
+export const listCustomerHomeLots = cache(async (customerId: string, today: string): Promise<Lot[]> => {
+  const db = await createClient();
+  const lots: Lot[] = [];
+  for (let from = 0; ; from += 500) {
+    const { data, error } = await db.from("lots")
+      .select(lotColumns({ images: true, description: true }))
+      .eq("customer_id", customerId)
+      .is("payment_expired_at", null)
+      .or(`auction_date.eq.${today},status.eq.pending_payment`)
+      .order("auction_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + 499);
+    if (error) throw new Error("Não foi possível carregar seus lotes.");
+    const page = (data ?? []) as unknown as Lot[];
+    lots.push(...page);
+    if (page.length < 500) break;
+  }
+  return lots;
+});
+
+export type CustomerHomeLotTotals = {
+  total: number;
+  paid: number;
+  awaiting_shipment: number;
+};
+
+export const getCustomerHomeLotTotals = cache(async (customerId: string): Promise<CustomerHomeLotTotals> => {
+  const db = await createClient();
+  const { data, error } = await db.rpc("get_customer_home_lot_totals", { p_customer_id: customerId });
+  if (error || !data) throw new Error("Não foi possível carregar os totais dos lotes.");
+  return data as CustomerHomeLotTotals;
 });
 
 export type LotPage = {
