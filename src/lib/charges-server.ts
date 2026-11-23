@@ -111,6 +111,20 @@ export async function listEligibleLotRefs(
     }));
 }
 
+/** Lightweight lookup before self-service Pix creation; payment validation happens in createCharge. */
+export async function findActiveChargeId(customerId: string): Promise<string | null> {
+  const { data, error } = await createAdminClient()
+    .from("charges")
+    .select("id, status, expires_at")
+    .eq("customer_id", customerId)
+    .in("status", ["pending", "in_process"])
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (error) throw new Error(`Falha ao carregar cobranças: ${error.message}`);
+  const rows = (data ?? []) as Pick<Charge, "id" | "status" | "expires_at">[];
+  return rows.find((charge) => isChargeActive(charge))?.id ?? null;
+}
+
 /**
  * Contexto para criar cobrança: cobrança aberta do cliente (se houver),
  * lotes ainda elegíveis e se o frete da semana ainda está por pagar.
@@ -122,22 +136,21 @@ export async function getChargeContext(customerId: string): Promise<{
   freightAmount: number;
 }> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("charges")
-    .select(CHARGE_COLUMNS)
-    .eq("customer_id", customerId)
-    .in("status", ["pending", "in_process"])
-    .order("created_at", { ascending: false })
-    .limit(10);
-
+  // Independent reads only; no reservation or payment mutation runs in parallel.
+  const [{ data, error }, eligibleLots, { data: due, error: dueError }] = await Promise.all([
+    admin.from("charges")
+      .select(CHARGE_COLUMNS)
+      .eq("customer_id", customerId)
+      .in("status", ["pending", "in_process"])
+      .order("created_at", { ascending: false })
+      .limit(10),
+    listEligibleLots(customerId),
+    admin.rpc("get_due_freight_periods", { p_customer: customerId }),
+  ]);
   if (error) throw new Error(`Falha ao carregar cobranças: ${error.message}`);
-
+  if (dueError) throw new Error("Não foi possível consultar os fretes pendentes.");
   const rows = (data ?? []) as unknown as Charge[];
   const activeCharge = rows.find((charge) => isChargeActive(charge)) ?? null;
-  const eligibleLots = await listEligibleLots(customerId);
-
-  const {data:due,error:dueError}=await admin.rpc('get_due_freight_periods',{p_customer:customerId});
-  if(dueError)throw new Error('Não foi possível consultar os fretes pendentes.');
   const freightAmount=(due??[]).reduce((sum:number,row:{freight_amount:number})=>sum+Number(row.freight_amount),0);
   const freightDue=freightAmount>0;
   return { activeCharge, eligibleLots, freightDue, freightAmount };

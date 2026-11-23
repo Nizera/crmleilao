@@ -8,6 +8,7 @@ import {
   createCharge,
   getChargeById,
   getChargeContext,
+  findActiveChargeId,
   markChargePaid,
   syncChargeWithMp,
   syncOpenChargesWithMp,
@@ -194,9 +195,9 @@ export async function createSelfChargeAction(
       return failure("Para gerar seu Pix, cadastre seu e-mail em Meus dados. Depois, volte aqui e tente novamente. Se precisar, peça ajuda à equipe.");
     }
     if(paymentProfile.cpf_cnpj?.trim()&&!isValidBrazilianDocument(paymentProfile.cpf_cnpj))return failure("O CPF/CNPJ cadastrado está inválido. Corrija em Meus dados ou peça ajuda à equipe antes de gerar o Pix.");
-    const { activeCharge } = await getChargeContext(customer.id);
-    if (activeCharge) {
-      const existing=await getChargeById(activeCharge.id);
+    const activeChargeId = await findActiveChargeId(customer.id);
+    if (activeChargeId) {
+      const existing=await getChargeById(activeChargeId);
       if(existing)return {ok:true,data:{charge:existing}};
       return failure("Estamos carregando sua cobrança existente. Atualize o painel.");
     }
