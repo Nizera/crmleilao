@@ -241,7 +241,7 @@ function ShipmentForm({
     if (context.paymentBlock) return context.paymentBlock;
     if (context.storeBlock) return context.storeBlock;
     if (picked.size === 0 && !context.storeOrders.length && !context.logisticsPending.some(i=>i.source_kind==='raffle')) return "Selecione um lote ou confira os produtos e prêmios disponíveis.";
-    if(context.storeOrders.some(o=>!o.boxed_at||!o.shipping_declared_value))return "Confira a separação e o valor declarado dos pedidos da loja.";
+    if(context.storeOrders.some(o=>Number(o.shipping_declared_value)<=0))return "Confira o valor declarado dos pedidos da loja.";
     if(declaredInvalid)return "Confira o valor declarado do pacote.";
     if(declaredTotal<=0)return "Os itens estão zerados. Informe o valor declarado do prêmio.";
     if (insuranceMismatch) {
