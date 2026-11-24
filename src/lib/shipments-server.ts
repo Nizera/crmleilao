@@ -688,22 +688,20 @@ async function applyStatusChange(
     await applyLotEffects(shipment.id, target);
   }
 
-  // Sino do cliente nos marcos de rastreio e em cancelamentos. O tracking
+  // Sino do cliente na postagem e na entrega. O tracking
   // novo pode estar no patch (webhook) e ainda não no objeto local.
-  if (target === "posted" || target === "delivered" || target === "cancelled") {
+  if (target === "posted" || target === "delivered") {
     const tracking =
       (typeof patch.tracking_code === "string" ? patch.tracking_code : null) ??
       shipment.tracking_code;
     await notifyCustomer({
       customerId: shipment.customer_id,
       kind: `shipment_${target}`,
-      title: target === "posted" ? "Envio postado" : target === "delivered" ? "Envio entregue" : "Envio cancelado",
+      title: target === "posted" ? "Envio postado" : "Envio entregue",
       body:
         target === "posted"
           ? `Seu envio ${shipment.code} foi postado${tracking ? ` — rastreio ${tracking}.` : "."}`
-          : target === "delivered"
-            ? `O envio ${shipment.code} foi entregue.`
-            : `A etiqueta do envio ${shipment.code} foi cancelada. Seus lotes continuam disponíveis para um novo envio.`,
+          : `O envio ${shipment.code} foi entregue.`,
       href: "/painel/envios",
       dedupeKey: `shipment_${target}:${shipment.id}`,
     });
