@@ -1,11 +1,13 @@
+import { resolveAuctionPeriod } from "@/lib/auction-period";
+import { isoDayAdd, spDateTimeToUtc } from "@/lib/dates";
 import type { OrderHistoryData } from "./order-history";
 
 export const STORE_DASHBOARD_PATH = "/admin/fidelidade";
-export type DashboardPeriod = { preset: "today" | "7d" | "30d" | "custom"; from: string; to: string; today: string };
+export type DashboardPeriod = { preset: "today" | "7d" | "30d" | "custom"; from: string; to: string; today: string; startUtc: string; endUtc: string; fromTime: string; toTime: string; error?: string };
 export type StoreDashboardData = {
   active: boolean;
   vouchers?:{redeemed:number;coins_spent:number;discounts_used:number};
-  metrics: { freight_received?:number; cash: number; coins: number; orders: number; known_cost: number; missing_cost_units: number };
+  metrics: { freight_received?:number; api_fee: number; cash: number; coins: number; orders: number; known_cost: number; missing_cost_units: number };
   operations: { "to-fulfill": number; processing: number; review: number; "low-stock": number };
   chart: { day: string; cash: number; orders: number }[];
   top_products: { reward_id: string | null; name: string; units: number; cash: number; coins: number }[];
@@ -20,13 +22,30 @@ export function dashboardPeriod(params: Record<string,string|string[]|undefined>
   const part=(type:string)=>parts.find(p=>p.type===type)!.value;
   const today=`${part('year')}-${part('month')}-${part('day')}`;
   const requested=one('period');
+  const fullDays = (preset: DashboardPeriod["preset"], from: string, to: string, error?: string): DashboardPeriod => {
+    const fromTime = `${from}T00:00`;
+    const toTime = `${isoDayAdd(to, 1)}T00:00`;
+    return {preset, from, to, today, fromTime, toTime, startUtc:spDateTimeToUtc(fromTime), endUtc:spDateTimeToUtc(toTime), error};
+  };
+  let error: string | undefined;
+  if (one('from').includes('T') || one('to').includes('T')) {
+    try {
+      const selected = resolveAuctionPeriod(today, { from: one('from'), to: one('to') });
+      const from = selected.from.slice(0,10);
+      const endDay = selected.to.slice(0,10);
+      const to = selected.to.endsWith('T00:00') ? isoDayAdd(endDay,-1) : endDay;
+      return { preset:'custom', from, to, today, fromTime:selected.from, toTime:selected.to, startUtc:selected.startUtc, endUtc:selected.endUtc };
+    } catch {
+      error = "Confira o início e o fim do período. Selecione um intervalo de até 31 dias.";
+    }
+  }
   if(requested==='custom' && validDate(one('from')) && validDate(one('to'))) {
     const to=one('to')>today ? today : one('to');
     const earliest=shift(to,-365);
     const from=one('from')>to ? to : one('from')<earliest ? earliest : one('from');
-    return {preset:'custom',from,to,today};
+    return fullDays('custom',from,to);
   }
   const preset=requested==='today'||requested==='7d' ? requested : '30d';
-  return {preset,from:shift(today,preset==='today' ? 0 : preset==='7d' ? -6 : -29),to:today,today};
+  return fullDays(preset,shift(today,preset==='today' ? 0 : preset==='7d' ? -6 : -29),today,error);
 }
 export const dashboardDate = (day:string) => day.split('-').reverse().join('/');
