@@ -354,9 +354,15 @@ export function SeparationReportView({ initialDate, initialReport }: Props) {
                   <p className="text-sm font-semibold">Loja · {order.code} {"· " + movementLabel(order.boxed_at, order.dispatched)}</p>
                   {date === ALL && <p className="mt-1 text-xs text-muted-foreground">{shippingLabel(order.shippingDate)}</p>}
                   <ul className="mt-2 grid gap-1 text-xs">{order.items.filter(item=>item.delivery_kind==='physical').map((item,index)=><li key={index}>{item.quantity}× {item.name}</li>)}</ul>
-                  {!order.dispatched && order.fulfillment_status==='processing' && !order.boxed_at && <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais (obrigatório para produtos em Caracoins)<input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} placeholder="Em reais, automático; em Caracoins, informe o valor" className="h-9 max-w-sm rounded-md border bg-background px-2"/></label>}
+                  {order.shipping_declared_value ? (
+                    <p className="mt-2 text-xs">Valor declarado: {new Intl.NumberFormat("pt-BR", {style:"currency",currency:"BRL"}).format(order.shipping_declared_value)}</p>
+                  ) : !order.dispatched && order.fulfillment_status==='processing' && !order.boxed_at && (
+                    <label className="mt-3 grid gap-1 text-xs print:hidden">Valor declarado em reais
+                      <input type="number" min="0.01" max="100000" step="0.01" value={storeDeclared[order.id]??''} onChange={event=>setStoreDeclared(values=>({...values,[order.id]:event.target.value}))} className="h-9 max-w-sm rounded-md border bg-background px-2"/>
+                    </label>
+                  )}
                   {!order.dispatched && !order.boxed_at && <Button size="sm" variant="outline" disabled={isPending} className="mt-3 print:hidden" onClick={()=>startTransition(async()=>{
-                    const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');form.set('declared_value',storeDeclared[order.id]??'');
+                    const form=new FormData(); form.set('order_id',order.id); form.set('status',order.fulfillment_status==='awaiting'?'processing':'boxed');form.set('declared_value',order.shipping_declared_value?.toString() ?? storeDeclared[order.id] ?? '');
                     const result=await handleStoreOrderAction(form);
                     if(!result.ok){toast.error(result.error);return;}
                     const refreshed=await getSeparationReportAction(date);if(refreshed.ok)setReport(refreshed.data);else toast.error(refreshed.error);

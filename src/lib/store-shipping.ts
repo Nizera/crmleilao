@@ -12,12 +12,19 @@ export async function listStoreShippingOrders(customerId:string,day:string):Prom
  return (data ?? []).flatMap(order => {
   const physical = order.items.filter(item => item.delivery_kind === 'physical');
   if (!physical.length) return [];
-  const cashCents = physical.reduce((sum, item) => sum + item.quantity * Math.round(Number(item.unit_cash) * 100), 0);
-  const cashValue = physical.every(item => Number(item.unit_coins) === 0) && cashCents > 0 ? cashCents / 100 : null;
-  return [{ ...order, shipping_declared_value: Number(order.shipping_declared_value) || cashValue }];
+  return [{ ...order, shipping_declared_value: resolveStoreDeclaredValue(order.shipping_declared_value, physical) }];
  });
 }
 export function storeDeclaredTotal(orders:StoreShippingOrder[]):number{
  if(orders.some(o=>!Number.isFinite(Number(o.shipping_declared_value))||Number(o.shipping_declared_value)<=0))throw new Error('Confira o valor declarado dos pedidos da loja antes de emitir.');
  return orders.reduce((sum,o)=>sum+Math.round(Number(o.shipping_declared_value)*100),0)/100;
+}
+
+export function resolveStoreDeclaredValue(
+  saved: number | string | null,
+  physical: {quantity: number; unit_cash: number | string; unit_coins: number | string}[],
+): number | null {
+  const cashCents = physical.reduce((sum, item) => sum + item.quantity * Math.round(Number(item.unit_cash) * 100), 0);
+  const cashValue = physical.every(item => Number(item.unit_coins) === 0) && cashCents > 0 ? cashCents / 100 : null;
+  return Number(saved) || cashValue;
 }

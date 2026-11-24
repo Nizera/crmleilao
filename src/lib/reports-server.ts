@@ -5,6 +5,7 @@ import {spToday, spDayOf} from "@/lib/dates";
 import { loadNotes } from "@/lib/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isChargeActive } from "@/lib/charges";
+import { resolveStoreDeclaredValue } from "@/lib/store-shipping";
 
 /** Lotes por página, abaixo do limite padrão do PostgREST. */
 const REPORT_LOTS_PAGE_SIZE = 500;
@@ -90,14 +91,16 @@ async function loadReportStoreOrders(): Promise<ReportStoreRow[]> {
   const result:ReportStoreRow[]=[];
   for(let from=0;;from+=REPORT_LOTS_PAGE_SIZE){
     const {data,error}=await admin.from("store_orders")
-      .select("id,code,customer_id,created_at,boxed_at,fulfillment_status,shipping_declared_value,shipment:shipments(batch_date,status),items:store_order_items(name,quantity,delivery_kind)")
+      .select("id,code,customer_id,created_at,boxed_at,fulfillment_status,shipping_declared_value,shipment:shipments(batch_date,status),items:store_order_items(name,quantity,delivery_kind,unit_cash,unit_coins)")
       .eq("payment_status","paid")
       .order("created_at").order("id").range(from,from+REPORT_LOTS_PAGE_SIZE-1);
     if(error)throw new Error("Não foi possível conferir os pedidos da loja para a separação.");
     for (const order of data ?? []) {
-      if (!order.items?.some(item => item.delivery_kind === "physical")) continue;
+      const physical = order.items?.filter(item => item.delivery_kind === "physical") ?? [];
+      if (!physical.length) continue;
       const shipment = (Array.isArray(order.shipment) ? order.shipment[0] : order.shipment) as {batch_date?: string; status?: string} | null;
       result.push({...order,
+        shipping_declared_value: resolveStoreDeclaredValue(order.shipping_declared_value, physical),
         shippingDate: shipment?.status !== "cancelled" && shipment?.batch_date || nextShippingDate(spDayOf(order.created_at)),
         dispatched: order.fulfillment_status === "fulfilled" || ["posted", "delivered"].includes(shipment?.status ?? ""),
       } as ReportStoreRow);
