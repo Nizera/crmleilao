@@ -1,6 +1,8 @@
 export const ORDER_HISTORY_PATH = "/admin/fidelidade/resgates";
 export const orderStages = {
-  all: "Todos", "to-fulfill": "Para separar", processing: "Em separação", unpaid: "Aguardando pagamento",
+  all: "Todos", "to-fulfill": "Para separar", separated: "Separado",
+  "awaiting-posting": "Aguardando postagem", shipped: "Enviado", delivered: "Entregue",
+  processing: "Em separação", unpaid: "Aguardando pagamento",
   fulfilled: "Concluídos", review: "Em análise", closed: "Encerrados",
 } as const;
 export type OrderStage = keyof typeof orderStages;

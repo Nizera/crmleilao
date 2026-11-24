@@ -81,6 +81,7 @@ export async function releaseExternalPrizeFreight(customerId:string,lotIds:strin
 function revalidateShipmentPaths() {
   updateTag("dashboard");
   revalidatePath("/admin/envios");
+  revalidatePath("/admin/fidelidade/resgates");
   revalidatePath("/painel");
   revalidatePath("/admin/lotes");
   revalidatePath("/admin/dashboard");
