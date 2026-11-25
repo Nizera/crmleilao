@@ -1,4 +1,5 @@
 import 'server-only';
+import { storeProductImageUrl } from '@/lib/store-presentation';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {lotImageUrl} from '@/lib/lots';
 import {priceLabel} from '@/lib/store';
@@ -15,7 +16,7 @@ export async function loadLandingSnapshot():Promise<LandingSnapshot>{
  const products:StoreProduct[]=catalog.error?[]:catalog.data?.items??[];
  return {lotsAvailable:!lots.error,storeAvailable:!catalog.error,
  lots:(lots.data??[]).map(l=>({id:l.id,title:l.title,image:lotImageUrl(l.images?.[0]),created_at:l.created_at})),
- products:products.filter(p=>p.image_path).sort((a,b)=>Number(/legend/i.test(b.category??''))-Number(/legend/i.test(a.category??''))).slice(0,6).map(p=>({id:p.id,name:p.name,image:lotImageUrl(p.image_path),category:p.category??'Colecionável',price:priceLabel(Number(p.cash_price??0),Number(p.points_cost??0))}))};
+ products:products.filter(p=>p.image_path).sort((a,b)=>Number(/legend/i.test(b.category??''))-Number(/legend/i.test(a.category??''))).slice(0,6).map(p=>({id:p.id,name:p.name,image:p.image_path ? storeProductImageUrl(p.image_path) : null,category:p.category??'Colecionável',price:priceLabel(Number(p.cash_price??0),Number(p.points_cost??0))}))};
 }
 /** Broadcast only an invalidation signal, never customer or payment data. */
 export async function notifyLandingChanged(){

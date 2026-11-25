@@ -1,4 +1,5 @@
 "use client";
+import { storeProductImageUrl } from '@/lib/store-presentation';
 
 import Image from "next/image";
 import Link from "next/link";
@@ -24,7 +25,7 @@ export function RewardForm({reward,canEdit,categories=[]}:{reward?:AdminProduct;
   const [modes,setModes]=useState(()=>({coins:reward?.points_cost!=null && reward?.cash_price==null,cash:reward?.cash_price!=null || reward?.points_cost==null,mixed:false}));
   const [publication,setPublication]=useState(reward?.archived?"archived":reward?.active?"published":"draft");
   const [trackStock,setTrackStock]=useState(reward?reward.stock!==null:true);const [stockAlert,setStockAlert]=useState(reward?reward.low_stock_threshold!==null:true);
-  const [photos,setPhotos]=useState<GalleryPhoto[]>(()=>(reward?.image_paths??(reward?.image_path?[reward.image_path]:[])).map((path)=>({key:path,path,url:`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/lot-images/${path}`})));
+  const [photos,setPhotos]=useState<GalleryPhoto[]>(()=>(reward?.image_paths??(reward?.image_path?[reward.image_path]:[])).map((path)=>({key:path,path,url:storeProductImageUrl(path)})));
   const changePhotos=useCallback((next:GalleryPhoto[])=>{setPhotos(next);setDirty(true);},[]);
   useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue="";};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[dirty]);
   const disabled=!canEdit || pending;
