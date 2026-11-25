@@ -3,7 +3,7 @@ begin;
 create function public.store_search_normalize(value text)
 returns text language sql immutable strict set search_path='' as $$
   select trim(regexp_replace(
-    translate(lower(value),'���Ƅ�����������䔣�����','aaaaaeeeeiiiiooooouuuucn'),
+    translate(lower(value),'áàâãäéèêëíìîïóòôõöúùûüçñ','aaaaaeeeeiiiiooooouuuucn'),
     '[^a-z0-9]+',' ','g'))
 $$;
 revoke all on function public.store_search_normalize(text) from public, anon, authenticated;
@@ -17,8 +17,8 @@ begin
  search_query := regexp_replace(search_query, '\m(cr7|cr 7)\M', 'cristiano ronaldo', 'g');
  search_query := regexp_replace(search_query, '\m(vini jr|vini junior)\M', 'vinicius junior', 'g');
 
- if p_min<0 or p_max<0 or p_min>9999999 or p_max>9999999 or p_min>p_max then raise exception 'Faixa de pre�o inv�lida.';end if;
- if (p_min is not null or p_max is not null) and coalesce(p_mode,'') not in ('cash','coins') then raise exception 'Escolha a moeda para filtrar o pre�o.';end if;
+ if p_min<0 or p_max<0 or p_min>9999999 or p_max>9999999 or p_min>p_max then raise exception 'Faixa de preço inválida.';end if;
+ if (p_min is not null or p_max is not null) and coalesce(p_mode,'') not in ('cash','coins') then raise exception 'Escolha a moeda para filtrar o preço.';end if;
  with catalog as materialized (
  select id,name,description,delivery_kind,points_cost,stock,image_path,image_paths,sku,category,cash_price,created_at
  from public.loyalty_rewards where active and not archived and mixed_cash_price is null and mixed_points_cost is null
@@ -57,8 +57,8 @@ begin
  search_query := regexp_replace(search_query, '\m(cr7|cr 7)\M', 'cristiano ronaldo', 'g');
  search_query := regexp_replace(search_query, '\m(vini jr|vini junior)\M', 'vinicius junior', 'g');
  if public.current_customer_id() is null then raise exception 'Acesso negado.';end if;
- if p_min<0 or p_max<0 or p_min>9999999 or p_max>9999999 or p_min>p_max then raise exception 'Faixa de pre�o inv�lida.';end if;
- if (p_min is not null or p_max is not null) and coalesce(p_mode,'') not in ('cash','coins') then raise exception 'Escolha a moeda para filtrar o pre�o.';end if;
+ if p_min<0 or p_max<0 or p_min>9999999 or p_max>9999999 or p_min>p_max then raise exception 'Faixa de preço inválida.';end if;
+ if (p_min is not null or p_max is not null) and coalesce(p_mode,'') not in ('cash','coins') then raise exception 'Escolha a moeda para filtrar o preço.';end if;
  with catalog as materialized (
  select id,name,description,delivery_kind,points_cost,stock,image_path,image_paths,sku,category,cash_price,created_at
  from public.loyalty_rewards where active and not archived and mixed_cash_price is null and mixed_points_cost is null
@@ -89,4 +89,3 @@ begin
 end $$;
 
 commit;
-
