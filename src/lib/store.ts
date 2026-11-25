@@ -29,11 +29,18 @@ export const cartCheckoutSchema = z.object({
   })).min(1).max(50),
 });
 
+export const publicCartSchema = cartCheckoutSchema.extend({
+  items: z.array(cartCheckoutSchema.shape.items.element.extend({
+    delivery_kind: z.enum(['physical', 'digital']).optional(),
+  })).min(1).max(50),
+});
+export type PublicCartLine = z.infer<typeof publicCartSchema>['items'][number];
+
 export const coinNumber = (value: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
 export const storeBRL = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 export function productPrices(product: StoreProduct) {
   const options: { mode: PriceMode; cash: number; coins: number }[] = [];
-  // Catálogos antigos com mais de uma modalidade exigem revisão no ADM.
+  // Cat�logos antigos com mais de uma modalidade exigem revis�o no ADM.
   if ((Number(product.points_cost) > 0 && Number(product.cash_price) > 0) || Number(product.mixed_cash_price) > 0 || Number(product.mixed_points_cost) > 0) return options;
   if (Number(product.points_cost) > 0) options.push({ mode: "coins", cash: 0, coins: Number(product.points_cost) });
   if (Number(product.cash_price) > 0) options.push({ mode: "cash", cash: Number(product.cash_price), coins: 0 });
@@ -47,7 +54,7 @@ export function safePixTicketUrl(raw: string | null): string | null {
   catch { return null; }
 }
 export function cartTotals(items: CartLine[]) {
-  // Soma em centavos para evitar diferenças de ponto flutuante no resumo.
+  // Soma em centavos para evitar diferen�as de ponto flutuante no resumo.
   return items.reduce((total, item) => ({
     cash: total.cash + Math.round(item.expected_cash * 100) * item.quantity,
     coins: total.coins + Math.round(item.expected_coins * 100) * item.quantity,
@@ -73,9 +80,10 @@ export type StoreOrder = {
 };
 export const storePaymentLabels: Record<StoreOrder["payment_status"], string> = {
   creating: "Preparando Pix", pending: "Aguardando Pix", paid: "Pagamento confirmado",
-  cancelled: "Cancelado", expired: "Pix expirado", failed: "Pagamento não concluído", refunded: "Pagamento devolvido",
-  partially_refunded: "Devolução parcial · em análise pela equipe",
-  payment_review: "Pagamento recebido · em análise pela equipe",
+  cancelled: "Cancelado", expired: "Pix expirado", failed: "Pagamento n�o conclu�do", refunded: "Pagamento devolvido",
+  partially_refunded: "Devolu��o parcial � em an�lise pela equipe",
+  payment_review: "Pagamento recebido � em an�lise pela equipe",
 };
-export const storeFulfillmentLabels = { awaiting: "Aguardando separação", processing: "Em separação", fulfilled: "Concluído" };
+export const storeFulfillmentLabels = { awaiting: "Aguardando separa��o", processing: "Em separa��o", fulfilled: "Conclu�do" };
 export const isStoreOrderOpen = (order: StoreOrder) => order.payment_status === "creating" || order.payment_status === "pending";
+
