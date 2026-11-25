@@ -29,7 +29,7 @@ const getProduct = cache(async (id: string): Promise<StoreProduct | null> => {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const product = await getProduct(id);
-  if (!product) return { title: "Produto indispon�vel" };
+  if (!product) return { title: "Produto indisponível" };
   const description = product.description?.trim() || "Confira este produto na Loja dos Caras.";
   const path = `/loja/produto/${product.id}`;
   const image = product.image_path ?? product.image_paths?.[0];
@@ -52,7 +52,7 @@ export default async function ProductPage({ params }: Props) {
   if (!product) notFound();
   return (
     <div className="store-page grid min-w-0 gap-5">
-      <Link href="/loja" className="w-fit text-sm underline">Voltar � loja</Link>
+      <Link href="/loja" className="w-fit text-sm underline">Voltar à loja</Link>
       <PublicStorefront
         detail={product}
         catalog={{ items: [product], categories: [], total: 1, page: 1, pages: 1, size: 1 }}
@@ -62,4 +62,3 @@ export default async function ProductPage({ params }: Props) {
     </div>
   );
 }
-

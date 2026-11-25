@@ -23,14 +23,13 @@ export function StoreQuickFilters({ filters, categories, path = '/painel/loja' }
     return params.size ? `${path}?${params}` : path;
   }
   const chip = (selected: boolean) => `shrink-0 rounded-full border px-4 py-2.5 text-xs font-medium ${selected ? 'border-ouro/30 bg-amarelo/15 text-ouro-ink' : 'bg-card text-muted-foreground hover:text-foreground'}`;
-  return <nav aria-label="Atalhos do cat�logo" className="flex gap-2 overflow-x-auto pb-1">
+  return <nav aria-label="Atalhos do catálogo" className="flex gap-2 overflow-x-auto pb-1">
     {collections.map(category => <Link key={category} href={href({ category })}
       aria-current={filters.category === category ? 'page' : undefined} className={chip(filters.category === category)}>
       {category === 'CARD' ? 'Cards' : category === 'LEGENDS' ? 'Legends' : category || 'Todos os produtos'}
     </Link>)}
     <Link href={href({ available: !filters.available })} className={chip(filters.available)}>
-      {filters.available ? 'Mostrar tamb�m esgotados' : 'Somente em estoque'}
+      {filters.available ? 'Mostrar também esgotados' : 'Somente em estoque'}
     </Link>
   </nav>;
 }
-
