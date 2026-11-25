@@ -19,3 +19,8 @@ export function catalogFiltersFrom(params: Record<string, string | string[] | un
   const price = (key: string) => mode && /^\d{1,7}(\.\d{1,2})?$/.test(get(key)) ? get(key) : '';
   return { q: get('q').trim().slice(0, 100), category: get('category').slice(0, 60), mode, sort: ['cash', 'cash_desc', 'coins', 'coins_desc', 'name'].includes(get('sort')) ? get('sort') : 'newest', min: price('min'), max: price('max'), available: get('available') === '1' };
 }
+
+export function storeProductImageUrl(path: string): string {
+  const copaPhoto = /^loyalty-rewards\/[0-9a-f-]{36}\/copa26-(dispenser|album-dourado|album-prata|pasta-bra|pacotinhos|bugado)\.webp$/.exec(path);
+  return copaPhoto ? `/store/copa-2026/${copaPhoto[1]}.webp` : bannerImageUrl(path);
+}
