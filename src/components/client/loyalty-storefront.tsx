@@ -1,4 +1,5 @@
 "use client";
+import { StoreCartSuggestions } from '@/components/client/store-cart-suggestions';
 import { storeProductImageUrl } from '@/lib/store-presentation';
 import {prepareStoreMarketing,trackStoreEvent,trackStoreProduct} from '@/lib/meta-browser';
 
@@ -192,6 +193,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
         {totals.coins>0&&<div className="flex flex-wrap justify-between gap-2 rounded-lg bg-muted/40 p-3 text-xs"><span>Saldo disponível</span><span className="flex items-center gap-1"><Coins className="size-3.5 text-ouro-ink"/>{coinNumber(balance)} Caracoins</span></div>}
         {missing > 0 && <p role="alert" className="text-sm text-destructive">Faltam {coinNumber(missing)} Caracoins para este resgate.</p>}
         {cartLoading && <p role="status" className="text-sm text-muted-foreground">Atualizando os itens do carrinho…</p>}
+        {open && purchasesEnabled && !hasOpenOrder && <StoreCartSuggestions items={cart.items} onAdd={add} disabled={pending || cart.items.length >= 50} />}
         {totals.cash>0 && <div className="grid gap-2 rounded-xl border p-3"><label className="grid gap-2 text-sm">Aplicar voucher<select value={selectedVoucher} disabled={pending} onChange={event=>{setSelectedVoucher(event.target.value);update(cart.items);}} className="min-w-0 rounded-lg border bg-background p-2"><option value="">Sem voucher</option>{vouchers.map(v=><option key={v.id} value={v.id}>{v.name} · {storeBRL(Number(v.discount_cash))}</option>)}</select></label><p className="text-xs text-muted-foreground">Use apenas 1 voucher por compra. Os vouchers não são cumulativos.</p>{selectedVoucher && !discount && <p role="alert" className="text-xs text-destructive">Este carrinho não atende às regras ou à validade do voucher.</p>}{discount>0&&<p className="text-sm text-emerald-700">Desconto aplicado: −{storeBRL(discount/100)}. Subtotal dos produtos: {storeBRL(totals.cash/100)}.</p>}<Link href="/painel/loja?tab=vouchers" className="text-xs underline">Resgatar vouchers com Caracoins</Link></div>}
         {cartError && <div role="alert" className="grid gap-2 text-sm text-destructive"><p>{cartError}</p><Button variant="outline" onClick={()=>setRetryCart(n=>n+1)}>Tentar novamente</Button></div>}
         {hasOpenOrder && <p className="text-sm text-muted-foreground">Você já tem um pedido aguardando Pix. Conclua ou cancele esse pagamento para comprar novamente.</p>}
