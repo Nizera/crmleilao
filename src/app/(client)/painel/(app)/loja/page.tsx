@@ -23,7 +23,7 @@ import { RetryButton } from '@/components/shared/retry-button';
 export const metadata={title:'Loja dos Caras'};
 export const instant=false;
 const path='/painel/loja';
-function Unavailable({label}:{label:string}){return <div role="alert" className="grid gap-3 rounded-xl border p-5 text-sm"><p>N�o foi poss�vel carregar {label}. Isso n�o significa que seu saldo ou hist�rico esteja vazio.</p><RetryButton/></div>;}
+function Unavailable({label}:{label:string}){return <div role="alert" className="grid gap-3 rounded-xl border p-5 text-sm"><p>Não foi possível carregar {label}. Isso não significa que seu saldo ou histórico esteja vazio.</p><RetryButton/></div>;}
 export default async function ClientStorePage({searchParams}:PageProps<'/painel/loja'>){
  const {customer}=await requireCustomer();const params=await searchParams;const tab=['orders','ledger','vouchers'].includes(first(params.tab))?first(params.tab):'products';
  const filters=historyFilters(params);const db=await createClient();const requestedAt=new Date().toISOString();
@@ -54,10 +54,9 @@ export default async function ClientStorePage({searchParams}:PageProps<'/painel/
   if(catalog&&catalog.page!==filters.page)redirect(pageHref(path,params,catalog.page));
   content=<>{!catalog&&<StoreSearch filters={catalogFilters}/>}
    {open.error?<Unavailable label="seu pedido em andamento"/>:open.data&&<StoreOrderCard order={open.data as unknown as StoreOrder}/>}
-   {settings.error||balance===null?<Unavailable label="a loja e seu saldo"/>:!settings.data?.active?<p className="rounded-xl border p-5 text-sm text-muted-foreground">A loja est� em prepara��o. Voc� pode acompanhar suas compras em Meus pedidos.</p>:!catalog||open.error?<Unavailable label="os produtos da loja"/>:<><LoyaltyStorefront resumeCart={first(params.resume)==='cart'} purchasesEnabled={purchasesEnabled} rewards={catalog.items} balance={balance} customerId={customer.id} hasOpenOrder={!!open.data} vouchers={(wallet.data ?? []) as CustomerVoucher[]} catalog={catalog} catalogFilters={catalogFilters} banner={banner.error?null:banner.data as StoreBanner|null??{active:false}}/><HistoryPagination path={path} params={params} data={catalog}/></>}</>;
+   {settings.error||balance===null?<Unavailable label="a loja e seu saldo"/>:!settings.data?.active?<p className="rounded-xl border p-5 text-sm text-muted-foreground">A loja está em preparação. Você pode acompanhar suas compras em Meus pedidos.</p>:!catalog||open.error?<Unavailable label="os produtos da loja"/>:<><LoyaltyStorefront resumeCart={first(params.resume)==='cart'} purchasesEnabled={purchasesEnabled} rewards={catalog.items} balance={balance} customerId={customer.id} hasOpenOrder={!!open.data} vouchers={(wallet.data ?? []) as CustomerVoucher[]} catalog={catalog} catalogFilters={catalogFilters} banner={banner.error?null:banner.data as StoreBanner|null??{active:false}}/><HistoryPagination path={path} params={params} data={catalog}/></>}</>;
  }
  return <div className="store-page grid min-w-0 gap-5"><header className="flex flex-wrap items-center justify-between gap-3"><div><Button asChild size="sm" variant="ghost" className="-ml-2"><Link href="/painel"><ArrowLeft/>Voltar ao painel</Link></Button><h1 className="mt-1 text-xl font-bold sm:text-2xl">Loja dos Caras</h1></div></header>
- <nav aria-label="Se��es da loja" className="flex flex-wrap gap-1 border-b pb-2">{([['products','Produtos'],['vouchers','Vouchers'],['orders','Meus pedidos'],['ledger','Extrato']] as const).map(([key,label])=><Link key={key} href={`${path}?tab=${key}`} aria-current={tab===key?'page':undefined} className={`rounded-lg px-2 py-3 text-center text-xs font-semibold ${tab===key?'bg-amarelo/15 text-ouro-ink':'text-muted-foreground'}`}>{label}</Link>)}</nav>
+ <nav aria-label="Seções da loja" className="flex flex-wrap gap-1 border-b pb-2">{([['products','Produtos'],['vouchers','Vouchers'],['orders','Meus pedidos'],['ledger','Extrato']] as const).map(([key,label])=><Link key={key} href={`${path}?tab=${key}`} aria-current={tab===key?'page':undefined} className={`rounded-lg px-2 py-3 text-center text-xs font-semibold ${tab===key?'bg-amarelo/15 text-ouro-ink':'text-muted-foreground'}`}>{label}</Link>)}</nav>
  {content}</div>;
 }
-
