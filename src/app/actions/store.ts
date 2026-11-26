@@ -47,14 +47,14 @@ export async function checkoutStoreAction(input: unknown): Promise<ActionResult<
     const db = await createClient();
     const items=parsed.data.items.map((item,index)=>index===0?{...item,expected_freight_amount:parsed.data.expectedFreight??0}:item);
     const { couponCode, expectedCouponDiscount, requestKey, voucherId } = parsed.data;
-    if (couponCode && (voucherId || !expectedCouponDiscount)) {
-      return { ok: false, error: "Confira o desconto e use apenas um cupom ou voucher por pedido." };
+    if (couponCode && !expectedCouponDiscount) {
+      return { ok: false, error: "Confira o desconto antes de finalizar o pedido." };
     }
     const pilot = await isLocalStorePilot(customer.id);
     const { data: id, error } = couponCode
       ? await db.rpc("checkout_store_cart_with_coupon", {
           p_request_key: requestKey, p_items: items, p_code: couponCode,
-          p_expected_discount: expectedCouponDiscount,
+          p_expected_discount: expectedCouponDiscount, p_voucher: voucherId ?? null,
         })
       : pilot
         ? await createAdminClient().rpc("run_local_store_pilot", {

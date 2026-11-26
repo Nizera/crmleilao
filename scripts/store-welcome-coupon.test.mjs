@@ -9,6 +9,7 @@ test('BEMVINDO10 validates the first order, preserves freight and can be reused 
     await loadCommerceDb(db);
     await db.exec(await migration('0061_store_cancellation_and_auction_payments.sql'));
     await db.exec(await migration('20261126071000_store_welcome_coupon.sql'));
+    await db.exec(await migration('20261126102000_stack_store_coupon_and_voucher.sql'));
     await db.exec('update store_commerce_settings set purchases_enabled=true');
     const id = crypto.randomUUID();
     const product = crypto.randomUUID();
@@ -34,10 +35,24 @@ test('BEMVINDO10 validates the first order, preserves freight and can be reused 
     assert.equal(saved.coupon_code,'BEMVINDO10');
     await db.exec('reset role');
     await db.query('select request_store_order_cancellation($1,$2)',[order,id]);
+    await db.query('update loyalty_rewards set cash_price=100 where id=$1',[product]);
+    const { rows: [{ id: template }] } = await db.query("insert into store_voucher_templates(name,coins_cost,discount_cash) values('Voucher teste',1,20) returning id");
+    const { rows: [{ id: voucher }] } = await db.query(`insert into customer_store_vouchers
+      (customer_id,template_id,request_key,name,coins_paid,discount_cash,min_purchase,eligible_product_ids,expires_at)
+      values($1,$2,gen_random_uuid(),'Voucher teste',1,20,0,'{}',now()+interval '1 day') returning id`,[id,template]);
     await asCustomer();
-    const next = await checkout(crypto.randomUUID(),2,16);
+    const items = JSON.stringify([{ reward_id:product, quantity:1, mode:'cash', expected_cash:100, expected_coins:0, expected_freight_amount:20 }]);
+    const combinedKey = crypto.randomUUID();
+    const stacked = () => db.query("select checkout_store_cart_with_coupon($1,$2,'bemvindo10',30,$3) id", [combinedKey,items,voucher]);
+    const { rows: [{ id: next }] } = await stacked();
+    assert.equal((await stacked()).rows[0].id,next);
+    const { rows: [combined] } = await db.query('select cash_total, discount_cash, freight_amount, voucher_id from store_orders where id=$1',[next]);
+    assert.equal(Number(combined.cash_total)-Number(combined.freight_amount),70);
+    assert.equal(Number(combined.discount_cash),30);
+    assert.equal(combined.voucher_id,voucher);
     await db.exec('reset role');
     await db.query("select settle_store_payment(external_reference,'ORD_TEST',cash_total,'paid',null) from store_orders where id=$1",[next]);
+    await db.query('update loyalty_rewards set cash_price=80 where id=$1',[product]);
     await asCustomer();
     await assert.rejects(checkout(crypto.randomUUID(),2,16,0),/primeira compra/);
   } finally {
