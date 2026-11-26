@@ -19,6 +19,8 @@ export type StoreProduct = {
 export type CartLine = { reward_id: string; quantity: number; mode: PriceMode; expected_cash: number; expected_coins: number };
 export const cartCheckoutSchema = z.object({
   requestKey: z.uuid(),
+  couponCode: z.string().trim().regex(/^[A-Za-z0-9_-]{3,32}$/).optional(),
+  expectedCouponDiscount: z.number().finite().positive().optional(),
   voucherId: z.uuid().nullable().optional(),
   expectedFreight: z.union([z.literal(0),z.literal(20)]).optional(),
   items: z.array(z.object({

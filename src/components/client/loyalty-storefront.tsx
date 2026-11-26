@@ -65,6 +65,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
   const router = useRouter();
   const [open, setOpen] = useState(resumeCart);
   const [selectedVoucher,setSelectedVoucher]=useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [freightRevision,setFreightRevision]=useState(0);
   const [freightSnapshot,setFreightSnapshot]=useState<{key:string;quote:StoreFreightQuote|null;error:string}>({key:"",quote:null,error:""});
   const [cart, dispatch] = useReducer((_: Cart, next: Cart) => next, emptyCart);
@@ -119,7 +120,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
     } catch { /* Carrinho local inválido: começa vazio. */ }
   }, [storageKey]);
   const update = (items: CartLine[]) => {
-    if(!items.length)setSelectedVoucher("");
+    if (!items.length) { setSelectedVoucher(""); setCouponCode(""); }
     const next = { items, requestKey: crypto.randomUUID() };
     dispatch(next);
     try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* Carrinho continua disponível nesta aba. */ }
@@ -140,7 +141,10 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
   };
   const totals = cartTotals(cart.items);
   const selected = vouchers.find(v=>v.id===selectedVoucher);
-  const discount = totals.cash>0?voucherDiscount(selected,cart.items):0;
+  const normalizedCoupon = couponCode.trim().toUpperCase();
+  const couponDiscount = normalizedCoupon === "BEMVINDO10"
+    ? Math.round(totals.cash / 10) : 0;
+  const discount = couponDiscount || (totals.cash > 0 ? voucherDiscount(selected, cart.items) : 0);
   const cashDue = Math.max(0,totals.cash-discount)+Math.round(freight*100);
   const missing = totals.coins > 0 ? Math.max(0, totals.coins / 100 - balance) : 0;
   const currentPrice = (item: CartLine) => { const product = products.find((p) => p.id === item.reward_id); return product ? productPrices(product).find((price) => price.mode === item.mode) : undefined; };
@@ -167,9 +171,9 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
       try {
         await prepareStoreMarketing();
         if(totals.cash>discount)trackStoreEvent('InitiateCheckout',{currency:'BRL',value:(totals.cash-discount)/100,content_type:'product',content_ids:cart.items.map(i=>i.reward_id),num_items:totals.quantity},`store_checkout_${cart.requestKey}`);
-        const result = await checkoutStoreAction({...cart,voucherId:selectedVoucher||null,expectedFreight:freight});
+        const result = await checkoutStoreAction({...cart,voucherId:selectedVoucher||null,expectedFreight:freight, ...(couponDiscount && {couponCode:normalizedCoupon,expectedCouponDiscount:couponDiscount/100})});
         if (!result.ok) { toast.error(result.error); setFreightRevision(n=>n+1);router.refresh(); return; }
-        dispatch(emptyCart);setSelectedVoucher("");
+        dispatch(emptyCart);setSelectedVoucher("");setCouponCode("");
         try { localStorage.removeItem(storageKey); } catch { /* Sem impacto no pedido salvo. */ }
         setOpen(false);
         toast.success(Number(result.data.cash_total) > 0 ? "Pedido salvo. Pague o Pix para confirmar." : "Compra confirmada!");
@@ -198,11 +202,23 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
         {missing > 0 && <p role="alert" className="text-sm text-destructive">Faltam {coinNumber(missing)} Caracoins para este resgate.</p>}
         {cartLoading && <p role="status" className="text-sm text-muted-foreground">Atualizando os itens do carrinho…</p>}
         {open && purchasesEnabled && !hasOpenOrder && <StoreCartSuggestions items={cart.items} onAdd={add} disabled={pending || cart.items.length >= 50} />}
-        {totals.cash>0 && <div className="grid gap-2 rounded-xl border p-3"><label className="grid gap-2 text-sm">Aplicar voucher<select value={selectedVoucher} disabled={pending} onChange={event=>{setSelectedVoucher(event.target.value);update(cart.items);}} className="min-w-0 rounded-lg border bg-background p-2"><option value="">Sem voucher</option>{vouchers.map(v=><option key={v.id} value={v.id}>{v.name} · {storeBRL(Number(v.discount_cash))}</option>)}</select></label><p className="text-xs text-muted-foreground">Use apenas 1 voucher por compra. Os vouchers não são cumulativos.</p>{selectedVoucher && !discount && <p role="alert" className="text-xs text-destructive">Este carrinho não atende às regras ou à validade do voucher.</p>}{discount>0&&<p className="text-sm text-emerald-700">Desconto aplicado: −{storeBRL(discount/100)}. Subtotal dos produtos: {storeBRL(totals.cash/100)}.</p>}<Link href="/painel/loja?tab=vouchers" className="text-xs underline">Resgatar vouchers com Caracoins</Link></div>}
+        {totals.cash > 0 && <label className="grid gap-2 rounded-xl border p-3 text-sm">
+          Código do cupom
+          <input value={couponCode} maxLength={32} disabled={pending} autoCapitalize="characters"
+            onChange={event => { setCouponCode(event.target.value); setSelectedVoucher(""); update(cart.items); }}
+            placeholder="Digite seu código" className="min-w-0 rounded-lg border bg-background p-2 uppercase" />
+          {normalizedCoupon === "BEMVINDO10" && <span className="text-xs text-muted-foreground">
+            10% nos produtos da primeira compra. O desconto é confirmado ao finalizar.
+          </span>}
+          {normalizedCoupon && !couponDiscount && <span role="alert" className="text-xs text-destructive">
+            {normalizedCoupon === "BEMVINDO10" ? "Use o cupom em produtos pagos em reais." : "Código de cupom inválido."}
+          </span>}
+        </label>}
+        {totals.cash>0 && <div className="grid gap-2 rounded-xl border p-3"><label className="grid gap-2 text-sm">Aplicar voucher<select value={selectedVoucher} disabled={pending} onChange={event=>{setSelectedVoucher(event.target.value);setCouponCode("");update(cart.items);}} className="min-w-0 rounded-lg border bg-background p-2"><option value="">Sem voucher</option>{vouchers.map(v=><option key={v.id} value={v.id}>{v.name} · {storeBRL(Number(v.discount_cash))}</option>)}</select></label><p className="text-xs text-muted-foreground">Use apenas 1 voucher por compra. Os vouchers não são cumulativos.</p>{selectedVoucher && !discount && <p role="alert" className="text-xs text-destructive">Este carrinho não atende às regras ou à validade do voucher.</p>}{discount>0&&!couponDiscount&&<p className="text-sm text-emerald-700">Desconto aplicado: −{storeBRL(discount/100)}. Subtotal dos produtos: {storeBRL(totals.cash/100)}.</p>}<Link href="/painel/loja?tab=vouchers" className="text-xs underline">Resgatar vouchers com Caracoins</Link></div>}
         {cartError && <div role="alert" className="grid gap-2 text-sm text-destructive"><p>{cartError}</p><Button variant="outline" onClick={()=>setRetryCart(n=>n+1)}>Tentar novamente</Button></div>}
         {hasOpenOrder && <p className="text-sm text-muted-foreground">Você já tem um pedido aguardando Pix. Conclua ou cancele esse pagamento para comprar novamente.</p>}
         {(hasStaleItems || overStock) && <p role="alert" className="text-sm text-destructive">O catálogo mudou. Confira os preços atualizados e reduza ou remova os itens sem estoque antes de confirmar.</p>}
-        {cart.items.length>0&&<div className="space-y-3 border-t pt-3 text-xs text-muted-foreground"><div className="grid gap-2"><div className="flex justify-between gap-3"><span>Subtotal dos produtos</span><span>{priceLabel(totals.cash/100,totals.coins/100)}</span></div>{discount>0&&<div className="flex justify-between gap-3 text-emerald-700"><span>Voucher</span><span>−{storeBRL(discount/100)}</span></div>}<div className="flex justify-between gap-3"><span>Frete do pacote</span><strong className="text-right text-foreground">{!hasPhysical?'Sem envio físico':freightLoading?'Conferindo…':freightError?'Indisponível':freightBlocked?'Pix já pendente':freightQuote?.status==='paid'?'Já pago · R$ 0,00':storeBRL(freight)}</strong></div></div>
+        {cart.items.length>0&&<div className="space-y-3 border-t pt-3 text-xs text-muted-foreground"><div className="grid gap-2"><div className="flex justify-between gap-3"><span>Subtotal dos produtos</span><span>{priceLabel(totals.cash/100,totals.coins/100)}</span></div>{discount>0&&<div className="flex justify-between gap-3 text-emerald-700"><span>{couponDiscount ? "Cupom" : "Voucher"}</span><span>−{storeBRL(discount/100)}</span></div>}<div className="flex justify-between gap-3"><span>Frete do pacote</span><strong className="text-right text-foreground">{!hasPhysical?'Sem envio físico':freightLoading?'Conferindo…':freightError?'Indisponível':freightBlocked?'Pix já pendente':freightQuote?.status==='paid'?'Já pago · R$ 0,00':storeBRL(freight)}</strong></div></div>
         {hasPhysical && freightQuote?.shippingDate && <div className="flex justify-between gap-3">
           <span>Próximo envio previsto</span><strong className="text-foreground">{formatDateBR(freightQuote.shippingDate)}</strong>
         </div>}
@@ -213,7 +229,7 @@ export function LoyaltyStorefront({ rewards, balance, customerId, hasOpenOrder, 
         <details><summary className="cursor-pointer font-medium text-foreground">Como funcionam o pagamento e o voucher?</summary><p className="mt-2 leading-relaxed">{totals.cash>0?'O voucher desconta somente produtos, nunca o frete. Fica reservado até a confirmação. Se o pedido for cancelado antes do pagamento, ele volta à carteira com a validade original.':'As Caracoins dos produtos ficam reservadas ao confirmar. Se houver frete a pagar, ele será cobrado em reais neste Pix.'}</p></details></div>}
       </div>
       <div className="shrink-0 space-y-3 border-t bg-background px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]"><div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Total a pagar</span><strong aria-live="polite" className="min-w-0 break-words text-right text-lg text-ouro-ink">{freightLoading?'Conferindo…':freightError||freightBlocked?'—':cart.items.length?priceLabel(cashDue/100,totals.coins/100):'—'}</strong></div>
-        <Button className="min-h-11 w-full whitespace-normal px-3 text-sm leading-snug" disabled={!purchasesEnabled || pending || freightLoading || !!freightError || freightBlocked || (hasPhysical&&!freightQuote) || cartLoading || !!cartError || !cart.items.length || missing > 0 || hasOpenOrder || hasStaleItems || overStock || (!!selectedVoucher && !discount)} onClick={checkout}>{pending ? "Preparando pedido…" : freightLoading ? "Conferindo frete…" : freightBlocked||freightError ? "Confira o frete" : cashDue>0 ? `Gerar Pix de ${storeBRL(cashDue / 100)}` : totals.cash>0 ? "Confirmar compra com voucher" : "Confirmar compra com Caracoins"}</Button>
+        <Button className="min-h-11 w-full whitespace-normal px-3 text-sm leading-snug" disabled={!purchasesEnabled || pending || freightLoading || !!freightError || freightBlocked || (hasPhysical&&!freightQuote) || cartLoading || !!cartError || !cart.items.length || missing > 0 || hasOpenOrder || hasStaleItems || overStock || (!!selectedVoucher && !discount) || (!!normalizedCoupon && !couponDiscount)} onClick={checkout}>{pending ? "Preparando pedido…" : freightLoading ? "Conferindo frete…" : freightBlocked||freightError ? "Confira o frete" : cashDue>0 ? `Gerar Pix de ${storeBRL(cashDue / 100)}` : totals.cash>0 ? "Confirmar compra com voucher" : "Confirmar compra com Caracoins"}</Button>
       </div>
     </SheetContent></Sheet>
   </section></div>;

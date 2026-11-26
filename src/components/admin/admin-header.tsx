@@ -32,6 +32,7 @@ const labels: Record<string, string> = {
   "/admin/fidelidade": "Loja · Visão geral",
   "/admin/fidelidade/recompensas": "Loja · Produtos",
   "/admin/fidelidade/banners": "Loja · Banners",
+  "/admin/fidelidade/cupons": "Loja · Cupons",
   "/admin/fidelidade/vouchers": "Loja · Vouchers",
   "/admin/fidelidade/resgates": "Loja · Pedidos",
   "/admin/fidelidade/extrato": "Loja · Caracoins",

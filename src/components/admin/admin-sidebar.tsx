@@ -72,6 +72,7 @@ const storeGroups = [{
     { title: "Visão geral", url: "/admin/fidelidade", icon: LayoutDashboard, exact: true },
     { title: "Produtos", url: "/admin/fidelidade/recompensas", icon: Gift },
     { title: "Banners", url: "/admin/fidelidade/banners", icon: Gift },
+      { title: "Cupons da loja", url: "/admin/fidelidade/cupons", icon: Gift },
       { title: "Vouchers da loja", url: "/admin/fidelidade/vouchers", icon: Gift },
     { title: "Ranking geral", url: "/admin/fidelidade/ranking", icon: Award },
     { title: "Pedidos", url: "/admin/fidelidade/resgates", icon: ShoppingCart },

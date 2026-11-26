@@ -35,7 +35,7 @@ function failed(error: unknown): ActionResult<never> {
   });
   return { ok: false, error: "Não foi possível concluir agora. Se o pedido foi criado, ele continua salvo abaixo para retomar sem cobrar novamente." };
 }
-const domainError = (message: string) => /^(Você já tem|A loja está|Saldo de Caracoins|Estoque insuficiente|Um produto|Modalidade|Preencha seu|O preço|Carrinho inválido|Produto duplicado|O carrinho deve|Voucher|Compra não|Separe compras|O frete)/.test(message);
+const domainError = (message: string) => /^(Você já tem|A loja está|Saldo de Caracoins|Estoque insuficiente|Um produto|Modalidade|Preencha seu|O preço|Carrinho inválido|Produto duplicado|O carrinho deve|Voucher|Cupom|Compra não|Separe compras|O frete)/.test(message);
 
 export async function checkoutStoreAction(input: unknown): Promise<ActionResult<StoreOrder>> {
   try {
@@ -46,7 +46,24 @@ export async function checkoutStoreAction(input: unknown): Promise<ActionResult<
     if (!await allow("store-checkout", customer.id)) return { ok: false, error: "Aguarde um pouco antes de tentar novamente." };
     const db = await createClient();
     const items=parsed.data.items.map((item,index)=>index===0?{...item,expected_freight_amount:parsed.data.expectedFreight??0}:item);
-    const {data:id,error}=await isLocalStorePilot(customer.id)?await createAdminClient().rpc('run_local_store_pilot',{p_customer:customer.id,p_operation:'checkout',p_request_key:parsed.data.requestKey,p_items:items,p_voucher:parsed.data.voucherId??null}):await db.rpc("checkout_store_cart_cancellable", { p_request_key: parsed.data.requestKey, p_items: items, p_voucher: parsed.data.voucherId ?? null });
+    const { couponCode, expectedCouponDiscount, requestKey, voucherId } = parsed.data;
+    if (couponCode && (voucherId || !expectedCouponDiscount)) {
+      return { ok: false, error: "Confira o desconto e use apenas um cupom ou voucher por pedido." };
+    }
+    const pilot = await isLocalStorePilot(customer.id);
+    const { data: id, error } = couponCode
+      ? await db.rpc("checkout_store_cart_with_coupon", {
+          p_request_key: requestKey, p_items: items, p_code: couponCode,
+          p_expected_discount: expectedCouponDiscount,
+        })
+      : pilot
+        ? await createAdminClient().rpc("run_local_store_pilot", {
+            p_customer: customer.id, p_operation: "checkout", p_request_key: requestKey,
+            p_items: items, p_voucher: voucherId ?? null,
+          })
+        : await db.rpc("checkout_store_cart_cancellable", {
+            p_request_key: requestKey, p_items: items, p_voucher: voucherId ?? null,
+          });
     if(error?.code==='42883' && error.message.includes('checkout_store_cart_live'))return {ok:false,error:'Atualização interna da loja pendente. Aplique a migration 0042 e tente novamente.'};
     if(error?.code==='PGRST202')return {ok:false,error:'Atualização da loja pendente. Aplique a migration 0061 e tente novamente.'};
     if (error) {
