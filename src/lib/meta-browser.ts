@@ -66,6 +66,7 @@ let landingVisitId='';
 let landingLeadSent=false;
 /** One outbound group click per tab session; never a confirmed WhatsApp membership. */
 export function trackLandingLead(placement:string) {
+ if(new URLSearchParams(location.search).get('entrada')==='pre-cadastro')return;
  if(location.pathname!=='/'||!canMeasure(true)||!initializedPixel||!window.fbq||landingLeadSent)return;
  let id=landingVisitId||(landingVisitId=crypto.randomUUID());
  const sentKey='ocdl-landing-lead-sent:'+initializedPixel;
