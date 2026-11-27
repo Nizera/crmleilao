@@ -90,7 +90,7 @@ export function AuctionPreregistration({ emailEnabled }: { emailEnabled: boolean
       </label>
       <label className="grid gap-1 text-sm">E-mail
         <input className={input} name="email" type="email" autoComplete="email" required maxLength={254} />
-        {emailEnabled && <span className="text-xs text-[#eee4d0]">Você poderá receber uma cópia do convite por e-mail.</span>}
+        {emailEnabled && <span className="text-xs text-[#eee4d0]">Você receberá uma cópia do convite por e-mail.</span>}
       </label>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       <button type="submit" className={button} disabled={saving}>{saving ? "Salvando…" : "Continuar para o WhatsApp"}</button>
