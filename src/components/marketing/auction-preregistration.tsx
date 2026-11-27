@@ -88,9 +88,9 @@ export function AuctionPreregistration({ emailEnabled }: { emailEnabled: boolean
         <input className={input} name="phone" type="tel" autoComplete="tel" required maxLength={32} aria-describedby="auction-phone-help" />
         <span id="auction-phone-help" className="text-xs text-[#eee4d0]">Use o número com que vai pedir entrada. Ele ajuda a equipe a localizar seu cadastro se você arrematar.</span>
       </label>
-      <label className="grid gap-1 text-sm">E-mail (opcional)
-        <input className={input} name="email" type="email" autoComplete="email" maxLength={254} />
-        {emailEnabled && <span className="text-xs text-[#eee4d0]">Se informar, você poderá receber uma cópia do convite por e-mail.</span>}
+      <label className="grid gap-1 text-sm">E-mail
+        <input className={input} name="email" type="email" autoComplete="email" required maxLength={254} />
+        {emailEnabled && <span className="text-xs text-[#eee4d0]">Você poderá receber uma cópia do convite por e-mail.</span>}
       </label>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       <button type="submit" className={button} disabled={saving}>{saving ? "Salvando…" : "Continuar para o WhatsApp"}</button>
