@@ -11,8 +11,6 @@ import { ClientBottomNav } from "@/components/client/client-bottom-nav";
 import { getCustomerCaracoinsBalance } from "@/lib/loyalty";
 import { ClientModuleNav } from "@/components/client/client-module-nav";
 
-import styles from "./promotion.module.css";
-
 const blackFridayMessage = "Black Friday - Todos os lotes com 30% OFF";
 
 // Rotas autenticadas leem cookies() na request e não entram no shell estático.
@@ -32,16 +30,7 @@ export default async function ClientLayout({
           <CustomerPanelHeader customer={customer} />
         </Suspense>
         <div className="w-full shrink-0 overflow-hidden bg-black py-2 text-xs font-bold uppercase tracking-wide text-white dark:bg-white dark:text-black">
-          <p className="sr-only motion-reduce:not-sr-only motion-reduce:px-3 motion-reduce:text-center">
-            {blackFridayMessage}
-          </p>
-          <div aria-hidden="true" className={`${styles.promotionTrack} motion-reduce:hidden`}>
-            {Array.from({ length: 10 }, (_, index) => (
-              <span key={index} className={styles.promotionItem}>
-                {blackFridayMessage}
-              </span>
-            ))}
-          </div>
+          <p className="px-3 text-center">{blackFridayMessage}</p>
         </div>
       </div>
       <main className="mx-auto w-full max-w-2xl has-[.store-page]:max-w-7xl flex-1 px-4 pb-24 pt-6">
