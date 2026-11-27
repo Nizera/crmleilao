@@ -24,6 +24,7 @@ const labels: Record<string, string> = {
   "/admin/lotes": "Lotes",
   "/admin/pendencias": "Pendências logísticas",
   "/admin/clientes": "Clientes",
+  "/admin/leads": "Leads do leilão",
   "/admin/cobrancas": "Cobranças",
   "/admin/estoque": "Estoque",
   "/admin/envios": "Envios",

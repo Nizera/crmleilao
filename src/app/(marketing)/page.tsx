@@ -1,4 +1,5 @@
 import {MarketingPreferencesLink} from "@/components/client/marketing-preferences-link";
+import { AuctionPreregistration } from "@/components/marketing/auction-preregistration";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +24,7 @@ const benefits = [
 
 export default function LandingPage() {
   return <div className={s.root}>
+    <AuctionPreregistration emailEnabled={Boolean(process.env.RESEND_API_KEY && process.env.AUCTION_INVITE_EMAIL_FROM)} />
     <a href="#conteudo" className={s.skip}>Ir para o conteúdo</a>
     <header className={s.header}><div className={`${s.container} ${s.headerInner}`}>
       <Link href="/" className={s.brand} aria-label="Os Caras das Legends — início"><Image src="/brand/logo-horizontal-v2.webp" alt="Os Caras das Legends" width={348} height={174} sizes="174px" /></Link>

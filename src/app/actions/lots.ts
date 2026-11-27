@@ -22,6 +22,7 @@ import {
   type LotStatus,
 } from "@/lib/lots";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { prepareLotFinancialChange } from "@/lib/lot-payment-guard";
 import { lotPricing } from "@/lib/lot-pricing";
 import { notifyLandingChanged } from "@/lib/landing-live-server";
@@ -555,12 +556,37 @@ export async function logWaMessage(input: {
   }
 }
 
+export type LotCustomerResult = Customer & { preregistration?: true };
+
 export async function searchLotCustomers(
   query: string,
-): Promise<ActionResult<Customer[]>> {
+  includePreregistrations = false,
+): Promise<ActionResult<LotCustomerResult[]>> {
   try {
-    await requireAdmin();
-    return { ok: true, data: await searchCustomers(query) };
+    const { profile } = await requireAdmin();
+    const customers = await searchCustomers(query);
+    if (!includePreregistrations || profile.role === "viewer") return { ok: true, data: customers };
+
+    const digits = query.replace(/\D/g, "").slice(0, 20);
+    const name = query.replace(/[,'"%()\\]/g, " ").trim().slice(0, 64);
+    const filters = [];
+    if (digits.length >= 4) filters.push(`phone_e164.ilike.%${digits}%`);
+    if (name.length >= 2) filters.push(`name.ilike.%${name}%`);
+    if (!filters.length) return { ok: true, data: customers };
+
+    const db = createAdminClient();
+    const leads = await db.from("auction_preregistrations").select("id,name,phone_e164")
+      .not("status", "in", "(closed,converted)").or(filters.join(","))
+      .order("created_at", { ascending: false }).limit(12);
+    if (leads.error || !leads.data?.length) return { ok: true, data: customers };
+
+    const existing = await db.from("customers").select("phone_e164")
+      .in("phone_e164", leads.data.map(lead => lead.phone_e164));
+    if (existing.error) return { ok: true, data: customers };
+    const registeredPhones = new Set(existing.data.map(customer => customer.phone_e164));
+    const preregistrations = leads.data.filter(lead => !registeredPhones.has(lead.phone_e164))
+      .slice(0, 8).map(lead => ({ ...lead, preregistration: true as const }));
+    return { ok: true, data: [...customers, ...preregistrations] };
   } catch (error) {
     rethrowIfRedirect(error);
     return failure(error instanceof Error ? error.message : "Erro inesperado.");

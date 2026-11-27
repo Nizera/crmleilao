@@ -50,6 +50,7 @@ const auctionGroups = [
     label: "Relacionamento",
     items: [
       { title: "Clientes", url: "/admin/clientes", icon: Users },
+      { title: "Leads do leilão", url: "/admin/leads", icon: Users },
       { title: "Cobranças", url: "/admin/cobrancas", icon: Coins },
       { title: "Vouchers do leilão", url: "/admin/vouchers-leilao", icon: Ticket },
     ],

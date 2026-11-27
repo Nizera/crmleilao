@@ -18,6 +18,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export type RateBucket =
   | "store-marketing"
   | "auction-sync"
+  | "auction-preregistration"
   | "lot-ai"
   | "loyalty-read"
   | "store-catalog-write"
@@ -38,6 +39,7 @@ export type RateBucket =
 const RULES: Record<RateBucket, { limit: number; window: number }> = {
   "store-marketing": { limit: 30, window: 60 },
   "auction-sync": { limit: 20, window: 60 },
+  "auction-preregistration": { limit: 4, window: 900 },
   "lot-ai": { limit: 8, window: 3600 },
   "loyalty-read": { limit: 120, window: 60 },
   "store-catalog-write": { limit: 60, window: 300 },

@@ -46,6 +46,10 @@ export function trackStoreProduct(name:'ViewContent'|'AddToCart',product:StorePr
  if(!(Number(product.cash_price)>0)||Number(product.points_cost)>0)return;
  trackStoreEvent(name,{currency:'BRL',value:Number(product.cash_price),content_type:'product',content_ids:[product.id],contents:[{id:product.id,quantity:1,item_price:Number(product.cash_price)}],content_category:product.category});
 }
+export function trackAuctionInviteClick() {
+ if(location.pathname==='/'&&canMeasure(true)&&initializedPixel&&window.fbq)
+  window.fbq('trackSingleCustom',initializedPixel,'AuctionWhatsAppInviteClick');
+}
 function cookie(name:string){return document.cookie.split('; ').find(x=>x.startsWith(name+'='))?.slice(name.length+1)??null;}
 export async function syncMarketingChoice(consent:boolean,explicit=false) {
  const params=new URLSearchParams(location.search),attribution=Object.fromEntries(['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].map(k=>[k,params.get(k)]));

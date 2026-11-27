@@ -16,12 +16,11 @@ import { ImagePlus, X } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
-import { saveLot, searchLotCustomers } from "@/app/actions/lots";
+import { saveLot, searchLotCustomers, type LotCustomerResult } from "@/app/actions/lots";
 import { StockPicker } from "@/components/admin/lots/stock-picker";
 import { LotAiReview } from "@/components/admin/lots/lot-ai-review";
 import { Button } from "@/components/ui/button";
 import { formatPhoneBR } from "@/lib/customers";
-import type { Customer } from "@/lib/dal";
 import {
   Field,
   FieldDescription,
@@ -134,9 +133,9 @@ function LotForm({
   const [compressing, setCompressing] = useState(false);
   const [shippingTouched, setShippingTouched] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
-  const [customerResults, setCustomerResults] = useState<Customer[] | null>(null);
+  const [customerResults, setCustomerResults] = useState<LotCustomerResult[] | null>(null);
   const [customerSearching, setCustomerSearching] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+  const [selectedCustomer, setSelectedCustomer] = useState<LotCustomerResult | null>(
     lot?.customer ? { id: lot.customer_id, name: lot.customer.name, phone_e164: lot.customer.phone_e164 } : null,
   );
   const [items, setItems] = useState<LotItemPick[]>(
@@ -226,15 +225,15 @@ function LotForm({
     const q = customerQuery.trim();
     if (q.length < 2) return;
     setCustomerSearching(true);
-    const result = await searchLotCustomers(q);
+    const result = await searchLotCustomers(q, !lot);
     setCustomerSearching(false);
     if (result.ok) setCustomerResults(result.data);
   };
 
-  const pickCustomer = (customer: Customer) => {
+  const pickCustomer = (customer: LotCustomerResult) => {
     form.setValue("auction_voucher_id", "");form.setValue("voucher_amount", "");
     setSelectedCustomer(customer);
-    form.setValue("customer_id", customer.id, { shouldValidate: true });
+    form.setValue("customer_id", customer.preregistration ? "" : customer.id, { shouldValidate: true });
     form.setValue("phone", customer.phone_e164, { shouldValidate: true });
     form.setValue("customer_name", customer.name ?? "", { shouldValidate: true });
     setCustomerResults(null);
@@ -353,6 +352,7 @@ function LotForm({
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
                   {selectedCustomer.name ?? "Sem nome"}
+                  {selectedCustomer.preregistration && <span className="ml-2 text-xs text-muted-foreground">Pré-cadastro</span>}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {formatPhoneBR(selectedCustomer.phone_e164)}
@@ -395,7 +395,10 @@ function LotForm({
                         onClick={() => pickCustomer(c)}
                         className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-muted"
                       >
-                        <span className="truncate">{c.name ?? "Sem nome"}</span>
+                        <span className="truncate">
+                          {c.name ?? "Sem nome"}
+                          {c.preregistration && <span className="ml-2 text-xs text-muted-foreground">Pré-cadastro</span>}
+                        </span>
                         <span className="shrink-0 text-muted-foreground">
                           {formatPhoneBR(c.phone_e164)}
                         </span>
@@ -467,7 +470,7 @@ function LotForm({
           </FieldDescription>
           <FieldError>{errors.arremate_value?.message}</FieldError>
         </Field>
-        <LotVoucherField key={selectedCustomer?.id??"none"} customer={selectedCustomer?.id} lot={lot?.id} id={voucherId} amount={voucherValue} maximum={Math.max(0,Number((originalValue||"0").replace(",","."))-Number((discountValue||"0").replace(",",".")))} disabled={pending||Boolean(lot&&(lot.paid_at||["shipped","delivered"].includes(lot.status)||lot.status==="paid"&&Number(lot.arremate_value)>0))} onChange={(id,amount)=>{form.setValue("auction_voucher_id",id);form.setValue("voucher_amount",amount);}}/>
+        <LotVoucherField key={selectedCustomer?.id??"none"} customer={selectedCustomer?.preregistration ? undefined : selectedCustomer?.id} lot={lot?.id} id={voucherId} amount={voucherValue} maximum={Math.max(0,Number((originalValue||"0").replace(",","."))-Number((discountValue||"0").replace(",",".")))} disabled={pending||Boolean(lot&&(lot.paid_at||["shipped","delivered"].includes(lot.status)||lot.status==="paid"&&Number(lot.arremate_value)>0))} onChange={(id,amount)=>{form.setValue("auction_voucher_id",id);form.setValue("voucher_amount",amount);}}/>
         <FieldError>{errors.voucher_amount?.message||errors.auction_voucher_id?.message}</FieldError>
         <Field data-invalid={!!errors.discount_amount}>
           <FieldLabel htmlFor="discount_amount">Outro desconto (R$)</FieldLabel>
