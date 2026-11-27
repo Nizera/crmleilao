@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lotPricing } from "@/lib/lot-pricing";
 import { spToday } from "@/lib/dates";
 import { DEFAULT_SETTINGS, renderTemplate } from "@/lib/settings";
 import type { LotItemRow } from "@/lib/stock";
@@ -156,6 +157,7 @@ export const lotSchema = z.object({
       /^\d{1,9}([.,]\d{1,2})?$/,
       "Valor inválido, use algo como 45 ou 45,50",
     ),
+  discount_percentage: z.string().trim().optional(),
   discount_amount: z.string().trim().regex(/^\d{1,9}([.,]\d{1,2})?$/, "Desconto inválido, informe um valor em reais").optional().or(z.literal("")),
   auction_date: z
     .string()
@@ -169,7 +171,17 @@ export const lotSchema = z.object({
     .or(z.literal("")),
   status: z.enum(LOT_STATUSES),
   notes: z.string().trim().max(4000).optional(),
-}).refine(values => Number((values.discount_amount || "0").replace(",", ".")) + Number((values.voucher_amount || "0").replace(",", ".")) <= Number(values.arremate_value.replace(",", ".")), {message:"Os descontos não podem superar o valor do lote.",path:["discount_amount"]});
+}).superRefine((values, ctx) => {
+  try {
+    lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount, values.discount_percentage);
+  } catch (error) {
+    ctx.addIssue({
+      code: "custom",
+      path: [values.discount_percentage ? "discount_percentage" : "discount_amount"],
+      message: error instanceof Error ? error.message : "Confira os descontos do lote.",
+    });
+  }
+});
 
 export type LotFormValues = z.input<typeof lotSchema>;
 

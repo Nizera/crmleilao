@@ -157,6 +157,7 @@ function LotForm({
       title: lot?.title ?? "",
       description: lot?.description ?? "",
       arremate_value: lot ? String((Math.round(Number(lot.arremate_value)*100)+Math.round(Number(lot.discount_amount??0)*100))/100) : "",
+      discount_percentage: "",
       discount_amount: lot ? String(Math.max(0,Number(lot.discount_amount??0)-Number(lot.voucher_amount??0))) : "",
       auction_voucher_id: lot?.auction_voucher_id ?? "",
       voucher_amount: lot?.voucher_amount ? String(lot.voucher_amount) : "",
@@ -172,10 +173,18 @@ function LotForm({
   const remaining = MAX_IMAGES - keptImages.length - uploads.length;
   const statusValue = useWatch({ control: form.control, name: "status" });
   const originalValue = useWatch({ control: form.control, name: "arremate_value" });
+  const percentageValue = useWatch({ control: form.control, name: "discount_percentage" });
   const discountValue = useWatch({ control: form.control, name: "discount_amount" });
   const voucherId = useWatch({control:form.control,name:"auction_voucher_id"}) ?? "";
   const voucherValue = useWatch({control:form.control,name:"voucher_amount"}) ?? "";
-  const pricePreview = (() => { try { return lotPricing(originalValue ?? "", discountValue, voucherValue); } catch { return null; } })();
+  const voucherMaximum = (() => {
+    try {
+      return lotPricing(originalValue ?? "", discountValue, "", percentageValue).total;
+    } catch {
+      return 0;
+    }
+  })();
+  const pricePreview = (() => { try { return lotPricing(originalValue ?? "", discountValue, voucherValue, percentageValue); } catch { return null; } })();
 
   const addFiles = async (list: FileList | File[] | null) => {
     if (!list || remaining <= 0 || compressing) return;
@@ -252,7 +261,7 @@ function LotForm({
   const submit = form.handleSubmit((values) => {
     setServerError(null);
     if (lot?.charge_id && lot.status === "pending_payment" && (
-      lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount).total !== Number(lot.arremate_value) ||
+      lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount, values.discount_percentage).total !== Number(lot.arremate_value) ||
       (values.auction_voucher_id||null) !== (lot.auction_voucher_id||null) || Number((values.voucher_amount||"0").replace(",",".")) !== Number(lot.voucher_amount||0) ||
       values.customer_id !== lot.customer_id || values.status !== lot.status
     ) && !window.confirm("Esta alteração encerrará o Pix aberto deste cliente no Mercado Pago, incluindo os demais lotes dessa cobrança. Depois, o cliente poderá gerar um novo Pix com o total atualizado. Continuar?")) return;
@@ -470,8 +479,14 @@ function LotForm({
           </FieldDescription>
           <FieldError>{errors.arremate_value?.message}</FieldError>
         </Field>
-        <LotVoucherField key={selectedCustomer?.id??"none"} customer={selectedCustomer?.preregistration ? undefined : selectedCustomer?.id} lot={lot?.id} id={voucherId} amount={voucherValue} maximum={Math.max(0,Number((originalValue||"0").replace(",","."))-Number((discountValue||"0").replace(",",".")))} disabled={pending||Boolean(lot&&(lot.paid_at||["shipped","delivered"].includes(lot.status)||lot.status==="paid"&&Number(lot.arremate_value)>0))} onChange={(id,amount)=>{form.setValue("auction_voucher_id",id);form.setValue("voucher_amount",amount);}}/>
+        <LotVoucherField key={selectedCustomer?.id??"none"} customer={selectedCustomer?.preregistration ? undefined : selectedCustomer?.id} lot={lot?.id} id={voucherId} amount={voucherValue} maximum={voucherMaximum} disabled={pending||Boolean(lot&&(lot.paid_at||["shipped","delivered"].includes(lot.status)||lot.status==="paid"&&Number(lot.arremate_value)>0))} onChange={(id,amount)=>{form.setValue("auction_voucher_id",id);form.setValue("voucher_amount",amount);}}/>
         <FieldError>{errors.voucher_amount?.message||errors.auction_voucher_id?.message}</FieldError>
+        <Field data-invalid={!!errors.discount_percentage}>
+          <FieldLabel htmlFor="discount_percentage">Desconto percentual (%)</FieldLabel>
+          <Input id="discount_percentage" inputMode="decimal" placeholder="0" {...form.register("discount_percentage")} />
+          <FieldDescription>Calculado sobre o valor do arremate. Exemplo de 30% sobre R$ 60,00 resulta em R$ 42,00.</FieldDescription>
+          <FieldError>{errors.discount_percentage?.message}</FieldError>
+        </Field>
         <Field data-invalid={!!errors.discount_amount}>
           <FieldLabel htmlFor="discount_amount">Outro desconto (R$)</FieldLabel>
           <Input id="discount_amount" inputMode="decimal" placeholder="0,00" {...form.register("discount_amount")} />

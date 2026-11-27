@@ -1,0 +1,15 @@
+.promotionTrack {
+  display: flex;
+  width: max-content;
+  animation: scrollRight 28s linear infinite;
+}
+
+@keyframes scrollRight {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}

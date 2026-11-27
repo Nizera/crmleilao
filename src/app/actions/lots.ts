@@ -145,7 +145,7 @@ export async function saveLot(
       return failure(parsed.error.issues[0]?.message ?? "Dados inválidos.");
     }
     const values = parsed.data;
-    const price = lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount);
+    const price = lotPricing(values.arremate_value, values.discount_amount, values.voucher_amount, values.discount_percentage);
     if ((price.voucher > 0) !== Boolean(values.auction_voucher_id)) return failure("Selecione o voucher e informe quanto usar.");
     const items = parseLotItems(formData.get("items"));
 
