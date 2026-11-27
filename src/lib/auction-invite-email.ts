@@ -18,7 +18,7 @@ function renderAuctionInvite() {
     <tr><td align="center" style="padding:24px 12px">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#181612;border:1px solid #3b3120;border-radius:18px">
         <tr><td align="center" style="padding:28px 24px 20px;border-bottom:1px solid #40351e">
-          <img src="https://www.oscarasdaslegends.com.br/brand/mark.png" width="64" height="70" alt="" style="display:block;margin:0 auto 10px;border:0">
+          <img src="https://www.oscarasdaslegends.com.br/brand/logo-horizontal-v2.webp" width="174" height="87" alt="Os Caras das Legends" style="display:block;margin:0 auto 10px;border:0">
           <p style="margin:0;color:#f5cb59;font-size:12px;line-height:18px;font-weight:bold;letter-spacing:2px;text-transform:uppercase">Os Caras das Legends</p>
         </td></tr>
         <tr><td style="padding:28px 26px 30px;color:#fdf8eb">
