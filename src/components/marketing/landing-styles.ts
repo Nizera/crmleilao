@@ -10,7 +10,6 @@ export const landingStyles = {
   "navActions": "landing-navActions",
   "button": "landing-button",
   "smallButton": "landing-smallButton",
-  "outlineButton": "landing-outlineButton",
   "quietLink": "landing-quietLink",
   "mobileMenu": "landing-mobileMenu",
   "hero": "landing-hero",
@@ -18,16 +17,6 @@ export const landingStyles = {
   "eyebrow": "landing-eyebrow",
   "heroText": "landing-heroText",
   "heroActions": "landing-heroActions",
-  "heroTrust": "landing-heroTrust",
-  "heroVisual": "landing-heroVisual",
-  "halo": "landing-halo",
-  "phone": "landing-phone",
-  "statusCard": "landing-statusCard",
-  "paymentCard": "landing-paymentCard",
-  "shippingCard": "landing-shippingCard",
-  "statusIcon": "landing-statusIcon",
-  "statusDetail": "landing-statusDetail",
-  "visualCaption": "landing-visualCaption",
   "section": "landing-section",
   "sectionTop": "landing-sectionTop",
   "heading": "landing-heading",
@@ -68,6 +57,5 @@ export const landingStyles = {
   "footerInner": "landing-footerInner",
   "footerBrand": "landing-footerBrand",
   "sticky": "landing-sticky",
-  "navGroupButton": "landing-navGroupButton",
-  "appCopy": "landing-appCopy"
+  "navGroupButton": "landing-navGroupButton"
 } as const;

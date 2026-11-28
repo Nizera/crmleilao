@@ -12,16 +12,17 @@ export const LANDING_SHOWCASE = [
 ] as const;
 
 export const LANDING_STEPS = [
-  { title: "Entre no grupo", text: "Conheça os lotes, os horários e as regras no nosso WhatsApp.", icon: "chat" },
-  { title: "Dê seu lance", text: "Escolha o que combina com a sua coleção e participe pelo grupo.", icon: "bid" },
-  { title: "Pague pelo painel", text: "Seus arremates e o Pix ficam organizados em um só lugar.", icon: "pix" },
-  { title: "Acompanhe a entrega", text: "Confira a preparação do pacote e o rastreio pelo app.", icon: "parcel" },
+  { title: "Entre no grupo", text: "Abra o convite no WhatsApp e solicite sua entrada.", icon: "chat" },
+  { title: "Dê seu lance", text: "Confira os lotes e as regras da rodada. Quando um lote interessar, dê seu lance no grupo.", icon: "bid" },
+  { title: "Pague pelo painel", text: "Se arrematar, a equipe envia seu acesso ao painel pelo WhatsApp. O pagamento é via Pix.", icon: "pix" },
+  { title: "Acompanhe a entrega", text: "Veja a previsão de envio e acompanhe o rastreio pelo painel depois da postagem.", icon: "parcel" },
 ] as const;
 
 export const LANDING_FAQ = [
-  { question: "Como participo do leilão?", answer: "Entre no grupo do WhatsApp e acompanhe as rodadas. A equipe divulga as fotos dos lotes, os horários e as regras. Os lances são feitos no grupo, não nesta página." },
-  { question: "Como acesso meu painel?", answer: "Depois do seu primeiro arremate, a equipe envia um convite pelo WhatsApp. Você cria sua senha e passa a acompanhar seus lotes, pagamentos e envios no painel." },
-  { question: "Como funciona o pagamento?", answer: "Os lotes pendentes são reunidos automaticamente no painel, junto do frete devido quando houver. Você paga pelo Pix e acompanha a confirmação, sem precisar escolher lote por lote." },
-  { question: "Quando recebo meus colecionáveis?", answer: "A data prevista de envio aparece no painel. Depois da emissão da etiqueta e da postagem, você acompanha o código e as atualizações de rastreamento. As condições de envio são informadas pela equipe." },
-  { question: "O que são Caracoins e os elos?", answer: "Caracoins fazem parte do nosso programa de fidelidade. No painel você consulta seu saldo, as regras e a evolução do seu elo. A participação no ranking público é opcional." },
+  { question: "Onde vejo os lotes e os horários?", answer: "No grupo do WhatsApp. A equipe publica as fotos dos próximos lotes, os horários e as regras de cada rodada." },
+  { question: "Posso entrar só para acompanhar?", answer: "Sim. Você pode conferir os lotes no grupo e dar um lance quando quiser participar de uma rodada." },
+  { question: "Como acesso meu painel?", answer: "Após o primeiro arremate, a equipe envia um convite pelo WhatsApp. Use o link para criar sua senha e acessar seus lotes, pagamentos e envios." },
+  { question: "Como funciona o pagamento?", answer: "O painel reúne seus lotes pendentes e o frete devido, quando houver. Você paga via Pix e acompanha a confirmação por lá." },
+  { question: "Quando recebo meus colecionáveis?", answer: "Confira a previsão de envio no painel. Depois da postagem, você pode consultar o código de rastreio e acompanhar a entrega." },
+  { question: "O que são Caracoins e os elos?", answer: "Caracoins fazem parte do programa de fidelidade. Consulte o saldo e as regras no painel. Você decide se quer participar do ranking público." },
 ] as const;

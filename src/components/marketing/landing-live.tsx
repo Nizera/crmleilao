@@ -44,15 +44,15 @@ export function LandingLiveCatalog({section}:{section:'lots'|'store'}){
   return()=>{active=false;clearInterval(interval);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('online',refresh);release?.();};
  },[section]);
  const available=section==='lots'?data.lotsAvailable:data.storeAvailable;
- const items=section==='lots'?data.lots.map(l=>({id:l.id,name:l.title,image:l.image,category:'Arremate cadastrado',detail:new Date(l.created_at).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}),href:null})):data.products.map(p=>({...p,detail:p.price,href:'/loja?q='+encodeURIComponent(p.name)}));
+ const items=section==='lots'?data.lots.map(l=>({id:l.id,name:l.title,image:l.image,category:'Arrematado',detail:new Date(l.created_at).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}),href:null})):data.products.map(p=>({...p,detail:p.price,href:'/loja?q='+encodeURIComponent(p.name)}));
  if(loading)return <p className={s.intro} role="status">Carregando {section==='lots'?'últimos arremates':'catálogo da loja'}…</p>;
  return <>
   {(failed||!available)&&<p className={s.intro} role="status">Não foi possível atualizar agora. Tentaremos novamente automaticamente.</p>}
-  {!items.length&&!failed&&available&&<p className={s.intro}>{section==='lots'?'Os próximos arremates cadastrados aparecerão aqui.':'Nenhum produto publicado com foto e estoque disponível no momento.'}</p>}
+  {!items.length&&!failed&&available&&<p className={s.intro}>{section==='lots'?'Veja os lotes das próximas rodadas no grupo do WhatsApp.':'A vitrine está sem itens disponíveis no momento.'}</p>}
   <div className={section==='lots'?s.carousel:'landing-storeGrid'} aria-label={section==='lots'?'Últimos arremates cadastrados':'Produtos reais da loja'}>{items.map(item=>{
    const content=<><div className={s.lotPicture}>{item.image?<Image src={item.image} alt={item.name} fill sizes="(max-width:767px) 82vw, 350px"/>:<Package aria-label="Lote sem foto" className="m-auto h-full w-12 text-neutral-400"/>}</div><p className={s.lotCategory}>{item.category}</p><h3>{item.name}</h3><span className={section==='lots'?s.sold:'landing-productPrice'}>{item.detail}</span>{item.href&&<span className="landing-productLink">Ver na loja <ArrowRight size={14}/></span>}</>;
    return item.href?<Link href={item.href} className="landing-liveProduct" key={item.id}>{content}</Link>:<article className={s.lotCard} key={item.id}>{content}</article>;
   })}</div>
-  <p className={s.intro}>{section==='lots'?'Últimos lotes cadastrados, do mais recente ao mais antigo. Já arrematados; não estão abertos para lances.':'Produtos publicados da loja. Preço e estoque são confirmados ao comprar.'}</p>
+  <p className={s.intro}>{section==='lots'?'Os lotes exibidos aqui já foram arrematados.':'Confira o preço e a disponibilidade na loja antes de comprar.'}</p>
  </>;
 }
