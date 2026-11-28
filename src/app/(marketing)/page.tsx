@@ -61,7 +61,7 @@ export default function LandingPage() {
         <div>
           <h1 id="hero-title">Figurinhas raras, <span>dois leilões por dia</span></h1>
           <p className={s.heroText}>Entre no grupo do WhatsApp para ver os próximos lotes de Legends, Prizm e Gold Crumple, conferir os horários e dar seu lance.</p>
-          <div className={s.heroActions}><a href={LANDING_GROUP_URL} target="_blank" rel="noopener noreferrer" className={s.button} data-primary-group-cta="hero"><WhatsAppGlyph />Ver lotes e horários no grupo<ArrowRight aria-hidden="true" /></a></div>
+          <div className={s.heroActions}><a href={LANDING_GROUP_URL} target="_blank" rel="noopener noreferrer" className={s.button} data-primary-group-cta="hero"><WhatsAppGlyph />Entrar no grupo<ArrowRight aria-hidden="true" /></a></div>
         </div>
         <figure className="landing-heroLot">
           <Image src="/landing/arremates/lote-legends-prizm-crumple.webp" alt="Prizm do Messi, Gold Crumple do Cristiano Ronaldo e figurinhas Legends, incluindo Vini Jr." width={1600} height={1250} sizes="(max-width: 767px) calc(100vw - 40px), (max-width: 1248px) 44vw, 540px" loading="eager" fetchPriority="high" />
